@@ -1,6 +1,7 @@
 import React from "react";
 
-import SplashImage from "../../../public/splash.png";
+import Image from "next/image";
+import SplashImage from "../../../public/app.png";
 
 const FRAME_SPLASH_IMAGE_SIZE = 88;
 
@@ -8,13 +9,13 @@ const Loading = () => {
   return (
     <div className="inset-0 absolute w-full items-center justify-center flex flex-col flex-grow h-full">
       {/* eslint-disable-next-line @next/next/no-img-element */}
-      <img
+      <Image
         src={SplashImage.src}
-        alt="Warpcast Rewards splash screen image"
+        alt="cover"
         className="animate-pulse"
-        style={{ marginTop: `-${FRAME_SPLASH_IMAGE_SIZE}px` }}
         width={FRAME_SPLASH_IMAGE_SIZE}
         height={FRAME_SPLASH_IMAGE_SIZE}
+        style={{ marginTop: `-${FRAME_SPLASH_IMAGE_SIZE}px` }}
       />
     </div>
   );

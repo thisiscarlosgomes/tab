@@ -1,11 +1,16 @@
-'use client';
+"use client";
 
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 
-import { AuthedPrefetchesProvider } from './AuthedPrefetchesProvider';
-import { FrameContextProvider } from './FrameContextProvider';
-import { FrameSplashProvider } from './FrameSplashProvider';
-import { WalletProvider } from './WalletProvider';
+// import { AuthedPrefetchesProvider } from './AuthedPrefetchesProvider';
+import { FrameContextProvider } from "./FrameContextProvider";
+import { FrameSplashProvider } from "./FrameSplashProvider";
+import { WalletProvider } from "./WalletProvider";
+import { SendDrawerProvider } from "./SendDrawerProvider";
+import { GlobalSendDrawer } from "@/components/app/sendDrawer";
+import { ScanDrawerProvider } from "./ScanDrawerProvider";
+import { QRCodeScannerDrawerWrapper } from "@/components/app/QRCodeScannerDrawerWrapper";
+import { Toaster } from "sonner";
 
 const client = new QueryClient({
   defaultOptions: {
@@ -20,13 +25,18 @@ function Providers({ children }: React.PropsWithChildren) {
     <FrameSplashProvider>
       <FrameContextProvider>
         <QueryClientProvider client={client}>
-          <AuthedPrefetchesProvider>
-            <WalletProvider>
-            {/* */}
-            {children}
-            {/* */}
-            </WalletProvider>
-          </AuthedPrefetchesProvider>
+          <WalletProvider>
+            <ScanDrawerProvider>
+              <SendDrawerProvider>
+                <Toaster richColors position="top-center" />
+                <>
+                  {children}
+                  <GlobalSendDrawer />
+                  <QRCodeScannerDrawerWrapper />
+                </>
+              </SendDrawerProvider>
+            </ScanDrawerProvider>
+          </WalletProvider>
         </QueryClientProvider>
       </FrameContextProvider>
     </FrameSplashProvider>

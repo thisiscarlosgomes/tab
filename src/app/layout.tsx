@@ -1,39 +1,51 @@
 import "./globals.css";
 
 import type { Metadata } from "next";
-
+import type { Viewport } from "next";
 import { Providers } from "@/providers/Providers";
+// import { FooterNav } from "@/components/footer-nav";
+// import { Header } from "@/components/header";
+import { Analytics } from "@vercel/analytics/react";
+import { AppShell } from "@/components/AppShell";
 
 const frame = {
   version: "next",
-  imageUrl: `https://wc-featured-mint.vercel.app/api/og`,
+  imageUrl: `https://tab.castfriends.com/cover.png`,
   button: {
-    title: "Collect",
+    title: "launch tab",
     action: {
       type: "launch_frame",
-      name: "Mints",
-      url: "https://mint.warpcast.com/",
-      iconImageUrl: "https://mint.warpcast.com/app.png",
-      splashImageUrl: "https://mint.warpcast.com/splash.png",
-      splashBackgroundColor: "#ffffff",
+      name: "tab",
+      url: "https://tab.castfriends.com",
+      iconImageUrl: "https://tab.castfriends.com/app.png",
+      splashImageUrl: "https://tab.castfriends.com/splash.png",
+      splashBackgroundColor: "#201E23",
     },
   },
 };
 
 export async function generateMetadata(): Promise<Metadata> {
   return {
-    metadataBase: new URL("https://mint.warpcast.com/"),
-    title: "Mints",
+    metadataBase: new URL("https://tab.castfriends.com"),
+    title: "tab",
     openGraph: {
-      title: "Warpcast",
-      description: "Mints",
-      images: "https://wc-featured-mint.vercel.app/api/og",
+      title: "tab",
+      description: "Social payments on Farcaster",
+      images: "https://tab.castfriends.com/cover.png",
     },
+    manifest: "/manifest.json",
+    icons: "/app.png",
     other: {
       "fc:frame": JSON.stringify(frame),
     },
   };
 }
+
+export const viewport: Viewport = {
+  initialScale: 1,
+  maximumScale: 1,
+  width: "device-width",
+};
 
 // eslint-disable-next-line import/no-default-export
 export default function RootLayout({
@@ -42,7 +54,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en">
+    <html lang="en" className="dark">
       <head>
         <link rel="preconnect" href="https://fonts.googleapis.com" />
         <link rel="preconnect" href="https://fonts.gstatic.com" />
@@ -53,11 +65,21 @@ export default function RootLayout({
         />
         <meta
           name="viewport"
-          content="width=device-width, initial-scale=1.0, viewport-fit=cover"
+          content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no"
         />
       </head>
-      <body className="antialiased scrollbar-vert Text/Faint">
-        <Providers>{children}</Providers>
+      <body className="antialiased Text/Faint bg-background text-foreground">
+        <Providers>
+          {/* <Header /> */}
+          <AppShell>{children}</AppShell>
+          <Analytics />
+          {/* <FooterNav /> */}
+        </Providers>
+        {/* <Providers>
+          <Header />
+          {children}
+          <FooterNav />
+        </Providers> */}
       </body>
     </html>
   );

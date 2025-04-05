@@ -1,8 +1,9 @@
 import type { Config } from "tailwindcss";
+import scrollbarHide from 'tailwind-scrollbar-hide'
 
 // eslint-disable-next-line import/no-default-export
 export default {
-  darkMode: "media",
+  darkMode: "class",
   content: [
     "./src/pages/**/*.{js,ts,jsx,tsx,mdx}",
     "./src/components/**/*.{js,ts,jsx,tsx,mdx}",
@@ -10,6 +11,15 @@ export default {
   ],
   theme: {
     extend: {
+      keyframes: {
+        'scan-line': {
+          '0%': { top: '0%' },
+          '100%': { top: '100%' },
+        },
+      },
+      animation: {
+        'scan-line': 'scan-line 3s ease-in-out infinite',
+      },
       colors: {
         background: "var(--background)",
         foreground: "var(--foreground)",
@@ -56,12 +66,13 @@ export default {
         ring: "var(--ring)",
       },
       borderRadius: {
-        xl: "calc(var(--radius) + 4px)",
+        xl: "calc(var(--radius) + 5px)",
         lg: "var(--radius)",
-        md: "calc(var(--radius) - 2px)",
-        sm: "calc(var(--radius) - 4px)",
+        md: "calc(var(--radius) - 3px)",
+        sm: "calc(var(--radius) - 2px)",
       },
     },
   },
-  plugins: [require("tailwindcss-animate")],
+  plugins: [require("tailwindcss-animate"),scrollbarHide],
+ 
 } satisfies Config;

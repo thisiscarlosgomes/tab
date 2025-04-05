@@ -45,3 +45,4 @@ Brewfile.lock.json
 
 # IDE configs
 .idea/
+.vercel

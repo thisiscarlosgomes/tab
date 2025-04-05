@@ -1,0 +1,16 @@
+{
+    "name": "tab",
+    "short_name": "Social payments on Farcaster",
+    "start_url": "/",
+    "display": "standalone",
+    "background_color": "#1C1B1D",
+    "theme_color": "#1C1B1D",
+    "icons": [
+      {
+        "src": "/app.png",
+        "sizes": "250x250",
+        "type": "image/png"
+      }
+    ]
+  }
+  
