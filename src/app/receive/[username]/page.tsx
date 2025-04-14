@@ -46,7 +46,7 @@ export default function ReceivePage() {
       : "";
 
   return (
-    <div className="min-h-screen w-full flex flex-col items-center justify-start p-6 pt-20 pb-32 overflow-y-auto hide-scrollbar">
+    <div className="min-h-screen w-full flex flex-col items-center justify-start p-6 pt-20 pb-32 overflow-y-auto scrollbar-hide">
       <h1 className="text-xl font-medium mb-4 text-center">Request ETH</h1>
 
       {valid ? (
@@ -76,7 +76,7 @@ export default function ReceivePage() {
               logoOpacity={1}
               removeQrCodeBehindLogo={true}
             />
-            <div className="flex items-center justify-center font-medium p-4 text-black rounded-2xl w-full bg-primary hover:opacity-80 transition-all">
+            <div className="hidden flex items-center justify-center font-medium p-4 text-black rounded-2xl w-full bg-primary hover:opacity-80 transition-all">
               <QrCode className="w-5 h-5 mr-2" />
               Scan using Tab
             </div>

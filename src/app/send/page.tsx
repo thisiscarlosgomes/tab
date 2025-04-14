@@ -147,7 +147,7 @@ export default function SendPage() {
                       <img
                         src={
                           user.pfp_url ||
-                          `https://api.dicebear.com/7.x/fun-emoji/svg?seed=${user.username}`
+                          `https://api.dicebear.com/9.x/glass/svg?seed=${user.username}`
                         }
                         alt={user.username}
                         className="w-8 h-8 rounded-full"

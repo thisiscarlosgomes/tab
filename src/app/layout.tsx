@@ -58,7 +58,6 @@ export default function RootLayout({
       <head>
         <link rel="preconnect" href="https://fonts.googleapis.com" />
         <link rel="preconnect" href="https://fonts.gstatic.com" />
-        {/* eslint-disable-next-line @next/next/google-font-display */}
         <link
           href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=block"
           rel="stylesheet"
@@ -68,7 +67,7 @@ export default function RootLayout({
           content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no"
         />
       </head>
-      <body className="antialiased Text/Faint bg-background text-foreground">
+      <body className="antialiased Text/Faint bg-background text-foreground scrollbar-vert">
         <Providers>
           {/* <Header /> */}
           <AppShell>{children}</AppShell>

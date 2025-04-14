@@ -33,15 +33,6 @@ export function PaymentSuccessDrawer({
   const { address } = useAccount();
   const hasGivenPoints = useRef(false); // prevent repeat calls
 
-  // const handleAddFrame = useCallback(async () => {
-  //   if (isOpen) setIsOpen(false);
-  //   sdk.actions.addFrame();
-
-  //   if (address) {
-  //     await useAddPoints(address, "add_frame");
-  //   }
-  // }, [setIsOpen, isOpen, address]);
-
   const handleAddFrame = useCallback(async () => {
     if (isOpen) setIsOpen(false);
 
@@ -55,6 +46,8 @@ export function PaymentSuccessDrawer({
     }, 4000); // 4 seconds buffer
   }, [setIsOpen, isOpen, address]);
 
+
+
   const handleShare = useCallback(async () => {
     if (isOpen) setIsOpen(false);
     const url = getShareUrl({ name, description });
@@ -64,6 +57,9 @@ export function PaymentSuccessDrawer({
       await useAddPoints(address, "share_frame");
     }
   }, [name, description, setIsOpen, isOpen, address]);
+
+
+  
 
   useEffect(() => {
     if (isOpen) {
@@ -108,16 +104,15 @@ export function PaymentSuccessDrawer({
             )}
 
             {txHash && (
-              <a
-                href={`https://basescan.org/tx/${txHash}`}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="w-full"
+              <Button
+                variant="outline"
+                className="w-full mt-4 mb-2"
+                onClick={() => {
+                  sdk.actions.openUrl(`https://basescan.org/tx/${txHash}`);
+                }}
               >
-                <Button variant="outline" className="w-full mt-4 mb-2">
-                  View on Basescan
-                </Button>
-              </a>
+                View on Basescan
+              </Button>
             )}
 
             {frameAdded ? (
@@ -130,7 +125,7 @@ export function PaymentSuccessDrawer({
               </Button>
             ) : (
               <Button className="w-full" onClick={handleShare}>
-                Share
+                Let the feed know
               </Button>
             )}
           </div>

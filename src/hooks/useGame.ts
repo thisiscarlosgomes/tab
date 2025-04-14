@@ -21,8 +21,8 @@ interface GameState {
   adminOnlySpin: boolean;
   paid?: Paid[];
   createdAt?: string; // ✅ Add this line to capture timestamp
+  spinToken: string;
 }
-
 
 export function useGame(roomId: string, pollInterval = 3000) {
   const [game, setGame] = useState<GameState | null>(null);

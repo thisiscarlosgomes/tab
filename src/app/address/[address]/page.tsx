@@ -44,8 +44,8 @@ export default function ReceiveByAddressPage() {
 
 
   return (
-    <div className="min-h-screen w-full flex flex-col items-center justify-start p-6 pt-20 pb-32 overflow-y-auto hide-scrollbar">
-      <h1 className="text-xl font-medium mb-4 text-center">Request ETH</h1>
+    <div className="min-h-screen w-full flex flex-col items-center justify-start p-6 pt-20 pb-32 overflow-y-auto scrollbar-hide">
+      <h1 className="text-xl font-medium mb-4 text-center">Pay with tab</h1>
 
       {valid ? (
        <div className="w-full bg-card rounded-3xl p-4 py-8 flex flex-col items-center">
@@ -59,9 +59,9 @@ export default function ReceiveByAddressPage() {
               logoOpacity={1}
               removeQrCodeBehindLogo={true}
             />
-            <div className="font-medium p-4 text-center bg-primary text-black rounded-2xl w-full hover:opacity-80 transition-all">
+            {/* <div className="font-medium p-4 text-center bg-primary text-black rounded-2xl w-full hover:opacity-80 transition-all">
               Scan using tab
-            </div>
+            </div> */}
           </div>
 
           {username && (

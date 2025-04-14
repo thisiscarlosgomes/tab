@@ -3,13 +3,9 @@
 import { useEffect, useState, useCallback } from "react";
 import { useAccount } from "wagmi";
 import { useRouter } from "next/navigation";
-import {
-  ScrollText,
-  BadgeDollarSign,
-  Rows,
-  Banknote,
-} from "lucide-react";
+import { ScrollText, BadgeDollarSign, Rows, Banknote } from "lucide-react";
 import sdk from "@farcaster/frame-sdk";
+import { Loader } from "lucide-react";
 // import { Button } from "@/components/ui/button";
 
 interface SplitBill {
@@ -20,6 +16,8 @@ interface SplitBill {
   creator: string;
   amount: number;
   people: number;
+  createdAt: string;
+  token?: string; // ✅ add this
 }
 
 interface Room {
@@ -120,31 +118,8 @@ export default function ProfilePage() {
   };
 
   return (
-    <div className="min-h-screen w-full flex flex-col items-center justify-start p-4 pt-16 pb-32 overflow-y-auto hide-scrollbar">
+    <div className="min-h-screen w-full flex flex-col items-center justify-start p-4 pt-16 pb-32 overflow-y-auto scrollbar-hide">
       <div className="mt-4 w-full max-w-md">
-        {/* {isConnected && (
-          <div className="flex w-full gap-2 mb-4">
-            <Button
-              onClick={() => router.push(`/receive/${username}`)}
-              className="w-1/2 bg-primary"
-            >
-              <QrCode className="w-5 h-5 mr-2" />
-              Request ETH
-            </Button>
-            <Button
-              onClick={() => {
-                if (!address) return;
-                navigator.clipboard.writeText(address);
-                setCopied(true);
-                setTimeout(() => setCopied(false), 2000);
-              }}
-              className="w-1/2 bg-secondary text-white"
-            >
-              {copied ? "Copied!" : "Copy Address"}
-            </Button>
-          </div>
-        )} */}
-
         <div className="grid grid-cols-2 gap-2 mb-2">
           <div className="p-4 rounded-xl bg-blue-300 text-blue-800 flex items-center space-x-3 shadow-sm">
             <ScrollText className="w-7 h-7" />
@@ -182,7 +157,9 @@ export default function ProfilePage() {
         {/* Rooms Section */}
         <p className="mb-4 mt-8 text-xl font-medium ml-2">Tables</p>
         {isLoading ? (
-          <p className="text-white/30 text-center">Loading rooms...</p>
+          <div className="flex flex-1 items-center justify-center min-h-[10vh]">
+            <Loader className="w-8 h-8 animate-spin text-white/30" />
+          </div>
         ) : userRooms.length === 0 ? (
           <p className="text-white/30 text-center">
             No tables found. Join or create one!
@@ -227,7 +204,7 @@ export default function ProfilePage() {
                           key={index}
                           src={
                             member.pfp ||
-                            `https://api.dicebear.com/7.x/fun-emoji/svg?seed=${member.name}`
+                            `https://api.dicebear.com/9.x/glass/svg?seed=${member.name}`
                           }
                           alt={member.name}
                           className="w-6 h-6 rounded-full border-2 border-background object-cover"
@@ -249,13 +226,24 @@ export default function ProfilePage() {
         {/* Bills Section */}
         <p className="mb-4 mt-8 text-xl font-medium ml-2">Splits</p>
         {isLoading ? (
-          <p className="text-white/30 text-center">Loading bills...</p>
+          <div className="flex flex-1 items-center justify-center min-h-[10vh]">
+            <Loader className="w-8 h-8 animate-spin text-white/30" />
+          </div>
         ) : bills.length === 0 ? (
           <p className="text-white/30 text-center">No bills yet.</p>
         ) : (
           <ul>
             {bills.map(
-              ({ splitId, code, description, creator, amount, people }) => {
+              ({
+                splitId,
+                code,
+                description,
+                creator,
+                amount,
+                people,
+                createdAt,
+                token,
+              }) => {
                 const isOwner =
                   creator.toLowerCase() === address?.toLowerCase();
                 return (
@@ -280,7 +268,7 @@ export default function ProfilePage() {
                           )}
                         </div>
                         <p className="text-sm text-white/30">
-                          {new Date().toLocaleDateString(undefined, {
+                          {new Date(createdAt).toLocaleDateString(undefined, {
                             month: "short",
                             day: "numeric",
                             year: "numeric",
@@ -291,7 +279,7 @@ export default function ProfilePage() {
                       {/* Right: amount + people */}
                       <div className="text-right space-y-1">
                         <p className="text-lg text-primary font-medium">
-                          {amount} ETH
+                          {amount} {token ?? "ETH"}
                         </p>
                         <p className="text-sm text-white/30">
                           Split by {people} people
@@ -309,7 +297,7 @@ export default function ProfilePage() {
                       onMouseDown={(e) => {
                         e.stopPropagation();
                       }}
-                      className="text-base text-primary bg-white/5 p-4 w-full rounded-lg hover:bg-white/10 transition"
+                      className="hidden text-base text-primary bg-white/5 p-4 w-full rounded-lg hover:bg-white/10 transition"
                     >
                       {copiedCode === code ? "Copied!" : `Copy Code`}
                     </button>

@@ -10,6 +10,11 @@ import { PaymentSuccessDrawer } from "@/components/app/PaymentSuccessDrawer";
 import sdk from "@farcaster/frame-sdk";
 import { toast } from "sonner";
 import { NumericFormat } from "react-number-format";
+import { tokenList } from "@/lib/tokens";
+import { getTokenPrices } from "@/lib/getTokenPrices";
+import { getTokenBalance } from "@/lib/getTokenBalance";
+import { useWriteContract } from "wagmi";
+import { erc20Abi, parseUnits } from "viem";
 
 type FarcasterUser = {
   fid: number;
@@ -34,20 +39,35 @@ export function SendToUserDrawer({
   isOpen: boolean;
   onOpenChange: (v: boolean) => void;
 }) {
-  const { isConnected } = useAccount();
+  const { isConnected, address: userAddress } = useAccount(); // Get the connected user's address
   const { connect } = useConnect();
   const { sendTransactionAsync } = useSendTransaction();
 
-  const [amount, setAmount] = useState("0.00");
+  const [amount, setAmount] = useState("0");
   const [message, setMessage] = useState("💸");
   const [sendStatus, setSendStatus] = useState<SendStatus>("idle");
-
+  const [sending, setSending] = useState(false);
   const [showSuccess, setShowSuccess] = useState(false);
   const [lastTxHash, setLastTxHash] = useState<string | null>(null);
   const [lastRecipientUsername, setLastRecipientUsername] = useState<
     string | null
   >(null);
-  const [ethPriceUsd, setEthPriceUsd] = useState<number | null>(null);
+  const [tokenPrices, setTokenPrices] = useState<Record<string, number>>({});
+  const [tokenBalances, setTokenBalances] = useState<Record<string, string>>(
+    {}
+  );
+  const [selectedToken, setSelectedToken] = useState<"ETH" | "USDC" | "TAB">(
+    "ETH"
+  );
+
+  const { writeContractAsync } = useWriteContract();
+
+  const balance = parseFloat(tokenBalances[selectedToken] || "0");
+  const parsedAmount = parseFloat(amount);
+  const isInsufficient = parsedAmount > balance;
+
+  const isDisabled =
+    sending || isNaN(parsedAmount) || parsedAmount <= 0 || isInsufficient;
 
   useEffect(() => {
     if (!isOpen) {
@@ -59,51 +79,74 @@ export function SendToUserDrawer({
   if (!user) return null;
 
   useEffect(() => {
-    const fetchPrice = async () => {
-      try {
-        const res = await fetch(
-          "https://api.coingecko.com/api/v3/simple/price?ids=ethereum&vs_currencies=usd"
-        );
-        const data = await res.json();
-        setEthPriceUsd(data.ethereum.usd);
-      } catch (e) {
-        console.error("Failed to fetch ETH price", e);
+    if (!isOpen || !userAddress) return;
+
+    const fetchBalancesAndPrices = async () => {
+      const prices = await getTokenPrices(); // Fetch token prices
+      setTokenPrices(prices);
+
+      const balances: Record<string, string> = {};
+      for (const token of tokenList) {
+        const balance = await getTokenBalance({
+          tokenAddress: token.address as `0x${string}` | undefined,
+          userAddress: userAddress, // Get balance of the sender (user)
+          decimals: token.decimals,
+        });
+        balances[token.name] = balance;
       }
+      setTokenBalances(balances);
     };
 
-    fetchPrice();
-  }, []);
-
-  const amountUsd =
-    ethPriceUsd && parseFloat(amount) > 0
-      ? (parseFloat(amount) * ethPriceUsd).toFixed(2)
-      : "0.00";
+    fetchBalancesAndPrices();
+  }, [isOpen, userAddress]);
 
   const handleSend = async () => {
-    if (!user.verified_addresses?.primary?.eth_address) return;
     const parsedAmount = parseFloat(amount);
+    if (!user?.verified_addresses?.primary?.eth_address) return;
     if (isNaN(parsedAmount) || parsedAmount <= 0) return;
     if (!isConnected) await connect({ connector: farcasterFrame() });
 
     setSendStatus("confirming");
+    setSending(true);
+
+    const recipient = user.verified_addresses.primary
+      .eth_address as `0x${string}`;
+    const token = tokenList.find((t) => t.name === selectedToken);
+    const decimals = token?.decimals ?? 18;
+    const rawAmount = parseUnits(amount, decimals);
 
     try {
-      const txHash = await sendTransactionAsync({
-        to: user.verified_addresses.primary.eth_address as `0x${string}`,
-        value: BigInt(parsedAmount * 1e18),
-        chainId: 8453,
-      });
+      let txHash: `0x${string}`;
+
+      if (selectedToken === "ETH") {
+        const tx = await sendTransactionAsync({
+          to: recipient,
+          value: rawAmount,
+          chainId: 8453,
+        });
+        txHash = tx;
+      } else {
+        if (!token?.address) throw new Error("Token address missing");
+
+        const tx = await writeContractAsync({
+          address: token.address as `0x${string}`,
+          abi: erc20Abi,
+          functionName: "transfer",
+          args: [recipient, rawAmount],
+          chainId: 8453,
+        });
+        txHash = tx;
+      }
 
       setSendStatus("sending");
-
       setLastTxHash(txHash);
       setLastRecipientUsername(user.username);
       setShowSuccess(true);
 
+      // Send notification to recipient
       const context = await sdk.context;
       const senderUsername = context.user?.username;
-
-      const notifRes = await fetch("/api/send-notif", {
+      await fetch("/api/send-notif", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -113,17 +156,6 @@ export function SendToUserDrawer({
           message,
         }),
       });
-
-      const notifJson = await notifRes.json();
-      console.log("[SendToUserDrawer notif result]", notifJson);
-
-      if (notifRes.ok) {
-        toast.success("Recipient has been notified.");
-      } else {
-        toast.warning(
-          "Payment sent, but notification may not have been delivered."
-        );
-      }
 
       setTimeout(() => {
         onOpenChange(false);
@@ -135,6 +167,25 @@ export function SendToUserDrawer({
     }
   };
 
+  const price = tokenPrices[selectedToken || "ETH"];
+  const formatUsd = (usd: number) =>
+    usd >= 0.01 ? usd.toFixed(2) : usd.toPrecision(2);
+  const amountUsd =
+    price && parseFloat(amount) > 0
+      ? formatUsd(parseFloat(amount) * price)
+      : "0";
+
+  const formatAmount = (value: string) => {
+    const num = parseFloat(value);
+    if (isNaN(num)) return "0";
+    return num.toLocaleString("en-US", {
+      minimumFractionDigits: 0,
+      maximumFractionDigits: 4,
+    });
+  };
+
+  const selectedTokenMeta = tokenList.find((t) => t.name === selectedToken);
+
   return (
     <>
       <Drawer.Root
@@ -144,47 +195,64 @@ export function SendToUserDrawer({
       >
         <Drawer.Portal>
           <Drawer.Overlay className="fixed inset-0 bg-black/60 backdrop-blur-sm z-20" />
-          <Drawer.Content className="space-y-6 p-4 scroll-smooth z-50 fixed top-[80px] left-0 right-0 bottom-0 bg-background p-0 rounded-t-3xl flex flex-col">
+          <Drawer.Content className="space-y-4 p-4 scroll-smooth z-50 fixed top-[80px] left-0 right-0 bottom-0 bg-background p-0 rounded-t-3xl flex flex-col">
             <div
               aria-hidden
               className="mx-auto w-12 h-1.5 rounded-full bg-white/10 mb-1"
             />
             <Drawer.Title className="text-lg text-center font-medium">
               <div className="flex flex-col items-center space-y-2">
-                <img
-                  src={
-                    user.pfp_url ||
-                    `https://api.dicebear.com/7.x/fun-emoji/svg?seed=${user.username}`
-                  }
-                  alt={user.username}
-                  className="w-16 h-16 rounded-full object-cover mb-2"
-                />
+                <div className="mb-4 flex items-center justify-center relative">
+                  <img
+                    src={
+                      user.pfp_url ||
+                      `https://api.dicebear.com/9.x/glass/svg?seed=${user.username}`
+                    }
+                    alt={user.username}
+                    className="w-16 h-16 rounded-full object-cover"
+                  />
+                  {selectedTokenMeta?.icon && (
+                    <img
+                      src={selectedTokenMeta.icon}
+                      alt={selectedToken}
+                      className="absolute bottom-0 -right-2 w-6 h-6 rounded-full border-2 border-background"
+                    />
+                  )}
+                </div>
+
                 <span>
                   You're sending{" "}
                   <span className="text-primary">@{user.username}</span>
                 </span>
-                <p className="text-white/30 break-all text-center">
+                <p className="hidden text-white/30 break-all text-center">
                   {user.verified_addresses?.primary?.eth_address
                     ? shortAddress(user.verified_addresses.primary.eth_address)
                     : "No address"}
                 </p>
               </div>
             </Drawer.Title>
-            {/* <div>
-              <input
-                type="text"
-                inputMode="decimal"
-                value={amount}
-                onChange={(e) => {
-                  const val = e.target.value;
-                  if (/^[0-9]*[.]?[0-9]*$/.test(val)) setAmount(val);
-                }}
-                className="text-6xl bg-transparent text-center text-primary font-medium outline-none w-full"
-              />
-              <p className="text-center text-white/30 text-sm mt-1">
-                ≈ ${amountUsd}
-              </p>
-            </div> */}
+
+            <div className="space-y-1">
+              <div className="grid grid-cols-3 gap-2">
+                {tokenList.map((token) => (
+                  <button
+                    key={token.name}
+                    onClick={() =>
+                      setSelectedToken(token.name as "ETH" | "USDC" | "TAB")
+                    }
+                    className={`w-full text-center py-2 rounded-sm border-2 border-white/5 ${
+                      selectedToken === token.name
+                        ? "bg-white/5 text-primary"
+                        : "bg-background text-white/30"
+                    }`}
+                  >
+                    <div className="flex items-center justify-center space-x-2">
+                      <span>{token.name}</span>
+                    </div>
+                  </button>
+                ))}
+              </div>
+            </div>
 
             <div className="flex flex-col">
               <NumericFormat
@@ -192,19 +260,15 @@ export function SendToUserDrawer({
                 pattern="[0-9]*"
                 value={amount}
                 onValueChange={(values) => {
-                  setAmount(values.value); // raw number string (e.g. "0.01")
+                  setAmount(values.value);
                 }}
                 thousandSeparator
                 allowNegative={false}
                 allowLeadingZeros={false}
                 decimalScale={4}
-                suffix=" ETH"
-                placeholder="0.00"
-                className={`text-6xl bg-transparent text-center font-medium outline-none w-full placeholder-white/20 ${
-                  amount === "" || amount === "0.00"
-                    ? "text-white/20"
-                    : "text-primary"
-                }`}
+                suffix={` ${selectedToken}`}
+                placeholder="0"
+                className="text-5xl bg-transparent text-center font-medium outline-none w-full placeholder-white/20 text-primary"
               />
 
               <p className="text-center text-white/30 text-base mt-1">
@@ -212,15 +276,9 @@ export function SendToUserDrawer({
               </p>
             </div>
 
-            {/* <textarea
-              value={message}
-              onChange={(e) => setMessage(e.target.value)}
-              placeholder={`Add note (private notification to ${user?.username})`}
-              className="w-full rounded-2xl bg-white/5 text-white placeholder-white/20 p-4 resize-none"
-            /> */}
-
             <div className="relative w-full">
               <textarea
+                rows={3}
                 value={message}
                 onChange={(e) => setMessage(e.target.value)}
                 placeholder="Add note"
@@ -233,7 +291,7 @@ export function SendToUserDrawer({
 
             <Button
               onClick={handleSend}
-              disabled={sendStatus !== "idle"}
+              disabled={isDisabled}
               className="w-full bg-primary"
             >
               {sendStatus === "confirming"
@@ -242,6 +300,17 @@ export function SendToUserDrawer({
                   ? "Sending..."
                   : `Send ${amount} ETH`}
             </Button>
+
+            <p className="text-center text-white/30 text-sm mt-1">
+              Balance: {formatAmount(tokenBalances[selectedToken] || "0")}{" "}
+              {selectedToken}
+              <br />
+              {isInsufficient && (
+                <span className="text-center text-sm text-red-400">
+                  Insufficient balance
+                </span>
+              )}
+            </p>
           </Drawer.Content>
         </Drawer.Portal>
       </Drawer.Root>

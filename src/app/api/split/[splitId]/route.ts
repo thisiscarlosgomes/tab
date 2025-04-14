@@ -40,9 +40,13 @@ export async function POST(req: NextRequest) {
   const collection = db.collection("a-split-bill");
 
   const body = await req.json();
-  const { creator, description, totalAmount, numPeople } = body;
+  const { creator, description, totalAmount, numPeople, token } = body;
 
-  if (!creator || !description || !totalAmount || !numPeople) {
+  // if (!creator || !description || !totalAmount || !numPeople) {
+  //   return Response.json({ error: "Missing required fields" }, { status: 400 });
+  // }
+
+  if (!creator || !description || !totalAmount || !numPeople || !token) {
     return Response.json({ error: "Missing required fields" }, { status: 400 });
   }
 
@@ -66,6 +70,7 @@ export async function POST(req: NextRequest) {
     description,
     totalAmount: parseFloat(totalAmount),
     numPeople: parseInt(numPeople, 10),
+    token, // ✅ Add this
     participants: [],
     paid: [],
     createdAt: new Date(),
@@ -100,6 +105,8 @@ export async function PATCH(req: NextRequest) {
         name: string;
         txHash: string;
         status: string; // Add status here
+        token: string; // Optional enhancement
+        timestamp?: Date;
       };
     };
   } = {};
@@ -116,7 +123,9 @@ export async function PATCH(req: NextRequest) {
         address: payment.address,
         name: payment.name,
         txHash: payment.txHash,
-        status: payment.status || "paid", // Default to "paid" if no status is provided
+        status: payment.status || "paid",
+        token: payment.token,
+        timestamp: new Date(), // ✅ important!
       },
     };
   }

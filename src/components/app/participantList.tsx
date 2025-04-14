@@ -1,5 +1,7 @@
+// components/app/participantList.tsx
 import { Avatar, AvatarImage } from "@/components/ui/avatar";
 import { shortAddress } from "@/lib/shortAddress";
+import { BellRing } from "lucide-react";
 
 interface Participant {
   name: string;
@@ -11,15 +13,19 @@ interface Participant {
 interface ParticipantListProps {
   participants: Participant[];
   adminAddress: string;
+  isAdmin?: boolean;
+  onNotify?: (fid: string) => void;
 }
 
 export function ParticipantList({
   participants,
   adminAddress,
+  isAdmin,
+  onNotify,
 }: ParticipantListProps) {
   return (
     <div className="border rounded-lg p-4">
-      <h2 className="text-md font-medium mb-2">In this Table</h2>
+      <h2 className="text-md font-medium mb-2">Members</h2>
       <ul className="space-y-2">
         {participants.map((p) => (
           <li
@@ -27,11 +33,11 @@ export function ParticipantList({
             className="flex items-center justify-between gap-2"
           >
             <div className="flex items-center gap-2">
-              <Avatar className="h-6 w-6 bg-secondary rounded-full">
+              <Avatar className="h-7 w-7 bg-secondary rounded-full">
                 <AvatarImage
                   src={
                     p.pfp ||
-                    `https://api.dicebear.com/7.x/fun-emoji/svg?seed=${p.name}`
+                    `https://api.dicebear.com/9.x/glass/svg?seed=${p.name}`
                   }
                   alt={p.name}
                   width={24}
@@ -50,6 +56,15 @@ export function ParticipantList({
                 <p className="text-sm opacity-30">{shortAddress(p.address)}</p>
               </div>
             </div>
+
+            {isAdmin && p.fid && p.address.toLowerCase() !== adminAddress.toLowerCase() && (
+              <button
+                onClick={() => onNotify?.(p.fid!)}
+                className="p-1 rounded-full hover:bg-white/10"
+              >
+                <BellRing className="w-4 h-4" />
+              </button>
+            )}
           </li>
         ))}
       </ul>

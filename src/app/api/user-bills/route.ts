@@ -8,14 +8,25 @@ interface Participant {
   pfp?: string;
 }
 
+interface Payment {
+  address: string;
+  name: string;
+  txHash: string;
+  status: string;
+  token?: string;
+}
+
 interface Bill {
   splitId: string;
   code: string;
   description: string;
   creator: { address: string };
   participants: Participant[];
+  paid?: Payment[];
   totalAmount: number;
   numPeople: number;
+  createdAt: Date;
+  token: string;
 }
 
 export async function GET(req: NextRequest) {
@@ -33,23 +44,26 @@ export async function GET(req: NextRequest) {
   const collection = db.collection("a-split-bill");
 
   const bills = (await collection
-
     .find({
       $or: [
         { "creator.address": address },
         { "participants.address": address },
       ],
     })
-    .collation({ locale: "en", strength: 2 }) // ← Add this
+    .collation({ locale: "en", strength: 2 })
     .project({
       splitId: 1,
       code: 1,
       description: 1,
       creator: 1,
       participants: 1,
+      paid: 1,
       totalAmount: 1,
       numPeople: 1,
+      createdAt: 1,
+      token: 1, // ✅ add this
     })
+
     .sort({ createdAt: -1 })
     .toArray()) as Bill[];
 
@@ -59,11 +73,14 @@ export async function GET(req: NextRequest) {
     description: bill.description,
     amount: bill.totalAmount,
     people: bill.numPeople,
+    createdAt: bill.createdAt,
+    token: bill.token || "ETH", // ✅ fallback to ETH if missing
     participants: (bill.participants || []).map((p) => ({
       name: p.name,
-      pfp: p.pfp || `https://api.dicebear.com/7.x/fun-emoji/svg?seed=${p.name}`,
+      pfp: p.pfp || `https://api.dicebear.com/9.x/glass/svg?seed=${p.name}`,
     })),
     creator: bill.creator.address,
+    paid: bill.paid || [],
   }));
 
   return Response.json({ bills: formattedBills });

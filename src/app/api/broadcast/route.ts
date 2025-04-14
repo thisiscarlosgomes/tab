@@ -82,12 +82,23 @@ export async function POST(_req: NextRequest) {
   for (let i = 0; i < users.length; i += BATCH_SIZE) {
     const batch = users.slice(i, i + BATCH_SIZE);
 
+    // const results = await Promise.allSettled(
+    //   batch.map((user) =>
+    //     sendFrameNotification({
+    //       fid: user.fid,
+    //       title: "📢tab v0.5 is live!",
+    //       body: "Big upgrade just dropped. Smoother UX, reminders, notifications, more stables support, and new ways to get paid. Try it out.",
+    //       targetUrl: "https://tab.castfriends.com",
+    //     })
+    //   )
+    // );
+
     const results = await Promise.allSettled(
       batch.map((user) =>
         sendFrameNotification({
           fid: user.fid,
-          title: "💸 Spin to Win",
-          body: "New day, new chance. Jump in and claim your slice of the pot.",
+          title: "📢 ICYMI, tab got an upgrade",
+          body: "smoother UX, reminders, cast notifs, more stables, new ways to get paid.",
           targetUrl: "https://tab.castfriends.com",
         })
       )

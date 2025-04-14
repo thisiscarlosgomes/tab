@@ -3,7 +3,7 @@
 import { usePathname } from "next/navigation";
 import clsx from "clsx";
 import { useEffect, useState } from "react";
-import { Home, Activity, Send } from "lucide-react";
+import { Home, Bell, Send } from "lucide-react";
 import sdk from "@farcaster/frame-sdk";
 import { useSendDrawer } from "@/providers/SendDrawerProvider";
 import Link from "next/link";
@@ -16,20 +16,6 @@ export function FooterNav() {
   const [animateHome, setAnimateHome] = useState(false);
   const [animateSend, setAnimateSend] = useState(false);
   const [animateActivity, setAnimateActivity] = useState(false);
-  // const [fid, setFid] = useState<number | null>(null);
-
-  // useEffect(() => {
-  //   const loadContext = async () => {
-  //     const context = await sdk.context;
-  //     const user = context?.user;
-  //     setPfpUrl(user?.pfpUrl ?? null);
-  //     setFid(user?.fid ?? null);
-  //     const fallbackSeed = `user-${user?.fid ?? "anon"}`;
-  //     setSeed(user?.username || fallbackSeed);
-  //   };
-  //   loadContext();
-  // }, []);
-  
 
   const handleAnimate = (
     setter: React.Dispatch<React.SetStateAction<boolean>>
@@ -94,7 +80,7 @@ export function FooterNav() {
             animateActivity && "animate-scale-bounce"
           )}
         >
-          <Activity className="w-7 h-7 mb-1" />
+          <Bell className="w-7 h-7 mb-1" />
         </span>
       ),
       onClick: () => handleAnimate(setAnimateActivity),
@@ -116,76 +102,8 @@ export function FooterNav() {
     },
   ];
 
-  // const navItems = [
-  //   {
-  //     href: "/",
-  //     label: "Home",
-  //     icon: (
-  //       <span
-  //         className={clsx("inline-block", animateHome && "animate-scale-bounce")}
-  //       >
-  //         <Home className="w-7 h-7 mb-1" />
-  //       </span>
-  //     ),
-  //     onClick: () => handleAnimate(setAnimateHome),
-  //   },
-  //   ...(fid === 2201
-  //     ? [
-  //         {
-  //           label: "Send",
-  //           icon: (
-  //             <span
-  //               className={clsx(
-  //                 "inline-block",
-  //                 animateSend && "animate-scale-bounce"
-  //               )}
-  //             >
-  //               <Send className="w-7 h-7 mb-1" />
-  //             </span>
-  //           ),
-  //           onClick: () => {
-  //             handleAnimate(setAnimateSend);
-  //             setTimeout(() => {
-  //               open();
-  //             }, 450);
-  //           },
-  //         },
-  //       ]
-  //     : []),
-  //   {
-  //     href: "/activity",
-  //     label: "Activity",
-  //     icon: (
-  //       <span
-  //         className={clsx(
-  //           "inline-block",
-  //           animateActivity && "animate-scale-bounce"
-  //         )}
-  //       >
-  //         <Activity className="w-7 h-7 mb-1" />
-  //       </span>
-  //     ),
-  //     onClick: () => handleAnimate(setAnimateActivity),
-  //   },
-  //   {
-  //     href: "/profile",
-  //     label: "Profile",
-  //     icon: pfpUrl ? (
-  //       <img src={pfpUrl} alt="User" className="w-7 h-7 mb-1 rounded-full" />
-  //     ) : (
-  //       <img
-  //         src={`https://api.dicebear.com/9.x/fun-emoji/svg?seed=${encodeURIComponent(
-  //           seed
-  //         )}`}
-  //         alt="Fallback Avatar"
-  //         className="w-7 h-7 mb-1 rounded-full"
-  //       />
-  //     ),
-  //   },
-  // ];
-
   return (
-    <footer className="fixed bottom-0 inset-x-0 bg-card p-5 pb-12 flex justify-around z-10">
+    <footer className="fixed bottom-0 inset-x-0 bg-card p-5 pb-8 flex justify-around z-10">
       {navItems.map(({ href, label, icon, onClick }) =>
         href ? (
           <Link
@@ -194,7 +112,7 @@ export function FooterNav() {
             onClick={onClick}
             className={clsx(
               "flex flex-col items-center text-xs",
-              pathname === href ? "text-white" : "text-white/40"
+              pathname === href ? "text-white" : "text-[#444444]"
             )}
           >
             {icon}
@@ -204,7 +122,7 @@ export function FooterNav() {
           <button
             key={label}
             onClick={onClick}
-            className="flex flex-col items-center text-xs text-white/40"
+            className="flex flex-col items-center text-xs text-[#444444]"
           >
             {icon}
             <span className="hidden">{label}</span>

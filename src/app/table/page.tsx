@@ -100,12 +100,16 @@ export default function SplitPage() {
   return (
     <div className="min-h-screen w-full flex items-center justify-center pb-24">
       <div className="w-full max-w-md p-6 flex flex-col space-y-4 rounded-lg">
-        <div className="mb-6 text-center">
+        <div className="flex flex-col items-center mb-4 mt-2 text-center">
+          <img
+            src="/pl.png"
+            alt="cover"
+            className="w-24 h-24 animate-slowSpin"
+          />
           <h1 className="text-2xl font-bold mb-2">New Pay Roulette</h1>
           <p className="text-white/40 px-2">
-            {/* Everyone joins the table, one person gets picked, and they cover the
-            bill. Fair? Maybe. Fun? Always. */}
-            Spin the table. One person pays. <br/>It’s random, it’s fun.
+            Spin the table. One person pays. <br />
+            It’s random and fun.
           </p>
         </div>
 

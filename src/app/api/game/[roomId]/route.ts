@@ -169,26 +169,22 @@ export async function PATCH(req: NextRequest) {
   const collection = db.collection("a-split-game");
 
   const body = await req.json();
-  const { address, recipient, amount, adminOnlySpin } = body;
-
-  // if (
-  //   !address ||
-  //   (recipient === undefined &&
-  //     amount === undefined &&
-  //     adminOnlySpin === undefined &&
-  //     !body.payment)
-  // ) {
-  //   return new Response(
-  //     JSON.stringify({ error: "Missing or invalid fields" }),
-  //     { status: 400 }
-  //   );
-  // }
+  const {
+    address,
+    recipient,
+    amount,
+    adminOnlySpin,
+    spinToken,
+    markPickedAsPaid,
+  } = body;
 
   if (
-    (!body.address && !body.payment?.address) ||
+    (!address && !body.payment?.address) ||
     (recipient === undefined &&
       amount === undefined &&
       adminOnlySpin === undefined &&
+      spinToken === undefined &&
+      !markPickedAsPaid &&
       !body.payment)
   ) {
     return new Response(
@@ -202,17 +198,13 @@ export async function PATCH(req: NextRequest) {
     { collation: { locale: "en", strength: 2 } }
   );
 
-  // if (!game || game.admin.toLowerCase() !== address.toLowerCase()) {
-  //   return new Response(JSON.stringify({ error: "Not authorized" }), { status: 403 });
-  // }
-
   if (!game) {
     return new Response(JSON.stringify({ error: "Room not found" }), {
       status: 404,
     });
   }
 
-  const isAdmin = game.admin.toLowerCase() === address.toLowerCase();
+  const isAdmin = game.admin.toLowerCase() === address?.toLowerCase();
 
   // If it's a payment, allow it even if not admin
   const isPaymentUpdate = !!body.payment?.address && !!body.payment?.txHash;
@@ -228,6 +220,7 @@ export async function PATCH(req: NextRequest) {
     recipient: string;
     amount: number;
     adminOnlySpin: boolean;
+    spinToken: string;
   }> = {};
 
   if (recipient) {
@@ -245,29 +238,43 @@ export async function PATCH(req: NextRequest) {
     updateFields.adminOnlySpin = adminOnlySpin;
   }
 
+  if (spinToken && typeof spinToken === "string") {
+    updateFields.spinToken = spinToken;
+  }
+
   const updateOps: {
-    $set?: Partial<{
-      recipient: string;
-      amount: number;
-      adminOnlySpin: boolean;
-    }>;
+    $set?: typeof updateFields;
     $addToSet?: {
       paid?: {
         address: string;
         name: string;
         txHash: string;
-        timestamp?: Date; // ✅ allow optional timestamp
+        timestamp?: Date;
       };
     };
   } = {};
 
+  // ✅ Add onchain payment
   if (body.payment?.address && body.payment?.txHash) {
     updateOps.$addToSet = {
       paid: {
         address: body.payment.address,
         name: body.payment.name,
         txHash: body.payment.txHash,
-        timestamp: new Date(), // ✅ ADD THIS LINE
+        timestamp: new Date(),
+      },
+    };
+  }
+
+  // ✅ Add manual payment if requested and admin
+  if (isAdmin && markPickedAsPaid && game.chosen) {
+    updateOps.$addToSet = {
+      ...(updateOps.$addToSet || {}),
+      paid: {
+        address: game.chosen.address,
+        name: game.chosen.name,
+        txHash: "manual",
+        timestamp: new Date(),
       },
     };
   }

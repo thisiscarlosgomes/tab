@@ -1,5 +1,5 @@
 import type { Config } from "tailwindcss";
-import scrollbarHide from 'tailwind-scrollbar-hide'
+// import scrollbarHide from "tailwind-scrollbar-hide";
 
 // eslint-disable-next-line import/no-default-export
 export default {
@@ -12,14 +12,34 @@ export default {
   theme: {
     extend: {
       keyframes: {
-        'scan-line': {
-          '0%': { top: '0%' },
-          '100%': { top: '100%' },
+        "scan-line": {
+          "0%": { top: "0%" },
+          "100%": { top: "100%" },
         },
+        subtleBounce: {
+          "0%, 100%": { transform: "translateY(0)" },
+          "50%": { transform: "translateY(-5px)" }, // smaller bounce
+        },
+        wheelSpin: {
+          "0%, 24%": { transform: "rotate(0deg)" },
+          "25%": { transform: "rotate(90deg)" },
+          "45%": { transform: "rotate(180deg)" }, // pause
+          "50%": { transform: "rotate(90deg)" },
+          "70%": { transform: "rotate(270deg)" }, // pause
+          "75%": { transform: "rotate(180deg)" },
+          "95%": { transform: "rotate(270deg)" }, // pause
+          "100%": { transform: "rotate(360deg)" },
+        },
+
       },
       animation: {
-        'scan-line': 'scan-line 3s ease-in-out infinite',
+        "scan-line": "scan-line 3s ease-in-out infinite",
+        subtleBounce: "subtleBounce 1.2s infinite",
+        slowSpin: "spin 2s linear infinite", // <- custom slower spin
+        wheelSpin: "wheelSpin 3s ease-in-out infinite",
+
       },
+
       colors: {
         background: "var(--background)",
         foreground: "var(--foreground)",
@@ -71,8 +91,21 @@ export default {
         md: "calc(var(--radius) - 3px)",
         sm: "calc(var(--radius) - 2px)",
       },
+      fontFamily: {
+        sans: [
+          '"SF Pro Text"',
+          '"SF Pro Display"',
+          '-apple-system',
+          'BlinkMacSystemFont',
+          '"Inter"',
+          '"Segoe UI"',
+          'Roboto',
+          '"Helvetica Neue"',
+          'Arial',
+          'sans-serif',
+        ],
+      },
     },
   },
-  plugins: [require("tailwindcss-animate"),scrollbarHide],
- 
+  // plugins: [require("tailwindcss-animate"), scrollbarHide],
 } satisfies Config;

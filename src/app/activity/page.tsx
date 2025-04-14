@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useMemo } from "react";
 import { useAccount } from "wagmi";
 import {
   differenceInMinutes,
@@ -10,27 +10,35 @@ import {
   parseISO,
   isToday,
 } from "date-fns";
+import { shortAddress } from "@/lib/shortAddress";
+import sdk from "@farcaster/frame-sdk";
 
 import { useRouter } from "next/navigation";
-import { BadgePlus, UserPlus, Loader, ReceiptText } from "lucide-react";
+import { Loader } from "lucide-react";
 
 type ActivityType =
   | "created"
   | "joined"
   | "paid"
+  | "received" // ✅ add this
   | "room_created"
   | "room_joined"
-  | "room_paid";
+  | "room_paid"
+  | "room_received";
 
 interface ActivityItem {
   type: ActivityType;
   counterparty?: string;
   amount?: number;
+  token?: string;
   txHash?: string;
   description: string;
   splitId?: string;
   roomId?: string;
   timestamp: string;
+  recipient?: string; // <- ✅ optional
+  recipientUsername?: string; // <- ✅ optional
+  pfp?: string; // <- ✅ optional
 }
 
 export default function ActivityPage() {
@@ -38,6 +46,63 @@ export default function ActivityPage() {
   const [activity, setActivity] = useState<ActivityItem[]>([]);
   const [loading, setLoading] = useState(true);
   const router = useRouter();
+
+  const [friends, setFriends] = useState<string[]>([]);
+
+
+
+
+  
+
+  const [myUsername, setMyUsername] = useState<string | null>(null);
+
+  useEffect(() => {
+    const fetchUsername = async () => {
+      try {
+        const context = await sdk.context; // ✅ Await the context
+        setMyUsername(context.user?.username?.toLowerCase() ?? null);
+      } catch (err) {
+        console.error("Failed to get Farcaster username", err);
+      }
+    };
+
+    fetchUsername();
+  }, []);
+
+
+
+
+
+
+
+  useEffect(() => {
+    const fetchFriends = async () => {
+      if (!address) return;
+
+      try {
+        const context = await sdk.context;
+        const username = context.user?.username;
+        if (!username) return;
+
+        const res = await fetch(
+          `/api/neynar/user/following?username=${username}`
+        );
+        const data = await res.json();
+
+        const followedUsernames = Array.isArray(data)
+          ? data.map((entry) => entry.user?.username?.toLowerCase())
+          : [];
+
+        setFriends(followedUsernames);
+      } catch (err) {
+        console.error("Failed to fetch following list:", err);
+      }
+    };
+
+    fetchFriends();
+  }, [address]);
+
+  const friendsSet = useMemo(() => new Set(friends), [friends]);
 
   useEffect(() => {
     const fetchActivity = async () => {
@@ -52,8 +117,25 @@ export default function ActivityPage() {
     if (isConnected) fetchActivity();
   }, [isConnected, address]);
 
-  const grouped = activity.reduce(
+  const filteredActivity = activity.filter((item) => {
+    if (
+      ["paid", "received", "room_paid", "room_received"].includes(item.type)
+    ) {
+      return true;
+    }
+
+    if (item.type === "joined" || item.type === "room_joined") {
+      // someone else joined the user's bill or room
+      return true;
+    }
+
+    return false;
+  });
+
+  const grouped = filteredActivity.reduce(
     (acc, item) => {
+      if (!item.timestamp) return acc;
+
       const date = parseISO(item.timestamp);
       const dateStr = isToday(date) ? "Today" : format(date, "MMMM d, yyyy");
 
@@ -65,7 +147,7 @@ export default function ActivityPage() {
   );
 
   return (
-    <div className="min-h-screen w-full flex flex-col items-center justify-start p-4 pt-16 pb-32 overflow-y-auto hide-scrollbar">
+    <div className="min-h-screen w-full flex flex-col items-center justify-start p-4 pt-16 pb-32 overflow-y-auto scrollbar-hide">
       <div className="mt-4 w-full max-w-md">
         <h1 className="text-xl font-bold mb-4 text-center hidden">Activity</h1>
         {loading ? (
@@ -73,9 +155,17 @@ export default function ActivityPage() {
             <Loader className="w-8 h-8 animate-spin text-white/30" />
           </div>
         ) : activity.length === 0 ? (
-          <p className="text-white/30 text-center px-6 mt-8">
-            Quiet for now. Invite frens to split or spin.
-          </p>
+          <div className="flex flex-1 flex-col items-center justify-center min-h-[40vh]">
+            <div className="bg-white/5 rounded-sm p-6 shadow-sm w-full px-16 mx-8 max-w-[240px] mb-2" />
+            <div className="bg-white/5 rounded-sm p-6 shadow-sm w-full px-16 mx-8 max-w-[200px] mb-2" />
+
+            <p className="text-white/30 text-center text-base mt-2">
+              No activity yet. <br />
+              You’ll see notifications when you receive or send payments,
+              <br />
+              or when others join your tables or group bills.
+            </p>
+          </div>
         ) : (
           <>
             <div>
@@ -90,28 +180,61 @@ export default function ActivityPage() {
                       {items.map((item, idx) => {
                         const isRoom = item.type.startsWith("room_");
                         const label = (() => {
+                          if (
+                            item.type === "received" ||
+                            item.type === "room_received" ||
+                            item.type === "joined" ||
+                            item.type === "room_joined"
+                          ) {
+                            return item.counterparty
+                              ? `@${item.counterparty}`
+                              : "Someone";
+                          }
+
+                          if (
+                            item.type === "paid" ||
+                            item.type === "room_paid"
+                          ) {
+                            const isMe =
+                              item.recipient?.toLowerCase() ===
+                                address?.toLowerCase() ||
+                              item.recipientUsername?.toLowerCase() ===
+                                myUsername;
+
+                            return isMe
+                              ? "You"
+                              : item.recipientUsername
+                                ? `@${item.recipientUsername}`
+                                : item.counterparty
+                                  ? `@${item.counterparty}`
+                                  : item.recipient
+                                    ? shortAddress(item.recipient)
+                                    : "Someone";
+                          }
+
+                          return "You";
+                        })();
+
+                        const detail = (() => {
                           switch (item.type) {
-                            case "created":
-                              return "You created a split";
-                            case "joined":
-                              return "You joined a split";
+                            case "received":
+                            case "room_received":
+                              return `Paid you ${item.amount} ${item.token ?? "ETH"}`;
                             case "paid":
-                              return `You paid ${item.amount}`;
-                            case "room_created":
-                              return "You created a table";
-                            case "room_joined":
-                              return "You joined a table";
                             case "room_paid":
-                              return `You paid ${item.amount} in ${item.roomId}`;
+                              return `You paid ${item.amount} ${item.token ?? "ETH"}`;
+                            case "joined":
+                            case "room_joined":
+                              return "Joined your group bill";
                             default:
-                              return "";
+                              return item.description;
                           }
                         })();
 
                         return (
                           <li
                             key={idx}
-                            className="p-4 border-2 rounded-lg hover:bg-white/5 cursor-pointer"
+                            className="hover:bg-white/5 cursor-pointer p-3 border-2 border-white/10 rounded-lg flex justify-between items-center mb-3"
                             onClick={() =>
                               router.push(
                                 isRoom
@@ -120,9 +243,60 @@ export default function ActivityPage() {
                               )
                             }
                           >
-                            <div className="flex justify-between items-start mb-1 w-full">
-                              {/* Left: Label + Description + Tx */}
-                              <div className="flex flex-col">
+                            <div className="flex items-center gap-2">
+                              <div className="relative w-10 h-10 shrink-0">
+                                {(item.type === "paid" ||
+                                  item.type === "room_paid") &&
+                                item.recipientUsername ? (
+                                  // Show the recipient's avatar when you paid them
+                                  <img
+                                    src={item.pfp ?? "/splash.png"}
+                                    alt="pfp"
+                                    className="w-full h-full rounded-full object-cover"
+                                  />
+                                ) : (item.type === "received" ||
+                                    item.type === "room_received") &&
+                                  item.counterparty ? (
+                                  // Show the counterparty who paid you
+                                  <img
+                                    src={item.pfp ?? "/splash.png"}
+                                    alt="pfp"
+                                    className="w-full h-full rounded-full object-cover"
+                                  />
+                                ) : (item.type === "room_joined" ||
+                                    item.type === "joined") &&
+                                  item.counterparty ? (
+                                  // Show the counterparty who paid you
+                                  <img
+                                    src={item.pfp ?? "/splash.png"}
+                                    alt="pfp"
+                                    className="w-full h-full rounded-full object-cover"
+                                  />
+                                ) : (
+                                  <img
+                                    className="w-full h-full rounded-full object-cover"
+                                    src={`https://api.dicebear.com/9.x/glass/svg?seed=${item.counterparty ?? item.recipient ?? "anon"}`}
+                                  />
+                                )}
+                              </div>
+
+                              <div>
+                                <div className="text-sm font-medium text-white">
+                                  {label}
+                                  {friendsSet.has(
+                                    label.slice(1).toLowerCase()
+                                  ) && (
+                                    <span className="ml-1 text-xs text-violet-400 bg-violet-900/30 px-2 py-0.5 rounded-md">
+                                      Friend
+                                    </span>
+                                  )}
+                                </div>
+                                <div className="text-sm text-white/40">
+                                  {detail}
+                                </div>
+                              </div>
+
+                              {/* <div className="">
                                 <p className="text-white font-medium">
                                   {label}
                                 </p>
@@ -141,59 +315,41 @@ export default function ActivityPage() {
                                     tx: {item.txHash.slice(0, 8)}...
                                   </a>
                                 )}
-                              </div>
+                              </div> */}
+                            </div>
 
-                              {/* Right: Timestamp + Action */}
-                              <div className="flex flex-col items-end text-sm text-white/50 text-right ml-4">
-                                <span className="flex items-center gap-1 mt-0.5">
-                                  {(() => {
-                                    switch (item.type) {
-                                      case "created":
-                                      case "room_created":
-                                        return (
-                                          <>
-                                            <BadgePlus className="w-4 h-4 text-primary" />
-                                            <span>Created</span>
-                                          </>
-                                        );
-                                      case "joined":
-                                      case "room_joined":
-                                        return (
-                                          <>
-                                            <UserPlus className="w-4 h-4 text-blue-400" />
-                                            <span>Joined</span>
-                                          </>
-                                        );
-                                      case "paid":
-                                      case "room_paid":
-                                        return (
-                                          <>
-                                            <ReceiptText className="w-4 h-4 text-active" />
-                                            <span>Paid</span>
-                                          </>
-                                        );
-                                      default:
-                                        return null;
-                                    }
-                                  })()}
+                            {/* Right: Timestamp + Action */}
+                            <div className="flex flex-col items-end text-sm text-white/30 text-right ml-4">
+                              {item.type === "received" ||
+                              item.type === "room_received" ? (
+                                <span className="text-green-400">
+                                  +{parseFloat(item.amount?.toFixed(4) ?? "0")}{" "}
+                                  {item.token ?? "ETH"}
                                 </span>
-                                <span className="text-sm text-white/30">
-                                  {(() => {
-                                    const date = new Date(item.timestamp);
-                                    const now = new Date();
-                                    const minutes = differenceInMinutes(
-                                      now,
-                                      date
-                                    );
-                                    const hours = differenceInHours(now, date);
-                                    const days = differenceInDays(now, date);
+                              ) : item.type === "paid" ||
+                                item.type === "room_paid" ? (
+                                <span className="text-white/30">
+                                  {parseFloat(item.amount?.toFixed(4) ?? "0")}{" "}
+                                  {item.token ?? "ETH"}
+                                </span>
+                              ) : null}
 
-                                    if (minutes < 60) return `${minutes}m ago`;
-                                    if (hours < 24) return `${hours}h ago`;
-                                    return `${days}d ago`;
-                                  })()}
-                                </span>
-                              </div>
+                              <span className="text-sm text-white/30">
+                                {(() => {
+                                  const date = new Date(item.timestamp);
+                                  const now = new Date();
+                                  const minutes = differenceInMinutes(
+                                    now,
+                                    date
+                                  );
+                                  const hours = differenceInHours(now, date);
+                                  const days = differenceInDays(now, date);
+
+                                  if (minutes < 60) return `${minutes}m ago`;
+                                  if (hours < 24) return `${hours}h ago`;
+                                  return `${days}d ago`;
+                                })()}
+                              </span>
                             </div>
                           </li>
                         );

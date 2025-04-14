@@ -18,9 +18,15 @@ export default function SplitLandingPage() {
   return (
     <main className="w-full min-h-screen flex flex-col items-center justify-center p-6">
       <div className="w-full max-w-md space-y-4 mb-4">
-        <div className="mb-6 text-center">
+        <div className="flex flex-col items-center mb-4 mt-2 text-center">
+          <img
+            src="/ethcoin.png"
+            alt="cover"
+            className="w-24 h-24 animate-subtleBounce"
+          />
+
           <h1 className="text-2xl font-bold mb-2">Create Group Bill</h1>
-          <p className="text-muted text-base">
+          <p className="text-muted text-base px-2">
             Create a shared bill, invite friends, and settle up fast.
           </p>
         </div>

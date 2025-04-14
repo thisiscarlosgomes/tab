@@ -18,9 +18,9 @@ type UserPoints = {
 
 const POINTS_MAP: Record<string, number> = {
   create_tab: 100,
-  pay: 500,
-  spin_win: 200,
-  send_eth: 500,
+  pay: 200,
+  spin_win: 100,
+  send_token: 500,
   join_tab: 100,
   top_10_week: 500,
   share_frame: 50,

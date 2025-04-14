@@ -79,7 +79,30 @@ export function SpinButton({
 
       // Record recent spin
       const currentUser = userAddress || "unknown";
-      const picked = data?.chosen?.name || "someone";
+      // const picked = data?.chosen?.name || "someone";
+
+      const picked = data?.chosen;
+
+      if (picked?.address && picked?.name && picked?.fid) {
+        try {
+          const cleanRoomName = roomId.replace(/_/g, " "); // or decodeURIComponent(roomId)
+          await fetch("/api/send-notif", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              fid: picked.fid,
+              amount: 0,
+              token: "ETH",
+              senderUsername: "usetab",
+              title: "🎲 You've been picked",
+              message: `You've been picked to pay in table ${cleanRoomName}`,
+              targetUrl: `https://tab.castfriends.com/game/${encodeURIComponent(roomId)}`,
+            }),
+          });
+        } catch (err) {
+          console.warn("Notification failed:", err);
+        }
+      }
 
       const spinRecord = {
         by: currentUser,
@@ -112,7 +135,7 @@ export function SpinButton({
     disabledForAdminOnly;
 
   return (
-    <div className="w-full mt-4 space-y-2">
+    <div className="w-full mt-3">
       <Button
         onClick={handleSpin}
         disabled={fullyDisabled}
@@ -129,12 +152,6 @@ export function SpinButton({
           "Spin 🎲"
         )}
       </Button>
-
-      {/* {disabledForSetup && !disabledForCooldown && (
-        <p className="text-sm text-muted text-center">
-          Waiting for admin to set recipient and amount.
-        </p>
-      )} */}
 
       {disabledForAdminOnly && !disabledForCooldown && (
         <p className="text-sm text-muted text-center">Only admin can spin.</p>

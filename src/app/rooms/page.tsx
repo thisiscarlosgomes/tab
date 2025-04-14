@@ -78,22 +78,11 @@ export default function RoomsPage() {
 
               <div className="flex -space-x-2 mt-2 mb-1">
                 {members.slice(0, 5).map((member, index) => (
-                  //   <Image
-                  //   key={index}
-                  //   src={
-                  //     member.pfp ||
-                  //     `https://api.dicebear.com/7.x/fun-emoji/svg?seed=${encodeURIComponent(member.name)}`
-                  //   }
-                  //   alt={member.name}
-                  //   width={32}
-                  //   height={32}
-                  //   className="w-8 h-8 rounded-full border-2 border-white object-cover"
-                  // />
                   <img
                     key={index}
                     src={
                       member.pfp ||
-                      `https://api.dicebear.com/7.x/fun-emoji/svg?seed=${member.name}`
+                      `https://api.dicebear.com/9.x/glass/svg?seed=${member.name}`
                     }
                     alt={member.name}
                     className="w-8 h-8 rounded-full border-2 border-white object-cover"

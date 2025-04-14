@@ -97,26 +97,24 @@ export function Header() {
           // description="Earn points by taking action across Tab"
         >
           <p>
-            Spin. Send. Show up. Earn points. Win $TAB — instantly. Points reset
-            weekly. Keep the streak alive.
+            Spin. Send. Pay. Show up. Earn points. Win $TAB, instantly. Keep the streak alive.
           </p>
           <ul className="w-full mt-4 space-y-2">
             <li className="p-4 rounded-xl bg-yellow-100 text-yellow-800">
-              Add & Share Frame +50
+              Add & Share app +50
             </li>
             <li className="p-4 rounded-xl bg-green-100 text-green-800">
-              Pays +500 points
+              In-app Payments +200 points
             </li>
-            <li className="p-4 rounded-xl bg-blue-100 text-blue-800">
+            {/* <li className="p-4 rounded-xl bg-blue-100 text-blue-800">
               Joins & creates splits +150 points
-            </li>
-            {/* <li className="p-4 rounded-xl bg-purple-100 text-purple-800">
-              Wins spins +200 points
             </li> */}
-
-            <li className="p-4 rounded-xl bg-pink-100 text-pink-800">
-              Top 10 of the week +500 points
+            <li className="p-4 rounded-xl bg-purple-100 text-purple-800">
+              Wins spins +100 points
             </li>
+            {/* <li className="p-4 rounded-xl bg-pink-100 text-pink-800">
+              Top 10 of the week +500 points
+            </li> */}
           </ul>
         </DrawerCard>
       </div>

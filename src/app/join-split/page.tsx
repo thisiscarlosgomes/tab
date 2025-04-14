@@ -16,6 +16,7 @@ interface Participant {
 
 interface SplitBill {
   description: string;
+  token?: string; // optional if not guaranteed
 }
 
 export default function JoinSplitPage() {
@@ -30,6 +31,8 @@ export default function JoinSplitPage() {
   const [status, setStatus] = useState("Connecting...");
   const [showPay, setShowPay] = useState(false);
   const [billName, setBillName] = useState<string>("");
+  const parsedAmount = amount ? parseFloat(amount) : 0;
+  const [token, setToken] = useState("ETH");
 
   useEffect(() => {
     const joinSplit = async () => {
@@ -42,6 +45,9 @@ export default function JoinSplitPage() {
         // ✅ Fetch bill name
         const res = await fetch(`/api/split/${splitId}`);
         const bill: SplitBill = await res.json();
+
+        setToken(bill.token ?? searchParams.get("token") ?? "ETH");
+
         setBillName(bill.description);
 
         if (!isConnected) {
@@ -95,9 +101,10 @@ export default function JoinSplitPage() {
             if (!v) router.push(`/split/${splitId}`);
           }}
           address={payTo}
-          amount={parseFloat(amount)}
+          amount={parsedAmount}
           splitId={splitId ?? undefined}
           billName={billName} // ✅ pass it here
+          token={token} // ✅ pass this
         />
       )}
     </>

@@ -2,19 +2,21 @@ export function getShareUrl({
   name,
   username,
   description,
+  url = "https://tab.castfriends.com", // default fallback
 }: {
   name: string;
   username?: string;
   description?: string;
+  url?: string;
 }) {
   name;
   const text = description
     ? description
     : username
-      ? `That was smooth. Let’s see who’s next tab!`
-      : `That was smooth. Let’s see who’s next on tab!`;
+      ? `Tab cleared. Your turn next.`
+      : `Just picked up the Tab. Your turn next.`;
 
   return `https://warpcast.com/~/compose?text=${encodeURIComponent(
     text
-  )}&embeds[]=${encodeURIComponent("https://tab.castfriends.com")}`;
+  )}&embeds[]=${encodeURIComponent(url)}`;
 }

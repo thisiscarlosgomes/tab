@@ -9,6 +9,7 @@ import { useAddPoints } from "@/lib/useAddPoints";
 import { useAccount } from "wagmi";
 import { getShareUrl } from "@/lib/share";
 import { Loader } from "lucide-react";
+import { toast } from "sonner";
 
 export function DailySpinDrawer({
   isOpen,
@@ -36,14 +37,45 @@ export function DailySpinDrawer({
     streak: number;
   } | null>(null);
 
+  // useEffect(() => {
+  //   const init = async () => {
+  //     const context = await sdk.context;
+  //     const userFid = context?.user?.fid ?? null;
+  //     if (!userFid) return; // or setCanSpin(false)
+
+  //     setFid(userFid);
+  //     await fetchSpinStatus(userFid);
+  //   };
+
+  //   if (isOpen) init();
+  // }, [isOpen]);
+
   useEffect(() => {
     const init = async () => {
       const context = await sdk.context;
-      const userFid = context?.user?.fid ?? null;
-      if (!userFid) return; // or setCanSpin(false)
+      const username = context?.user?.username;
+      if (!username) return;
 
-      setFid(userFid);
-      await fetchSpinStatus(userFid);
+      try {
+        const res = await fetch(
+          `/api/neynar/user/by-username?username=${username}`
+        );
+        const user = await res.json();
+
+        const score = user?.experimental?.neynar_user_score ?? 0;
+        if (score < 0.3) {
+          toast.error("Need a Neynar score of 0.3+ to spin");
+          setCanSpin(false);
+          return;
+        }
+
+        setFid(user.fid);
+        await fetchSpinStatus(user.fid);
+      } catch (err) {
+        console.error("Failed to fetch user data", err);
+        toast.error("Couldn't verify Neynar score.");
+        setCanSpin(false);
+      }
     };
 
     if (isOpen) init();
@@ -116,7 +148,7 @@ export function DailySpinDrawer({
       setHasSpun(true);
       setCanSpin(false);
 
-      if (data.reward.type === "points" && address) {
+      if (data.reward.type === "erc20" && address) {
         await useAddPoints(address, "daily_spin_win");
       }
 
@@ -150,7 +182,6 @@ export function DailySpinDrawer({
       description: "Spin for rewards. ETH, Points, glory.",
     });
     sdk.actions.openUrl(url);
-    
 
     if (address) {
       await useAddPoints(address, "share_frame");
@@ -217,10 +248,10 @@ export function DailySpinDrawer({
           <div className="mt-3 mx-auto w-10 h-1.5 rounded-full bg-white/10 mb-4" />
 
           <div className="px-6 mb-6">
-            <h2 className="text-xl font-medium text-white">Daily Spin</h2>
+            <h2 className="text-xl font-medium text-white">Daily Spin & Win</h2>
             <p className="text-white/50 text-base mt-4">
-              Spin up to 3 times a day. One win every 8 hours. Tokens airdrop
-              instantly to your wallet.
+              100,000 $tab up for grabs daily. Spin up to 3x a day. Rewards drop
+              straight to your wallet.
             </p>
             {spinMeta && (
               <p className="text-white/30 text-base mt-2">
@@ -244,7 +275,10 @@ export function DailySpinDrawer({
               ) : hasSpun && result ? (
                 <>
                   {result === "Nothing today" ? (
-                    <p className="text-3xl font-bold text-white">{result}<br/> Try again..</p>
+                    <p className="text-3xl font-bold text-white opacity-30">
+                      {result}
+                      <br /> Try again..
+                    </p>
                   ) : (
                     <p className="text-2xl font-bold">
                       <span className="text-3xl flex items-center justify-center gap-2 mt-2">
@@ -273,11 +307,6 @@ export function DailySpinDrawer({
                       )}
                     </p>
                   )}
-                  {/* {result === "Nothing today" && (
-                    <p className="text-sm mt-3 text-white/30">
-                      Try again later
-                    </p>
-                  )} */}
 
                   {result === "Daily limit reached" && (
                     <p className="text-sm mt-3 text-white/30">
@@ -292,7 +321,7 @@ export function DailySpinDrawer({
           </div>
 
           <div className="px-6 pb-6 space-y-2 mt-4">
-            {showShare && result !== "Nothing today"  && (
+            {showShare && result !== "Nothing today" && (
               <Button onClick={handleShare} className="w-full mt-3 bg-white">
                 🎊 Share (Let 'em know)
               </Button>
@@ -310,6 +339,8 @@ export function DailySpinDrawer({
                 </div>
               ) : isStatusLoading ? (
                 "Loading..."
+              ) : !canSpin && !nextEligibleSpinAt && !hasSpun ? (
+                "Score too low to spin"
               ) : !canSpin && nextEligibleSpinAt ? (
                 `Spin again in ${countdown ?? "soon"}`
               ) : !canSpin && !nextEligibleSpinAt ? (
@@ -318,6 +349,11 @@ export function DailySpinDrawer({
                 "Spin"
               )}
             </Button>
+            {!canSpin && !hasSpun && !nextEligibleSpinAt && (
+              <p className="text-sm text-white/50 text-center mt-2">
+                Your Neynar score must be at least 0.3 to spin.
+              </p>
+            )}
           </div>
           <div className="pb-[env(safe-area-inset-bottom)]" />
         </Drawer.Content>

@@ -32,14 +32,7 @@ type FarcasterUser = {
 type SendStatus = "idle" | "confirming" | "sending";
 
 export function GlobalSendDrawer() {
-  const {
-    isOpen,
-    close,
-    query,
-    setQuery,
-    scannedUsername,
-    setScannedUsername,
-  } = useSendDrawer();
+  const { isOpen, close, query, setQuery, scannedUsername } = useSendDrawer();
 
   const { isConnected, address } = useAccount();
   const { connect } = useConnect();
@@ -49,7 +42,7 @@ export function GlobalSendDrawer() {
 
   const [results, setResults] = useState<FarcasterUser[]>([]);
   const [selectedUser, setSelectedUser] = useState<FarcasterUser | null>(null);
-  const [amount, setAmount] = useState("0.00");
+  const [amount, setAmount] = useState("0");
   const [sendDrawerOpen, setSendDrawerOpen] = useState(false);
   const [showSuccess, setShowSuccess] = useState(false);
   const [lastSentAmount, setLastSentAmount] = useState(0.01);
@@ -167,14 +160,13 @@ export function GlobalSendDrawer() {
 
   const price = tokenPrices[selectedToken || "ETH"] ?? null;
 
-
   const formatUsd = (usd: number) =>
     usd >= 0.01 ? usd.toFixed(2) : usd.toPrecision(2);
 
   const amountUsd =
     price && parseFloat(amount) > 0
       ? formatUsd(parseFloat(amount) * price)
-      : "0.00";
+      : "0";
 
   const handleSend = async () => {
     const parsedAmount = parseFloat(amount);
@@ -182,7 +174,7 @@ export function GlobalSendDrawer() {
     if (!isConnected) await connect({ connector: farcasterFrame() });
     if (isNaN(parsedAmount) || parsedAmount <= 0) return;
 
-    // ✅ Add this check here
+    // ✅ Add this check here 
     if (!selectedToken) {
       setSendStatus("idle");
       alert("Please select a token.");
@@ -227,21 +219,11 @@ export function GlobalSendDrawer() {
       setLastSentAmount(parsedAmount);
       setLastMessage(customMessage);
       setCustomMessage("");
-      setAmount("0.00");
+      setAmount("0");
       setSendDrawerOpen(false);
       setShowSuccess(true);
       close();
 
-      // await fetch("/api/send-notif", {
-      //   method: "POST",
-      //   headers: { "Content-Type": "application/json" },
-      //   body: JSON.stringify({
-      //     fid: selectedUser.fid,
-      //     amount: parsedAmount,
-      //     senderUsername: username,
-      //     message: customMessage,
-      //   }),
-      // });
       await fetch("/api/send-notif", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -253,7 +235,6 @@ export function GlobalSendDrawer() {
           message: customMessage,
         }),
       });
-      
     } catch (err) {
       console.error("Send failed:", err);
     } finally {
@@ -283,7 +264,8 @@ export function GlobalSendDrawer() {
     isNaN(amountNumber) ||
     amountNumber <= 0 ||
     !selectedToken ||
-    amountNumber > balance;
+    amountNumber > balance ||
+    !selectedUser?.verified_addresses?.primary?.eth_address; // 👈 add this
 
   return (
     <>
@@ -296,7 +278,7 @@ export function GlobalSendDrawer() {
             setResults([]);
             setSelectedUser(null);
             setSendDrawerOpen(false);
-            setScannedUsername(null); // <== very important
+            // setScannedUsername(null); // <== very important
           }
         }}
         repositionInputs={false}
@@ -394,7 +376,7 @@ export function GlobalSendDrawer() {
 
                   {mode === "token" && (
                     <div className="space-y-3">
-                      <p className="ml-4">Select token</p>
+                      {/* <p className="ml-4">Select token</p> */}
                       {tokenList.map((token) => {
                         const balanceRaw = tokenBalances[token.name];
                         const balance = parseFloat(balanceRaw || "0");
@@ -447,7 +429,7 @@ export function GlobalSendDrawer() {
               onOpenChange={(v) => {
                 if (!v) {
                   setSendDrawerOpen(false);
-                  setAmount("0.00");
+                  setAmount("0");
 
                   // ✅ Add these
                   setMode("search");
@@ -466,14 +448,25 @@ export function GlobalSendDrawer() {
                   />
                   <Drawer.Title className="text-lg text-center font-medium">
                     <div className="flex flex-col items-center space-y-2">
-                      <img
-                        src={
-                          selectedUser?.pfp_url ||
-                          `https://api.dicebear.com/7.x/fun-emoji/svg?seed=${selectedUser?.username}`
-                        }
-                        alt={selectedUser?.username}
-                        className="w-16 h-16 rounded-full object-cover mb-2"
-                      />
+                      <div className="relative w-16 h-16 rounded-full bg-purple-100 text-purple-800 flex items-center justify-center">
+                        <img
+                          src={
+                            selectedUser?.pfp_url ||
+                            `https://api.dicebear.com/9.x/glass/svg?seed=${selectedUser?.username}`
+                          }
+                          alt={selectedUser?.username}
+                          className="w-16 h-16 rounded-full object-cover"
+                        />
+                        <img
+                          src={
+                            tokenList.find((t) => t.name === selectedToken)
+                              ?.icon!
+                          }
+                          alt={selectedToken!}
+                          className="absolute bottom-0 -right-2 w-6 h-6 rounded-full border-2 border-card"
+                        />
+                      </div>
+
                       <Drawer.Title className="text-lg font-medium text-center">
                         You're sending {""}
                         <span className="text-primary">
@@ -481,12 +474,16 @@ export function GlobalSendDrawer() {
                         </span>
                       </Drawer.Title>
                       <p className="text-white/30 break-all text-center">
-                        {selectedUser?.verified_addresses?.primary?.eth_address
-                          ? shortAddress(
-                              selectedUser.verified_addresses.primary
-                                .eth_address
-                            )
-                          : "No address"}
+                        {selectedUser?.verified_addresses?.primary
+                          ?.eth_address ? (
+                          shortAddress(
+                            selectedUser.verified_addresses.primary.eth_address
+                          )
+                        ) : (
+                          <span className="text-red-400 text-sm">
+                            This user has no connected wallet
+                          </span>
+                        )}
                       </p>
                     </div>
                   </Drawer.Title>
@@ -499,14 +496,19 @@ export function GlobalSendDrawer() {
                         onValueChange={(values) => {
                           setAmount(values.value);
                         }}
+                        onFocus={() => {
+                          if (amount === "0") {
+                            setAmount("");
+                          }
+                        }}
                         thousandSeparator
                         allowNegative={false}
                         allowLeadingZeros={false}
                         decimalScale={4}
                         suffix={` ${selectedToken || ""}`}
-                        placeholder="0.00"
+                        placeholder="0"
                         className={`text-6xl bg-transparent text-center font-medium outline-none w-full placeholder-white/20 ${
-                          amount === "" || amount === "0.00"
+                          amount === "" || amount === "0"
                             ? "text-white/20"
                             : "text-primary"
                         }`}
@@ -528,6 +530,7 @@ export function GlobalSendDrawer() {
                   <div className="gap-4 space-y-2">
                     <div className="relative w-full">
                       <textarea
+                        rows={3}
                         value={customMessage}
                         onChange={(e) => setCustomMessage(e.target.value)}
                         placeholder="Add note"

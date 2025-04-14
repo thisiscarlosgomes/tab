@@ -33,15 +33,16 @@ export function QRCodeScannerDrawer({
   const [scannedUser, setScannedUser] = useState<FarcasterUser | null>(null);
   const [sendOpen, setSendOpen] = useState(false);
   const [payToAddress, setPayToAddress] = useState<`0x${string}` | null>(null);
-const [showFlexibleDrawer, setShowFlexibleDrawer] = useState(false);
-
+  const [showFlexibleDrawer, setShowFlexibleDrawer] = useState(false);
 
   const [scannedSplit, setScannedSplit] = useState<{
     splitId: string;
     payTo: `0x${string}`;
     amount: string;
-    billName?: string; // ✅ allow billName
+    billName?: string;
+    token: string; // ✅ Add this line
   } | null>(null);
+  
 
   const [showSplitDrawer, setShowSplitDrawer] = useState(false);
 
@@ -66,45 +67,44 @@ const [showFlexibleDrawer, setShowFlexibleDrawer] = useState(false);
         const parsedUrl = new URL(decodedText);
         const splitId = parsedUrl.searchParams.get("splitId");
         const payTo = parsedUrl.searchParams.get("payTo");
+
         const amount = parsedUrl.searchParams.get("amount");
-
-
-
-
-
 
         // ✅ Handle split QR
         if (splitId && payTo && amount) {
           await stopScanner();
           setIsOpen(false);
 
-          // ✅ Fetch the split to get the bill name
+          const tokenParam = parsedUrl.searchParams.get("token") ?? "ETH";
+
+          // ✅ Fetch the split to get the bill name and token (fallback to scanned param)
           const res = await fetch(`/api/split/${splitId}`);
           const data = await res.json();
           const billName = data?.description ?? "";
+          const token = data?.token ?? tokenParam;
 
           // ✅ Store it in scannedSplit state
           setScannedSplit({
             splitId,
             payTo: payTo as `0x${string}`,
             amount,
-            billName, // ✅ added
+            token, // <-- add this
+            billName,
           });
 
           setShowSplitDrawer(true);
           return;
         }
 
-
         // ✅ If it's just a pay-to-address with no split
-if (payTo && !splitId && !amount) {
-  await stopScanner();
-  setIsOpen(false);
+        if (payTo && !splitId && !amount) {
+          await stopScanner();
+          setIsOpen(false);
 
-  setPayToAddress(payTo as `0x${string}`);
-  setShowFlexibleDrawer(true);
-  return;
-}
+          setPayToAddress(payTo as `0x${string}`);
+          setShowFlexibleDrawer(true);
+          return;
+        }
         // ✅ Handle Farcaster user QR
         const username = parsedUrl.searchParams.get("username");
         if (!username) {
@@ -234,7 +234,7 @@ if (payTo && !splitId && !amount) {
         />
       )}
 
-      {/* {scannedSplit && (
+      {scannedSplit && (
         <SendToAddressDrawer
           isOpen={showSplitDrawer}
           onOpenChange={(v) => {
@@ -243,36 +243,23 @@ if (payTo && !splitId && !amount) {
           }}
           address={scannedSplit.payTo}
           amount={parseFloat(scannedSplit.amount)}
+          token={scannedSplit.token}
           splitId={scannedSplit.splitId}
-          billName={scannedSplit.billName} // ✅ pass it
+          billName={scannedSplit.billName}
         />
-      )} */}
+      )}
 
-{scannedSplit && (
-  <SendToAddressDrawer
-    isOpen={showSplitDrawer}
-    onOpenChange={(v) => {
-      setShowSplitDrawer(v);
-      if (!v) setScannedSplit(null);
-    }}
-    address={scannedSplit.payTo}
-    amount={parseFloat(scannedSplit.amount)}
-    splitId={scannedSplit.splitId}
-    billName={scannedSplit.billName}
-  />
-)}
-
-{payToAddress && (
-  <SendToRawAddressDrawer
-    isOpen={showFlexibleDrawer}
-    onOpenChange={(v) => {
-      setShowFlexibleDrawer(v);
-      if (!v) setPayToAddress(null);
-    }}
-    address={payToAddress}
-  />
-)}
-
+      {payToAddress && (
+        <SendToRawAddressDrawer
+          isOpen={showFlexibleDrawer}
+          onOpenChange={(v) => {
+            setShowFlexibleDrawer(v);
+            if (!v) setPayToAddress(null);
+          }}
+          address={payToAddress}
+        />
+      )}
     </>
   );
 }
+

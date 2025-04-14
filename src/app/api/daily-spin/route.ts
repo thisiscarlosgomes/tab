@@ -1,18 +1,6 @@
 import { NextRequest } from "next/server";
 import clientPromise from "@/lib/mongodb";
 
-// const REWARDS = [
-//   { reward: "100 $TAB", type: "erc20", amount: 500 },
-//   { reward: "Tab Points +10", type: "points", amount: 10 },
-//   { reward: "The wheel said nah.", type: "Nothing today", amount: 0 },
-// ];
-
-// const REWARDS = [
-//   { reward: "1000 $tab", type: "erc20", amount: 1000 },
-//   { reward: "Tab Points +10", type: "points", amount: 10 },
-//   { reward: "Nothing today", type: "none", amount: 0 },
-// ];
-
 const REWARDS = [
   { reward: "1000 $tab", type: "erc20", amount: 1000 },
   { reward: "Tab Points +10", type: "points", amount: 10 },
@@ -60,20 +48,13 @@ type TokenTrackerDoc = {
     reason: string;
     timestamp: string;
     send?: boolean; // ✅ optional flag
+    fid:number;
   }[];
 };
 
 export async function POST(req: NextRequest) {
   let fid;
   let address: string | null = null;
-
-  // try {
-  //   const body = await req.json();
-  //   fid = body.fid ?? 2201;
-  //   address = body.address?.toLowerCase() ?? null; // ✅ Now scoped properly
-  // } catch {
-  //   fid = 2201;
-  // }
 
   try {
     const body = await req.json();
@@ -91,39 +72,56 @@ export async function POST(req: NextRequest) {
     });
   }
 
-  if (!fid) {
-    return new Response(JSON.stringify({ error: "Missing fid" }), {
-      status: 400,
-    });
-  }
+  // if (!fid) {
+  //   return new Response(JSON.stringify({ error: "Missing fid" }), {
+  //     status: 400,
+  //   });
+  // }
 
   const today = new Date().toISOString().slice(0, 10);
   const now = new Date();
   const client = await clientPromise;
   const db = client.db();
   const spins = db.collection<UserSpinDoc>(collectionName);
-
   const user = await spins.findOne({ fid });
   const spinsToday = user?.spins?.[today] ?? [];
 
-  const isTestFID = fid === 2201;
-  if (!isTestFID) {
-    if (spinsToday.length >= 3) {
+  // const isTestFID = fid === 2201;
+  // if (!isTestFID) {
+  //   if (spinsToday.length >= 2) {
+  //     return new Response(
+  //       JSON.stringify({ alreadySpun: true, limitReached: true }),
+  //       { status: 403 }
+  //     );
+  //   }
+
+  //   const lastWin = spinsToday.findLast((s) => s.reward !== "Nothing today");
+  //   if (lastWin) {
+  //     const last = new Date(lastWin.timestamp);
+  //     if (now.getTime() - last.getTime() < 8 * 60 * 60 * 1000) {
+  //       return new Response(
+  //         JSON.stringify({ alreadySpun: true, limitReached: true }),
+  //         { status: 403 }
+  //       );
+  //     }
+  //   }
+  // }
+
+  if (spinsToday.length >= 2) {
+    return new Response(
+      JSON.stringify({ alreadySpun: true, limitReached: true }),
+      { status: 403 }
+    );
+  }
+
+  const lastWin = spinsToday.findLast((s) => s.reward !== "Nothing today");
+  if (lastWin) {
+    const last = new Date(lastWin.timestamp);
+    if (now.getTime() - last.getTime() < 8 * 60 * 60 * 1000) {
       return new Response(
         JSON.stringify({ alreadySpun: true, limitReached: true }),
         { status: 403 }
       );
-    }
-
-    const lastWin = spinsToday.findLast((s) => s.reward !== "Nothing today");
-    if (lastWin) {
-      const last = new Date(lastWin.timestamp);
-      if (now.getTime() - last.getTime() < 8 * 60 * 60 * 1000) {
-        return new Response(
-          JSON.stringify({ alreadySpun: true, limitReached: true }),
-          { status: 403 }
-        );
-      }
     }
   }
 
@@ -217,6 +215,7 @@ export async function POST(req: NextRequest) {
               reason: string;
               timestamp: string;
               send: boolean;
+              fid:number;
             };
           };
         } = {
@@ -231,6 +230,7 @@ export async function POST(req: NextRequest) {
               amount: finalReward.amount,
               reason: `daily_spin_${today}`,
               timestamp: now.toISOString(),
+              fid,
               send: true, // ✅ new field
             },
           };
@@ -273,22 +273,20 @@ export async function GET(req: NextRequest) {
   let canSpin = true;
   let nextEligibleSpinAt: Date | null = null;
 
-  const isTestFID = fid === 2201;
+  // const isTestFID = fid === 2201;
 
-  if (!isTestFID) {
-    if (spinsToday.length >= 3) {
-      canSpin = false;
-      const last = new Date(spinsToday[spinsToday.length - 1].timestamp);
-      nextEligibleSpinAt = new Date(last.getTime() + 8 * 60 * 60 * 1000);
-    } else {
-      const lastWin = spinsToday.findLast((s) => s.reward !== "Nothing today");
-      if (lastWin) {
-        const last = new Date(lastWin.timestamp);
-        const diff = now.getTime() - last.getTime();
-        if (diff < 8 * 60 * 60 * 1000) {
-          canSpin = false;
-          nextEligibleSpinAt = new Date(last.getTime() + 8 * 60 * 60 * 1000);
-        }
+  if (spinsToday.length >= 2) {
+    canSpin = false;
+    const last = new Date(spinsToday[spinsToday.length - 1].timestamp);
+    nextEligibleSpinAt = new Date(last.getTime() + 8 * 60 * 60 * 1000);
+  } else {
+    const lastWin = spinsToday.findLast((s) => s.reward !== "Nothing today");
+    if (lastWin) {
+      const last = new Date(lastWin.timestamp);
+      const diff = now.getTime() - last.getTime();
+      if (diff < 8 * 60 * 60 * 1000) {
+        canSpin = false;
+        nextEligibleSpinAt = new Date(last.getTime() + 8 * 60 * 60 * 1000);
       }
     }
   }

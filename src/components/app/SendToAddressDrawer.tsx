@@ -10,21 +10,26 @@ import { PaymentSuccessDrawer } from "./PaymentSuccessDrawer";
 import sdk from "@farcaster/frame-sdk";
 // import { useAddPoints } from "@/lib/useAddPoints";
 import { ReceiptText } from "lucide-react";
+import { tokenList } from "@/lib/tokens";
+import { erc20Abi, parseUnits } from "viem";
+import { useWriteContract } from "wagmi";
 
 export function SendToAddressDrawer({
   isOpen,
   onOpenChange,
   address,
   amount,
-  splitId, // optional
-  billName, // ✅ new
+  splitId,
+  billName,
+  token = "ETH", // default to ETH
 }: {
   isOpen: boolean;
   onOpenChange: (v: boolean) => void;
   address: `0x${string}`;
   amount: number;
   splitId?: string;
-  billName?: string; // ✅ new
+  billName?: string;
+  token?: string; // ✅ add this
 }) {
   const { isConnected } = useAccount();
   const { connect } = useConnect();
@@ -34,6 +39,19 @@ export function SendToAddressDrawer({
   const [showSuccess, setShowSuccess] = useState(false);
   const [lastTxHash, setLastTxHash] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState("");
+  const { writeContractAsync } = useWriteContract();
+  const tokenInfo = tokenList.find((t) => t.name === token);
+  const fallbackToken = tokenList.find((t) => t.name === "ETH");
+  const effectiveTokenInfo = tokenInfo ?? fallbackToken;
+  const effectiveToken = effectiveTokenInfo?.name ?? "ETH";
+
+  const tokenIcon = effectiveTokenInfo?.icon ? (
+    <img
+      src={effectiveTokenInfo.icon}
+      alt={effectiveTokenInfo.name}
+      className="absolute bottom-0 -right-2 w-7 h-7 rounded-full border-2 border-background"
+    />
+  ) : null;
 
   useEffect(() => {
     if (!isOpen) {
@@ -48,25 +66,66 @@ export function SendToAddressDrawer({
 
     setSending(true);
     try {
-      const txHash = await sendTransactionAsync({
-        to: address as `0x${string}`,
-        value: BigInt(amount * 1e18),
-        chainId: 8453,
-      });
+      let txHash: `0x${string}`;
+      const decimals = effectiveTokenInfo?.decimals ?? 18;
+      const rawAmount = parseUnits(amount.toString(), decimals);
+      if (amount <= 0) {
+        console.error("Invalid amount");
+        return;
+      }
+
+      if (!effectiveTokenInfo?.address) {
+        // Native ETH
+        txHash = await sendTransactionAsync({
+          to: address,
+          value: rawAmount,
+          chainId: 8453,
+        });
+      } else {
+        // ERC-20
+        txHash = await writeContractAsync({
+          address: effectiveTokenInfo.address as `0x${string}`,
+          abi: erc20Abi,
+          functionName: "transfer",
+          args: [address, rawAmount],
+          chainId: 8453,
+        });
+      }
 
       setLastTxHash(txHash);
       setShowSuccess(true);
+      const effectiveToken = effectiveTokenInfo?.name ?? "ETH";
       setSuccessMessage(
-        splitId ? `You’ve joined + paid ${amount} ETH` : `Sent ${amount} ETH`
+        splitId
+          ? `You’ve joined + paid ${amount.toFixed(2)} ${effectiveToken}`
+          : `Sent ${amount.toFixed(2)} ${effectiveToken}`
       );
 
       if (splitId) {
         const context = await sdk.context;
-        const userAddress = address.toLowerCase();
+
+        const username = context.user?.username;
+
+        let senderAddress = address.toLowerCase(); // fallback
+
+        if (username) {
+          try {
+            const res = await fetch(
+              `/api/neynar/user/by-username?username=${username}`
+            );
+            const data = await res.json();
+            const verified = data?.verified_addresses?.primary?.eth_address;
+            if (verified) {
+              senderAddress = verified.toLowerCase();
+            }
+          } catch (err) {
+            console.warn("Failed to resolve verified address via Neynar", err);
+          }
+        }
 
         const participant = {
-          address,
-          name: context.user?.username ?? address.slice(0, 6),
+          address: senderAddress,
+          name: username ?? senderAddress.slice(0, 6),
           pfp: context.user?.pfpUrl ?? "",
           fid: context.user?.fid?.toString() ?? "",
         };
@@ -76,14 +135,24 @@ export function SendToAddressDrawer({
         const data = await res.json();
 
         const alreadyJoined = data?.participants?.some(
-          (p: { address: string }) => p.address.toLowerCase() === userAddress
+          (p: { address: string }) => p.address.toLowerCase() === senderAddress
         );
 
         if (!alreadyJoined) {
           await fetch(`/api/split/${splitId}`, {
             method: "PATCH",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ participant }),
+            body: JSON.stringify({
+              participant,
+              payment: {
+                address: participant.address,
+                name: participant.name,
+                txHash,
+                status: "paid",
+                token: effectiveToken,
+                timestamp: new Date().toISOString(), // ✅ add this
+              },
+            }),
           });
 
           // await useAddPoints(address, "invite", undefined, splitId);
@@ -113,8 +182,9 @@ export function SendToAddressDrawer({
             <div className="mx-auto w-12 h-1.5 rounded-full bg-white/10 mb-1" />
 
             <Drawer.Title className="text-lg text-center font-medium flex flex-col items-center justify-center">
-              <div className="w-16 h-16 rounded-full mb-4 bg-purple-100 text-purple-800 flex items-center justify-center">
+              <div className="relative w-16 h-16 rounded-full mb-4 bg-purple-100 text-purple-800 flex items-center justify-center">
                 <ReceiptText className="w-7 h-7" />
+                {tokenIcon}
               </div>
 
               {billName && (
@@ -124,7 +194,7 @@ export function SendToAddressDrawer({
               )}
 
               <p className="text-white mb-2">
-                Send {amount} ETH to{" "}
+                Send {amount} {token} to{" "}
                 <span className="text-primary">{shortAddress(address)}</span>
               </p>
             </Drawer.Title>
@@ -134,7 +204,10 @@ export function SendToAddressDrawer({
               disabled={sending}
               className="w-full bg-primary mt-4"
             >
-              {sending ? "Sending..." : `Send ${amount} ETH`}
+              {/* {sending ? "Sending..." : `Send ${amount} ${token}`} */}
+              {sending
+                ? `Sending ${amount.toFixed(2)} ${effectiveToken}...`
+                : `Send ${amount.toFixed(2)} ${effectiveToken}`}
             </Button>
           </Drawer.Content>
         </Drawer.Portal>

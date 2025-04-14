@@ -6,7 +6,7 @@ export async function useAddPoints(
     | "spin"
     | "spin_win"
     | "daily_spin_win"   // ✅ added
-    | "send_eth"
+    | "send_token"
     | "add_frame"
     | "share_frame",
   tabId?: string,
