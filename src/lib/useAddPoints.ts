@@ -5,12 +5,14 @@ export async function useAddPoints(
     | "create_tab"
     | "spin"
     | "spin_win"
-    | "daily_spin_win"   // ✅ added
+    | "daily_spin_win"
     | "send_token"
     | "add_frame"
-    | "share_frame",
+    | "share_frame"
+    | "earn_deposit",
   tabId?: string,
-  splitId?: string
+  splitId?: string,
+  amount?: number // ✅ NEW
 ) {
   if (!address || !action) return;
 
@@ -18,7 +20,7 @@ export async function useAddPoints(
     await fetch(`/api/points/${address}`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ action, tabId, splitId }),
+      body: JSON.stringify({ action, tabId, splitId, amount }), // ✅ include
     });
   } catch (err) {
     console.error("Failed to add points:", err);

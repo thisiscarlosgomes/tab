@@ -48,7 +48,9 @@ export async function GET(req: NextRequest) {
     }
   }
 
-  const fallbackPfp = `${process.env.PUBLIC_URL}/splash.png`;
+  const fallbackPfp = `${process.env.PUBLIC_URL}/app.png`;
+
+  const bg = `${process.env.PUBLIC_URL}/ogbg.png`;
 
   return new ImageResponse(
     (
@@ -56,13 +58,15 @@ export async function GET(req: NextRequest) {
         style={{
           width: "100%",
           height: "100%",
-          backgroundColor: "#201E23",
           display: "flex",
           flexDirection: "column",
           justifyContent: "center",
           alignItems: "center",
           padding: "60px",
           fontFamily: "Inter, sans-serif",
+          backgroundImage: `url(${bg})`,
+          backgroundSize: "cover",
+          backgroundPosition: "center",
         }}
       >
         <img
@@ -78,10 +82,26 @@ export async function GET(req: NextRequest) {
             marginBottom: "20px",
           }}
         />
-        <div style={{ fontSize: 60, fontWeight: 600, color: "white" }}>
+
+        <div
+          style={{
+            fontSize: 60,
+            fontWeight: 600,
+            color: "white",
+            textShadow: "0 4px 10px rgba(0,0,0,0.4)",
+          }}
+        >
           {label || "Unknown"}
         </div>
-        <div style={{ marginTop: 8, fontSize: 32, color: "#9FA3AF" }}>
+
+        <div
+          style={{
+            marginTop: 8,
+            fontSize: 32,
+            color: "#D0D3DA",
+            textShadow: "0 2px 6px rgba(0,0,0,0.4)",
+          }}
+        >
           Pay with tab
         </div>
       </div>

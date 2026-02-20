@@ -15,7 +15,7 @@ module.exports = {
     '@typescript-eslint/no-explicit-any': 'error',
     '@typescript-eslint/no-namespace': 'off',
     '@typescript-eslint/no-non-null-assertion': 'off',
-    '@typescript-eslint/no-unused-vars': ['error', { argsIgnorePattern: '^_' }],
+    // '@typescript-eslint/no-unused-vars': ['error', { argsIgnorePattern: '^_' }],
     '@typescript-eslint/no-var-requires': 'off',
     '@next/next/no-html-link-for-pages': 'off',
     '@next/next/no-page-custom-font': 'off',
@@ -32,6 +32,7 @@ module.exports = {
     'react-hooks/exhaustive-deps': 'off',
     'simple-import-sort/imports': 'off',
     'simple-import-sort/exports': 'off',
+    "@next/next/no-img-element": "off",
     'no-restricted-imports': [
       'error',
       {

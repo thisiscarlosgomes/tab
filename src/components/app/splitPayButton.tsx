@@ -9,24 +9,29 @@ import {
   useWaitForTransactionReceipt,
   useWriteContract,
 } from "wagmi";
-
+import { erc20Abi, parseUnits } from "viem";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
 import { tokenList } from "@/lib/tokens";
-import { erc20Abi, parseUnits } from "viem";
-import { useAddPoints } from "@/lib/useAddPoints"; // ✅ ensure this is imported
 
 interface SplitPayButtonProps {
   recipient: `0x${string}`;
   amount: number;
-  token: string; // support any from tokenList
+  token: string; // must exist in tokenList
   splitId: string;
   onPaid: () => void;
   payer: {
     address: string;
     name: string;
+    fid: number; // ✅ REQUIRED
   };
-  setShowSuccess: (open: boolean) => void;
+  onSuccess: (data: {
+    amount: number;
+    token: string;
+    recipientUsername?: string;
+    txHash?: string;
+  }) => void;
+
   creatorFid?: number;
   description?: string;
 }
@@ -38,7 +43,7 @@ export function SplitPayButton({
   splitId,
   onPaid,
   payer,
-  setShowSuccess,
+  onSuccess,
   creatorFid,
   description,
 }: SplitPayButtonProps) {
@@ -46,81 +51,131 @@ export function SplitPayButton({
   const { connect } = useConnect();
   const { sendTransactionAsync } = useSendTransaction();
   const { writeContractAsync } = useWriteContract();
+
   const [txHash, setTxHash] = useState<`0x${string}`>();
-  const [hasPaid, setHasPaid] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
 
   const { isSuccess } = useWaitForTransactionReceipt({ hash: txHash });
   const successHandled = useRef(false);
 
+  /* ----------------------------------
+     Handle on-chain success
+  ---------------------------------- */
   useEffect(() => {
-    if (isSuccess && txHash && !successHandled.current) {
-      successHandled.current = true;
+    if (!isSuccess || !txHash || successHandled.current) return;
 
-      const handlePostPayment = async () => {
-        await fetch(`/api/split/${splitId}`, {
-          method: "PATCH",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            payment: {
-              address: payer.address,
-              name: payer.name,
-              txHash,
-              status: "paid",
-              token, // ✅ include token info
-            },
-          }),
-        });
+    successHandled.current = true;
+    setIsProcessing(false);
 
-        // ✅ Reward user for paying a split
-        await useAddPoints(payer.address, "pay", undefined, splitId);
+    // 1. UX FIRST: show success immediately
+    onSuccess({
+      amount,
+      token,
+      recipientUsername: payer.name,
+      txHash,
+    });
 
-        if (creatorFid) {
-          try {
-            await fetch("/api/send-notif", {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({
-                fid: creatorFid,
-                amount,
-                token,
-                senderUsername: payer.name,
-                title: "💸 You received a payment",
-                message: `Just paid their share${
-                  description ? ` for "${description}"` : ""
-                }.`,
-                targetUrl: `https://tab.castfriends.com/split/${splitId}`, // or your intended link
-              }),
-            });
-          } catch (err) {
-            console.warn("Split payment notification failed:", err);
-          }
+    // 2. Fire-and-forget side effects
+    void handlePostPayment();
+  }, [isSuccess, txHash]);
+
+  /* ----------------------------------
+     Post-payment side effects
+  ---------------------------------- */
+  const handlePostPayment = async () => {
+    // 1. Update split state (FID is canonical)
+    try {
+      const res = await fetch(`/api/split/${splitId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          payment: {
+            fid: payer.fid,
+            address,
+            name: payer.name,
+            txHash,
+            status: "paid",
+            token,
+            amount,
+          },
+        }),
+      });
+
+      if (!res.ok) {
+        const err = await res.json();
+
+        if (err?.error?.toLowerCase?.().includes("already")) {
+          toast.error("You already paid for this split.");
+          return;
         }
 
-        setShowSuccess(true);
-        onPaid();
-        setHasPaid(true);
-        setIsProcessing(false);
-      };
-
-      handlePostPayment();
-    }
-  }, [
-    isSuccess,
-    txHash,
-    splitId,
-    payer,
-    onPaid,
-    creatorFid,
-    amount,
-    token,
-    description,
-  ]);
-
-  const handleClick = async () => {
-    if (!isConnected || !address) {
-      await connect({ connector: farcasterFrame() });
+        throw new Error(err?.error ?? "Failed to update split");
+      }
+    } catch (err) {
+      console.warn("Split update failed:", err);
+      toast.error("Payment recorded on-chain, but split update failed.");
       return;
+    }
+
+    // 2. Notify creator (best effort)
+    if (creatorFid) {
+      try {
+        await fetch("/api/send-notif", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            fid: creatorFid,
+            title: "Payment received",
+            message: `@${payer.name} paid ${amount} ${token}${
+              description ? ` for ${description}` : ""
+            }`,
+            targetUrl: `https://usetab.app/split/${splitId}`,
+          }),
+        });
+      } catch (err) {
+        console.warn("Creator notification failed:", err);
+      }
+    }
+
+    // 3. Local UI refresh
+    onPaid();
+  };
+
+  /* ----------------------------------
+     Handle click
+  ---------------------------------- */
+  const handleClick = async () => {
+    // Prevent double taps
+    if (isProcessing || txHash) return;
+
+    // Must have FID
+    if (!payer?.fid) {
+      toast.error("Missing Farcaster identity");
+      return;
+    }
+
+    // Connect wallet if needed
+    if (!isConnected || !address) {
+      setIsProcessing(true);
+      try {
+        await connect({ connector: farcasterFrame() });
+      } finally {
+        setIsProcessing(false);
+      }
+      return;
+    }
+
+    // Pre-flight: prevent duplicate payment by FID
+    try {
+      const res = await fetch(`/api/split/${splitId}`);
+      const bill = await res.json();
+
+      if (bill?.paid?.some((p: any) => Number(p.fid) === payer.fid)) {
+        toast.error("You already paid for this split.");
+        return;
+      }
+    } catch {
+      // fail open — backend still protects
     }
 
     const tokenInfo = tokenList.find((t) => t.name === token);
@@ -137,24 +192,22 @@ export function SplitPayButton({
     try {
       let hash: `0x${string}`;
 
+      // Native ETH
       if (!tokenInfo.address) {
-        // Native ETH
-        const tx = await sendTransactionAsync({
+        hash = await sendTransactionAsync({
           to: recipient,
           value: rawAmount,
           chainId: 8453,
         });
-        hash = tx;
       } else {
-        // ERC-20 transfer
-        const tx = await writeContractAsync({
+        // ERC20
+        hash = await writeContractAsync({
           address: tokenInfo.address as `0x${string}`,
           abi: erc20Abi,
           functionName: "transfer",
           args: [recipient, rawAmount],
           chainId: 8453,
         });
-        hash = tx;
       }
 
       setTxHash(hash);
@@ -165,17 +218,20 @@ export function SplitPayButton({
     }
   };
 
+  /* ----------------------------------
+     Render
+  ---------------------------------- */
   return (
     <Button
       onClick={handleClick}
       className="w-full mt-4"
-      disabled={hasPaid || isProcessing || !!txHash}
+      disabled={isProcessing || !!txHash}
     >
       {isProcessing
-        ? "⏳ Processing..."
-        : hasPaid
-          ? "✅ Paid"
-          : `💸 Pay ${amount} ${token}`}
+        ? "Processing…"
+        : txHash
+          ? "Paid"
+          : `Pay ${amount} ${token}`}
     </Button>
   );
 }

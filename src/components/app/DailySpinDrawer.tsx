@@ -5,7 +5,6 @@ import { Drawer } from "vaul";
 import { Button } from "@/components/ui/button";
 import confetti from "canvas-confetti";
 import sdk from "@farcaster/frame-sdk";
-import { useAddPoints } from "@/lib/useAddPoints";
 import { useAccount } from "wagmi";
 import { getShareUrl } from "@/lib/share";
 import { Loader } from "lucide-react";
@@ -36,19 +35,6 @@ export function DailySpinDrawer({
     spinsToday: number;
     streak: number;
   } | null>(null);
-
-  // useEffect(() => {
-  //   const init = async () => {
-  //     const context = await sdk.context;
-  //     const userFid = context?.user?.fid ?? null;
-  //     if (!userFid) return; // or setCanSpin(false)
-
-  //     setFid(userFid);
-  //     await fetchSpinStatus(userFid);
-  //   };
-
-  //   if (isOpen) init();
-  // }, [isOpen]);
 
   useEffect(() => {
     const init = async () => {
@@ -85,7 +71,7 @@ export function DailySpinDrawer({
     if (!reward) return null;
     if (reward.includes("$tab")) return "/boom.gif";
     if (reward.includes("Points")) return "/spark.gif";
-    return "/ship.gif"; // fallback image (like for "Nothing today")
+    return "/ship.gif";
   };
 
   const fetchSpinStatus = async (
@@ -93,7 +79,7 @@ export function DailySpinDrawer({
     skipResultUpdate = false
   ) => {
     try {
-      setIsStatusLoading(true); // 🟢 start loading
+      setIsStatusLoading(true);
 
       const res = await fetch(`/api/daily-spin?fid=${fidToUse}`);
       const data = await res.json();
@@ -113,9 +99,9 @@ export function DailySpinDrawer({
         streak: data.streak,
       });
     } catch {
-      setCanSpin(true); // fallback
+      setCanSpin(true);
     } finally {
-      setIsStatusLoading(false); // 🔴 end loading
+      setIsStatusLoading(false);
     }
   };
 
@@ -138,7 +124,6 @@ export function DailySpinDrawer({
           setHasSpun(true);
           return;
         }
-
         throw new Error("Spin failed");
       }
 
@@ -147,10 +132,6 @@ export function DailySpinDrawer({
       setResult(data.reward?.reward ?? null);
       setHasSpun(true);
       setCanSpin(false);
-
-      if (data.reward.type === "erc20" && address) {
-        await useAddPoints(address, "daily_spin_win");
-      }
 
       const rewardText = data.reward?.reward ?? "Nothing today";
 
@@ -165,7 +146,6 @@ export function DailySpinDrawer({
       console.error("Spin failed", e);
     } finally {
       setIsSpinning(false);
-      // ✅ Always refresh spin status
       if (fid !== null) {
         await fetchSpinStatus(fid, true);
       }
@@ -178,17 +158,11 @@ export function DailySpinDrawer({
         result === "Tab Points +10"
           ? "Earned +10 Tab Points 🎉"
           : `I just won ${result} on Daily Spin!`,
-
       description: "Spin for rewards. ETH, Points, glory.",
     });
     sdk.actions.openUrl(url);
-
-    if (address) {
-      await useAddPoints(address, "share_frame");
-    }
   };
 
-  // ⏳ Countdown to next eligible spin
   useEffect(() => {
     if (!nextEligibleSpinAt) return;
 
@@ -224,7 +198,7 @@ export function DailySpinDrawer({
       setHasSpun(false);
       setIsSpinning(false);
       setShowShare(false);
-      setCanSpin(false); // ✅ this line is the fix
+      setCanSpin(false);
     }
   }, [isOpen]);
 
@@ -240,17 +214,14 @@ export function DailySpinDrawer({
   return (
     <Drawer.Root open={isOpen} onOpenChange={setIsOpen}>
       <Drawer.Portal>
-        {/* <Drawer.Overlay className="fixed inset-0 bg-black/60 backdrop-blur-sm z-20" />
-        <Drawer.Content className="scroll-smooth z-50 fixed top-[80px] left-0 right-0 bottom-0 bg-background rounded-t-3xl flex flex-col">
-           */}
-        <Drawer.Overlay className="fixed inset-0 bg-black/60 backdrop-blur-sm z-20" />
+        <Drawer.Overlay className="fixed inset-0 bg-[#4E4C52]/60 backdrop-blur-sm z-20" />
         <Drawer.Content className="pb-6 z-30 bg-background flex flex-col rounded-t-[32px] mt-24 h-fit fixed bottom-0 left-0 right-0 outline-none">
           <div className="mt-3 mx-auto w-10 h-1.5 rounded-full bg-white/10 mb-4" />
 
           <div className="px-6 mb-6">
             <h2 className="text-xl font-medium text-white">Daily Spin & Win</h2>
             <p className="text-white/50 text-base mt-4">
-              100,000 $tab up for grabs daily. Spin up to 3x a day. Rewards drop
+              100,000 $tab up for grabs daily. Spin up to 2x a day. Rewards drop
               straight to your wallet.
             </p>
             {spinMeta && (
@@ -261,7 +232,6 @@ export function DailySpinDrawer({
             )}
           </div>
 
-          {/* Spin Result */}
           <div className="flex-1 flex flex-col items-center justify-center px-6 text-center">
             <div
               className={`w-full p-6 rounded-xl border-2 shadow-md transition-all duration-200 ${

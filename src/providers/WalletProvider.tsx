@@ -6,7 +6,7 @@ import { base } from "wagmi/chains";
 export const config = createConfig({
   chains: [base],
   transports: {
-    [base.id]: http(),
+    [base.id]: http(process.env.ALCHEMY_URL!), // ✅ REQUIRED
   },
   connectors: [farcasterFrame()],
 });

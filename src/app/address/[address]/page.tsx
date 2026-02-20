@@ -53,7 +53,7 @@ export default function ReceiveByAddressPage() {
             <QRCode
               value={url}
               size={200}
-              logoImage={pfpUrl || "/splash.png"}
+              logoImage={pfpUrl || "/app.png"}
               logoWidth={32}
               logoHeight={32}
               logoOpacity={1}
@@ -99,7 +99,7 @@ export default function ReceiveByAddressPage() {
         >
           2025 ©tab
           <br />
-          Social payments on Farcaster
+          Social payments on Base and Farcaster
         </a>
       </div>
     </div>

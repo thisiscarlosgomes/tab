@@ -10,22 +10,30 @@ import {
   useWriteContract,
 } from "wagmi";
 import { Button } from "@/components/ui/button";
-import { useAddPoints } from "@/lib/useAddPoints";
 import { tokenList } from "@/lib/tokens";
-import { erc20Abi, parseUnits } from "viem";
+import { erc20Abi, parseUnits, isAddress } from "viem";
+import { createPublicClient, http } from "viem";
+import { mainnet } from "viem/chains";
+import { normalize } from "viem/ens";
 
 interface PayButtonProps {
-  recipient: `0x${string}`;
+  recipient: string; // ENS or 0x
   amount: number;
   onlyIf: boolean;
   onPay: () => void;
+
   payer: {
     address: string;
     name: string;
+    fid: number;
   };
+
   roomId: string;
-  setShowSuccess: (open: boolean) => void;
-  token?: string; // new
+  token?: string;
+  disabled?: boolean;
+
+  /** ✅ NEW — lifted success handler */
+  onSuccess?: (data: { txHash?: `0x${string}` }) => void;
 }
 
 export function PayButton({
@@ -35,8 +43,9 @@ export function PayButton({
   onPay,
   payer,
   roomId,
-  setShowSuccess,
-  token = "ETH", // default
+  token = "ETH",
+  disabled = false,
+  onSuccess,
 }: PayButtonProps) {
   const { isConnected, address } = useAccount();
   const { connect } = useConnect();
@@ -57,48 +66,89 @@ export function PayButton({
     return amount < 0.01 ? amount.toFixed(6) : amount.toFixed(2);
   }
 
+  /* =========================
+     HANDLE TX SUCCESS
+  ========================= */
   useEffect(() => {
-    const handleSuccess = async () => {
-      if (!payer?.address || !payer?.name || !hash || !roomId) return;
+    if (!isSuccess || successHandled.current || !hash) return;
 
-      await fetch(`/api/game/${roomId}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          address: payer.address,
-          payment: {
-            address: payer.address,
-            name: payer.name,
-            txHash: hash,
-            token,
-          },
-        }),
-      });
+    successHandled.current = true;
 
-      await useAddPoints(payer.address, "pay", roomId);
+    (async () => {
+      try {
+        // 1. Mark paid in backend
+        await fetch(`/api/split/${roomId}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            payment: {
+              fid: payer.fid, // ✅ REQUIRED
+              address: payer.address,
+              name: payer.name,
+              txHash: hash,
+              token,
+              amount,
+            },
+          }),
+        });
 
-      setHasPaid(true);
-      setShowSuccess(true);
-      setIsPaying(false);
-      onPay();
-    };
+        // 2. Local state
+        setHasPaid(true);
+        setIsPaying(false);
 
-    if (isSuccess && !successHandled.current) {
-      successHandled.current = true;
-      handleSuccess();
-    }
-  }, [isSuccess, hash, payer, roomId, onPay, setShowSuccess, token]);
+        // 3. Notify parent (drawer / confetti / copy)
+        onSuccess?.({
+          txHash: hash,
+        });
 
+        // 4. Refresh room state
+        onPay();
+      } catch (err) {
+        console.error("Post-payment handling failed", err);
+        setIsPaying(false);
+      }
+    })();
+  }, [isSuccess, hash, roomId, payer, token, onPay, onSuccess]);
+
+  /* =========================
+     HANDLE CLICK
+  ========================= */
   const handleClick = async () => {
+    if (disabled || hasPaid || isPaying || !!hash) return;
+
     if (!isConnected || !address) {
       await connect({ connector: farcasterFrame() });
       return;
     }
 
-    setIsPaying(true);
-
     if (!tokenInfo) {
       console.error(`Invalid token: ${token}`);
+      return;
+    }
+
+    setIsPaying(true);
+
+    const client = createPublicClient({
+      chain: mainnet,
+      transport: http(),
+    });
+
+    let resolvedAddress: `0x${string}`;
+
+    try {
+      if (isAddress(recipient)) {
+        resolvedAddress = recipient as `0x${string}`;
+      } else if (recipient.endsWith(".eth")) {
+        const ens = await client.getEnsAddress({
+          name: normalize(recipient),
+        });
+        if (!ens || !isAddress(ens)) throw new Error("ENS resolve failed");
+        resolvedAddress = ens as `0x${string}`;
+      } else {
+        throw new Error("Invalid recipient");
+      }
+    } catch (err) {
+      console.error("Recipient resolution failed", err);
       setIsPaying(false);
       return;
     }
@@ -108,20 +158,20 @@ export function PayButton({
     try {
       let txHash: `0x${string}`;
 
-      if (!tokenInfo?.address) {
-        // Native ETH
+      if (!tokenInfo.address) {
+        // ETH
         txHash = await sendTransactionAsync({
-          to: recipient,
+          to: resolvedAddress,
           value,
           chainId: 8453,
         });
       } else {
-        // ERC-20 transfer
+        // ERC-20
         txHash = await writeContractAsync({
           address: tokenInfo.address as `0x${string}`,
           abi: erc20Abi,
           functionName: "transfer",
-          args: [recipient, value],
+          args: [resolvedAddress, value],
           chainId: 8453,
         });
       }
@@ -138,14 +188,14 @@ export function PayButton({
   return (
     <Button
       onClick={handleClick}
-      disabled={hasPaid || !!hash || isPaying}
-      className="w-full mt-4"
+      disabled={disabled || hasPaid || !!hash || isPaying}
+      className="w-full"
     >
       {hasPaid
         ? "✅ Paid"
         : isPaying
-          ? `⏳ Sending ${formatAmount(amount)} ${token}...`
-          : `💸 Pay ${formatAmount(amount)} ${token}`}
+          ? "Confirming…"
+          : `Pay ${formatAmount(amount)} ${token}`}
     </Button>
   );
 }

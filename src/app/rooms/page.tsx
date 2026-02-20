@@ -10,7 +10,7 @@ export default function RoomsPage() {
 
   const [userRooms, setUserRooms] = useState<
     {
-      roomId: string;
+      gameId: string;
       members: { name: string; pfp: string }[];
       admin?: string;
     }[]
@@ -51,27 +51,27 @@ export default function RoomsPage() {
 
   return (
     <main className="w-full min-h-screen flex flex-col items-center justify-center p-6">
-      <h1 className="text-2xl font-bold mb-4">Your Tables</h1>
+      <h1 className="text-2xl font-bold mb-2">Spin Groups</h1>
 
       {isLoading ? (
-        <p className="text-white/30">Loading tables...</p>
+        <p className="text-white/30">Loading groups...</p>
       ) : userRooms.length === 0 ? (
-        <p className="text-white/30">No tables found. Join or create one!</p>
+        <p className="text-white/30">No groups found. Join or create one!</p>
       ) : (
-        userRooms.map(({ roomId, members, admin }) => {
+        userRooms.map(({ gameId, members, admin }) => {
           const isUserAdmin = address?.toLowerCase() === admin?.toLowerCase();
 
           return (
             <li
-              key={roomId}
+              key={gameId}
               className="mb-4 w-full max-w-md p-3 border rounded-lg flex flex-col items-center cursor-pointer hover:bg-white/5"
-              onClick={() => router.push(`/game/${roomId}`)}
+              onClick={() => router.push(`/game/${gameId}`)}
             >
               <div className="flex items-center gap-2">
-                <p className="text-lg font-medium">#{roomId}</p>
+                <p className="text-lg font-medium">#{gameId}</p>
                 {isUserAdmin && (
                   <span className="text-xs text-violet-400 bg-violet-900/30 px-2 py-0.5 rounded-md">
-                    admin
+                    Host
                   </span>
                 )}
               </div>

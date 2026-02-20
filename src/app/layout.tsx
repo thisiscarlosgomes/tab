@@ -7,18 +7,19 @@ import { Providers } from "@/providers/Providers";
 // import { Header } from "@/components/header";
 import { Analytics } from "@vercel/analytics/react";
 import { AppShell } from "@/components/AppShell";
+import "react-loading-skeleton/dist/skeleton.css";
 
 const frame = {
   version: "next",
-  imageUrl: `https://tab.castfriends.com/cover.png`,
+  imageUrl: `https://usetab.app/cover.png`,
   button: {
     title: "launch tab",
     action: {
       type: "launch_frame",
       name: "tab",
-      url: "https://tab.castfriends.com",
-      iconImageUrl: "https://tab.castfriends.com/app.png",
-      splashImageUrl: "https://tab.castfriends.com/splash.png",
+      url: "https://usetab.app",
+      iconImageUrl: "https://usetab.app/app.png",
+      splashImageUrl: "https://usetab.app/app.png",
       splashBackgroundColor: "#201E23",
     },
   },
@@ -26,12 +27,12 @@ const frame = {
 
 export async function generateMetadata(): Promise<Metadata> {
   return {
-    metadataBase: new URL("https://tab.castfriends.com"),
+    metadataBase: new URL("https://usetab.app"),
     title: "tab",
     openGraph: {
       title: "tab",
-      description: "Social payments on Farcaster",
-      images: "https://tab.castfriends.com/cover.png",
+      description: "Social payments on Base and Farcaster",
+      images: "https://usetab.app/cover.png",
     },
     manifest: "/manifest.json",
     icons: "/app.png",
@@ -62,12 +63,13 @@ export default function RootLayout({
           href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=block"
           rel="stylesheet"
         />
+        <meta name="base:app_id" content="68ed7bcce4ceccbd41c31b09" />
         <meta
           name="viewport"
           content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no"
         />
       </head>
-      <body className="antialiased Text/Faint bg-background text-foreground scrollbar-vert">
+      <body className="select-none antialiased Text/Faint bg-background text-foreground scrollbar-vert">
         <Providers>
           {/* <Header /> */}
           <AppShell>{children}</AppShell>

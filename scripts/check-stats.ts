@@ -9,6 +9,34 @@ const run = async () => {
   const startOfToday = new Date(`${today}T00:00:00Z`);
   const endOfToday = new Date(`${today}T23:59:59Z`);
 
+
+    // --- Deposits ---
+  const depositTodayAgg = await db.collection("a-jackpot-deposit").aggregate([
+    { $match: { timestamp: { $gte: startOfToday, $lte: endOfToday } } },
+    {
+      $group: {
+        _id: "$address",
+        totalDeposited: { $sum: "$amount" },
+      },
+    },
+  ]).toArray();
+
+  const depositAllAgg = await db.collection("a-jackpot-deposit").aggregate([
+    {
+      $group: {
+        _id: "$address",
+        totalDeposited: { $sum: "$amount" },
+      },
+    },
+  ]).toArray();
+
+  const totalDepositorsToday = depositTodayAgg.length;
+  const totalAmountDepositedToday = depositTodayAgg.reduce((sum, d) => sum + d.totalDeposited, 0);
+
+  const totalDepositorsAllTime = depositAllAgg.length;
+  const totalAmountDepositedAllTime = depositAllAgg.reduce((sum, d) => sum + d.totalDeposited, 0);
+
+
   let totalSpinsToday = 0;
   let totalWinnersToday = 0;
   let totalSpinsAllTime = 0;
@@ -20,45 +48,78 @@ const run = async () => {
     for (const date in spins) {
       const entries = spins[date];
       totalSpinsAllTime += entries.length;
-      totalWinnersAllTime += entries.filter((s: any) => s.reward !== "Nothing today").length;
+      totalWinnersAllTime += entries.filter(
+        (s: any) => s.reward !== "Nothing today"
+      ).length;
 
       if (date === today) {
         totalSpinsToday += entries.length;
-        totalWinnersToday += entries.filter((s: any) => s.reward !== "Nothing today").length;
+        totalWinnersToday += entries.filter(
+          (s: any) => s.reward !== "Nothing today"
+        ).length;
       }
     }
   }
 
-  const tracker = await db.collection("a-daily-token-tracker").findOne({ date: today });
-  const allTrackers = await db.collection("a-daily-token-tracker").find({}).toArray();
+  const tracker = await db
+    .collection("a-daily-token-tracker")
+    .findOne({ date: today });
+  const allTrackers = await db
+    .collection("a-daily-token-tracker")
+    .find({})
+    .toArray();
 
-  const totalDistributedToday = tracker?.total ?? 0;
-  const totalDistributedAllTime = allTrackers.reduce((sum, t) => sum + (t.total || 0), 0);
+  // const totalDistributedToday = tracker?.total ?? 0;
+  const totalDistributedToday =
+    tracker?.txs
+      ?.filter((tx: any) => tx.send === true)
+      .reduce((sum: number, tx: any) => sum + tx.amount, 0) ?? 0;
 
-  const splitToday = await db.collection("a-split-game").countDocuments({ createdAt: { $gte: startOfToday, $lte: endOfToday } });
-  const splitAll = await db.collection("a-split-game").countDocuments();
-
-  const billToday = await db.collection("a-split-bill").countDocuments({ createdAt: { $gte: startOfToday, $lte: endOfToday } });
-  const billAll = await db.collection("a-split-bill").countDocuments();
-
-  const splitNotifs = await db.collection("a-split-notification").distinct("fid");
-  const totalNotifFIDs = splitNotifs.length;
-
-  const roomsByUser = await db.collection("a-split-game").aggregate([
-    { $group: { _id: "$admin", count: { $sum: 1 } } },
-    { $match: { count: { $gt: 3 } } },
-  ]).toArray();
-
-  const billsByUser = await db.collection("a-split-bill").aggregate([
-    { $group: { _id: "$creator", count: { $sum: 1 } } },
-    { $match: { count: { $gt: 3 } } },
-  ]).toArray();
-
-  const powerUsers = roomsByUser.filter(roomUser =>
-    billsByUser.find(billUser => billUser._id?.toLowerCase?.() === roomUser._id?.toLowerCase?.())
+  const totalDistributedAllTime = allTrackers.reduce(
+    (sum, t) => sum + (t.total || 0),
+    0
   );
 
-  const leaderboard = await db.collection("a-user-points")
+  const splitToday = await db
+    .collection("a-split-game")
+    .countDocuments({ createdAt: { $gte: startOfToday, $lte: endOfToday } });
+  const splitAll = await db.collection("a-split-game").countDocuments();
+
+  const billToday = await db
+    .collection("a-split-bill")
+    .countDocuments({ createdAt: { $gte: startOfToday, $lte: endOfToday } });
+  const billAll = await db.collection("a-split-bill").countDocuments();
+
+  const splitNotifs = await db
+    .collection("a-split-notification")
+    .distinct("fid");
+  const totalNotifFIDs = splitNotifs.length;
+
+  const roomsByUser = await db
+    .collection("a-split-game")
+    .aggregate([
+      { $group: { _id: "$admin", count: { $sum: 1 } } },
+      { $match: { count: { $gt: 3 } } },
+    ])
+    .toArray();
+
+  const billsByUser = await db
+    .collection("a-split-bill")
+    .aggregate([
+      { $group: { _id: "$creator", count: { $sum: 1 } } },
+      { $match: { count: { $gt: 3 } } },
+    ])
+    .toArray();
+
+  const powerUsers = roomsByUser.filter((roomUser) =>
+    billsByUser.find(
+      (billUser) =>
+        billUser._id?.toLowerCase?.() === roomUser._id?.toLowerCase?.()
+    )
+  );
+
+  const leaderboard = await db
+    .collection("a-user-points")
     .find({})
     .sort({ points: -1 })
     .limit(5)
@@ -84,6 +145,9 @@ const run = async () => {
   console.log(`🪙 $TAB Distributed Today: ${totalDistributedToday}`);
   console.log(`💸 Tables Created Today: ${splitToday}`);
   console.log(`🧾 Bills Created Today: ${billToday}`);
+  console.log(`🏦 Depositors Today: ${totalDepositorsToday}`);
+console.log(`💰 Deposited Today: ${totalAmountDepositedToday.toFixed(2)}`);
+
   console.log(`-------------`);
   console.log(`\n📊 All-Time Stats`);
   console.log(`🎯 Total Spins: ${totalSpinsAllTime}`);
@@ -92,6 +156,9 @@ const run = async () => {
   console.log(`💸 Total Tables: ${splitAll}`);
   console.log(`🧾 Total Bills: ${billAll}`);
   console.log(`📣 Total Users with Notifications: ${totalNotifFIDs}`);
+  console.log(`🏦 Total Depositors: ${totalDepositorsAllTime}`);
+console.log(`💰 Total Deposited: ${totalAmountDepositedAllTime.toFixed(2)}`);
+
   console.log(`📤 Users Who Shared: ${sharedCount}`);
   console.log(`➕ Users Who Added: ${addedCount}`);
   console.log(`-------------`);
@@ -105,14 +172,18 @@ const run = async () => {
     const address = user.address;
 
     const [tableCount, billCount] = await Promise.all([
-      db.collection("a-split-game").countDocuments(
-        { admin: address },
-        { collation: { locale: "en", strength: 2 } }
-      ),
-      db.collection("a-split-bill").countDocuments(
-        { creator: address },
-        { collation: { locale: "en", strength: 2 } }
-      ),
+      db
+        .collection("a-split-game")
+        .countDocuments(
+          { admin: address },
+          { collation: { locale: "en", strength: 2 } }
+        ),
+      db
+        .collection("a-split-bill")
+        .countDocuments(
+          { creator: address },
+          { collation: { locale: "en", strength: 2 } }
+        ),
     ]);
 
     const breakdown: Record<string, number> = {};

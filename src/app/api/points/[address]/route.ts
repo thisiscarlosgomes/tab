@@ -18,14 +18,15 @@ type UserPoints = {
 
 const POINTS_MAP: Record<string, number> = {
   create_tab: 100,
-  pay: 200,
+  pay: 100,
   spin_win: 100,
-  send_token: 500,
+  send_token: 200,
   join_tab: 100,
   top_10_week: 500,
   share_frame: 50,
   add_frame: 50,
   daily_spin_win: 10,
+  earn_deposit: 200,
 };
 
 export async function GET(req: NextRequest) {
@@ -82,7 +83,7 @@ export async function POST(req: NextRequest) {
   const body = await req.json();
   const rawAction = body.action;
   const action = rawAction?.toLowerCase();
-  const { tabId, splitId } = body;
+  const { tabId, splitId, amount } = body;
 
   if (!action || !POINTS_MAP[action] || action === "invite") {
     return new Response(
@@ -110,7 +111,8 @@ export async function POST(req: NextRequest) {
 
   // 🛑 Limit tab creation rewards to 3
   if (action === "create_tab") {
-    const existing = user?.history?.filter((h) => h.action === "create_tab").length ?? 0;
+    const existing =
+      user?.history?.filter((h) => h.action === "create_tab").length ?? 0;
     if (existing >= 3) {
       return Response.json({
         success: true,
@@ -120,24 +122,27 @@ export async function POST(req: NextRequest) {
     }
   }
 
-  const points = POINTS_MAP[action];
+  // const points = POINTS_MAP[action];
+  // const points = typeof body.amount === "number" ? body.amount : POINTS_MAP[action];
+  const points = typeof amount === "number" ? amount : POINTS_MAP[action];
 
-  await collection.updateOne(
-    { address },
-    {
-      $inc: { points },
-      $push: {
-        history: {
-          action,
-          points,
-          tabId,
-          splitId,
-          timestamp: new Date(),
-        },
+
+await collection.updateOne(
+  { address },
+  {
+    $inc: { points },
+    $push: {
+      history: {
+        action,
+        points,
+        tabId,
+        splitId,
+        timestamp: new Date(),
       },
     },
-    { upsert: true }
-  );
+  },
+  { upsert: true }
+);
 
   const updated = await collection.findOne(
     { address },

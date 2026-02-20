@@ -1,342 +1,411 @@
+export const runtime = "nodejs";
+
 import { NextRequest } from "next/server";
 import clientPromise from "@/lib/mongodb";
 import { encrypt, decrypt } from "@/lib/encryption";
 import { isAddress } from "viem";
+import { writeActivity } from "@/lib/writeActivity";
 
+/* =========================
+   Helpers
+========================= */
+function normalizeGameId(raw?: string): string | null {
+  if (!raw) return null;
+
+  try {
+    const id = decodeURIComponent(raw)
+      .toLowerCase()
+      .replace(/\s+/g, "-")
+      .replace(/[^a-z0-9-_]/g, "");
+
+    return id.length ? id : null;
+  } catch {
+    return null;
+  }
+}
+
+/* =========================
+   GET game
+========================= */
 export async function GET(req: NextRequest) {
-  const urlParts = req.nextUrl.pathname.split("/");
-  const rawId = urlParts[urlParts.length - 1];
-  const roomId = decodeURIComponent(rawId).toLowerCase().replace(/\s+/g, "_");
+  const rawId = req.nextUrl.pathname.split("/").pop();
+  const gameId = normalizeGameId(rawId);
 
-  if (!roomId) {
-    return new Response(JSON.stringify({ error: "Missing roomId" }), {
-      status: 400,
-    });
+  if (!gameId) {
+    return Response.json({ error: "Missing gameId" }, { status: 400 });
   }
 
   const client = await clientPromise;
   const db = client.db();
-  const collection = db.collection("a-split-game");
+  const games = db.collection("a-split-game");
 
-  const game = await collection.findOne(
-    { gameId: roomId },
-    { collation: { locale: "en", strength: 2 } }
-  );
-
+  const game = await games.findOne({ gameId });
   if (!game) {
-    return new Response(JSON.stringify({ error: "Room not found" }), {
-      status: 404,
-    });
+    return Response.json({ error: "Room not found" }, { status: 404 });
   }
 
-  // 🔐 Decrypt recipient if it exists
+  /* 🔐 decrypt recipient (legacy / Mode 1 only) */
   if (game.recipient) {
     try {
       const decrypted = decrypt(game.recipient);
-      game.recipient = isAddress(decrypted) ? decrypted : "Invalid address";
+      game.recipient = isAddress(decrypted) ? decrypted : null;
     } catch {
-      game.recipient = "Invalid encrypted address";
+      game.recipient = null;
     }
   }
 
   return Response.json(game);
 }
 
+/* =========================
+   POST – JOIN game
+========================= */
 export async function POST(req: NextRequest) {
-  const urlParts = req.nextUrl.pathname.split("/");
-  const rawId = urlParts[urlParts.length - 1];
-  const roomId = decodeURIComponent(rawId).toLowerCase().replace(/\s+/g, "_");
+  const rawId = req.nextUrl.pathname.split("/").pop();
+  const gameId = normalizeGameId(rawId);
 
-  if (!roomId) {
-    return new Response(JSON.stringify({ error: "Missing roomId" }), {
-      status: 400,
-    });
+  if (!gameId) {
+    return Response.json({ error: "Missing gameId" }, { status: 400 });
   }
-
-  const client = await clientPromise;
-  const db = client.db();
-  const collection = db.collection("a-split-game");
 
   const body = await req.json();
   const { player } = body;
 
   if (!player?.address) {
-    return new Response(JSON.stringify({ error: "Missing player address" }), {
-      status: 400,
-    });
+    return Response.json({ error: "Missing player" }, { status: 400 });
   }
 
-  const existingGame = await collection.findOne(
-    { gameId: roomId },
-    { collation: { locale: "en", strength: 2 } }
-  );
-
-  if (existingGame) {
-    // 🔁 JOIN flow — just add user to participants if not already present
-    const isAlreadyParticipant = (
-      existingGame.participants as { address: string }[]
-    ).some((p) => p.address.toLowerCase() === player.address.toLowerCase());
-
-    if (!isAlreadyParticipant) {
-      await collection.updateOne(
-        { gameId: roomId },
-        { $addToSet: { participants: player } }
-      );
-    }
-
-    const updated = await collection.findOne(
-      { gameId: roomId },
-      { collation: { locale: "en", strength: 2 } }
-    );
-    return Response.json(updated);
-  }
-
-  // 🆕 CREATE flow
-  const playerWithPfp = { ...player };
-
-  await collection.insertOne({
-    gameId: roomId,
-    participants: [playerWithPfp],
-    admin: playerWithPfp.address,
-    recipient: "",
-    amount: 0.01,
-    chosen: null,
-    adminOnlySpin: false,
-    paid: [],
-    createdAt: new Date(), // ✅ add this line
-  });
-
-  const updated = await collection.findOne(
-    { gameId: roomId },
-    { collation: { locale: "en", strength: 2 } }
-  );
-  return Response.json(updated);
-}
-
-export async function PUT(req: NextRequest) {
-  const urlParts = req.nextUrl.pathname.split("/");
-  const rawId = urlParts[urlParts.length - 1];
-  const roomId = decodeURIComponent(rawId).toLowerCase().replace(/\s+/g, "_");
-
-  if (!roomId) {
-    return new Response(JSON.stringify({ error: "Missing roomId" }), {
-      status: 400,
-    });
-  }
+  const address = player.address.toLowerCase();
 
   const client = await clientPromise;
   const db = client.db();
-  const collection = db.collection("a-split-game");
+  const games = db.collection("a-split-game");
 
-  const game = await collection.findOne(
-    { gameId: roomId },
-    { collation: { locale: "en", strength: 2 } }
-  );
-
-  if (!game || !game.participants || game.participants.length === 0) {
-    return new Response(
-      JSON.stringify({ error: "No participants to choose from" }),
-      { status: 400 }
-    );
-  }
-
-  const randomIndex = Math.floor(Math.random() * game.participants.length);
-  const chosen = game.participants[randomIndex];
-
-  await collection.updateOne({ gameId: roomId }, { $set: { chosen } });
-
-  const updated = await collection.findOne(
-    { gameId: roomId },
-    { collation: { locale: "en", strength: 2 } }
-  );
-
-  return Response.json(updated);
-}
-
-export async function PATCH(req: NextRequest) {
-  const urlParts = req.nextUrl.pathname.split("/");
-  const rawId = urlParts[urlParts.length - 1];
-  const roomId = decodeURIComponent(rawId).toLowerCase().replace(/\s+/g, "_");
-
-  if (!roomId) {
-    return new Response(JSON.stringify({ error: "Missing roomId" }), {
-      status: 400,
-    });
-  }
-
-  const client = await clientPromise;
-  const db = client.db();
-  const collection = db.collection("a-split-game");
-
-  const body = await req.json();
-  const {
-    address,
-    recipient,
-    amount,
-    adminOnlySpin,
-    spinToken,
-    markPickedAsPaid,
-  } = body;
-
-  if (
-    (!address && !body.payment?.address) ||
-    (recipient === undefined &&
-      amount === undefined &&
-      adminOnlySpin === undefined &&
-      spinToken === undefined &&
-      !markPickedAsPaid &&
-      !body.payment)
-  ) {
-    return new Response(
-      JSON.stringify({ error: "Missing or invalid fields" }),
-      { status: 400 }
-    );
-  }
-
-  const game = await collection.findOne(
-    { gameId: roomId },
-    { collation: { locale: "en", strength: 2 } }
-  );
-
+  const game = await games.findOne({ gameId });
   if (!game) {
-    return new Response(JSON.stringify({ error: "Room not found" }), {
-      status: 404,
-    });
+    return Response.json({ error: "Room not found" }, { status: 404 });
   }
 
-  const isAdmin = game.admin.toLowerCase() === address?.toLowerCase();
-
-  // If it's a payment, allow it even if not admin
-  const isPaymentUpdate = !!body.payment?.address && !!body.payment?.txHash;
-
-  // Block if not admin and not a payment update
-  if (!isAdmin && !isPaymentUpdate) {
-    return new Response(JSON.stringify({ error: "Not authorized" }), {
-      status: 403,
-    });
-  }
-
-  const updateFields: Partial<{
-    recipient: string;
-    amount: number;
-    adminOnlySpin: boolean;
-    spinToken: string;
-  }> = {};
-
-  if (recipient) {
-    updateFields.recipient = encrypt(recipient);
-  }
-
-  if (amount !== undefined) {
-    const parsedAmount = parseFloat(amount);
-    if (!isNaN(parsedAmount)) {
-      updateFields.amount = parsedAmount;
-    }
-  }
-
-  if (adminOnlySpin !== undefined) {
-    updateFields.adminOnlySpin = adminOnlySpin;
-  }
-
-  if (spinToken && typeof spinToken === "string") {
-    updateFields.spinToken = spinToken;
-  }
-
-  const updateOps: {
-    $set?: typeof updateFields;
-    $addToSet?: {
-      paid?: {
-        address: string;
-        name: string;
-        txHash: string;
-        timestamp?: Date;
-      };
-    };
-  } = {};
-
-  // ✅ Add onchain payment
-  if (body.payment?.address && body.payment?.txHash) {
-    updateOps.$addToSet = {
-      paid: {
-        address: body.payment.address,
-        name: body.payment.name,
-        txHash: body.payment.txHash,
-        timestamp: new Date(),
-      },
-    };
-  }
-
-  // ✅ Add manual payment if requested and admin
-  if (isAdmin && markPickedAsPaid && game.chosen) {
-    updateOps.$addToSet = {
-      ...(updateOps.$addToSet || {}),
-      paid: {
-        address: game.chosen.address,
-        name: game.chosen.name,
-        txHash: "manual",
-        timestamp: new Date(),
-      },
-    };
-  }
-
-  if (Object.keys(updateFields).length > 0) {
-    updateOps.$set = updateFields;
-  }
-
-  if (!updateOps.$set && !updateOps.$addToSet) {
-    return new Response(JSON.stringify({ error: "Nothing to update" }), {
-      status: 400,
-    });
-  }
-
-  await collection.updateOne({ gameId: roomId }, updateOps);
-
-  const updated = await collection.findOne(
-    { gameId: roomId },
-    { collation: { locale: "en", strength: 2 } }
+  const alreadyInGame = game.participants.some(
+    (p: any) => p.address.toLowerCase() === address
   );
 
-  return Response.json(updated);
-}
+  if (!alreadyInGame) {
+    await games.updateOne(
+      { gameId },
+      { $addToSet: { participants: { ...player, address } } }
+    );
 
-export async function DELETE(req: NextRequest) {
-  const urlParts = req.nextUrl.pathname.split("/");
-  const rawId = urlParts[urlParts.length - 1];
-  const roomId = decodeURIComponent(rawId).toLowerCase().replace(/\s+/g, "_");
+    await writeActivity({
+      address,
+      type: "room_joined",
+      refType: "room",
+      refId: gameId,
+      counterparty: { address: game.admin },
+      timestamp: new Date(),
+    });
 
-  if (!roomId) {
-    return new Response(JSON.stringify({ error: "Missing roomId" }), {
-      status: 400,
+    await writeActivity({
+      address: game.admin,
+      type: "room_joined",
+      refType: "room",
+      refId: gameId,
+      counterparty: {
+        address,
+        name: player.name,
+      },
+      timestamp: new Date(),
     });
   }
 
-  const client = await clientPromise;
-  const db = client.db();
-  const collection = db.collection("a-split-game");
+  return Response.json(await games.findOne({ gameId }));
+}
+
+/* =========================
+   PUT – SPIN
+========================= */
+export async function PUT(req: NextRequest) {
+  const rawId = req.nextUrl.pathname.split("/").pop();
+  const gameId = normalizeGameId(rawId);
+
+  if (!gameId) {
+    return Response.json({ error: "Missing gameId" }, { status: 400 });
+  }
 
   const body = await req.json();
   const { address } = body;
 
   if (!address) {
-    return new Response(JSON.stringify({ error: "Missing user address" }), {
-      status: 400,
-    });
+    return Response.json({ error: "Missing address" }, { status: 400 });
   }
 
-  const game = await collection.findOne({ gameId: roomId });
+  const caller = address.toLowerCase();
+
+  const client = await clientPromise;
+  const db = client.db();
+  const games = db.collection("a-split-game");
+
+  const game = await games.findOne({ gameId });
+  if (!game || !game.participants?.length) {
+    return Response.json({ error: "No participants" }, { status: 400 });
+  }
+
+  if (game.adminOnlySpin && caller !== game.admin) {
+    return Response.json({ error: "Only admin can spin" }, { status: 403 });
+  }
+
+  if (game.chosen) {
+    return Response.json({ error: "Already spun" }, { status: 400 });
+  }
+
+  const chosen =
+    game.participants[Math.floor(Math.random() * game.participants.length)];
+
+  await games.updateOne(
+    { gameId },
+    {
+      $set: {
+        chosen,
+        chosenAt: new Date(),
+      },
+    }
+  );
+
+  return Response.json(await games.findOne({ gameId }));
+}
+
+/* =========================
+   PATCH – CLOSE TAB / PAYMENT
+========================= */
+export async function PATCH(req: NextRequest) {
+  const rawId = req.nextUrl.pathname.split("/").pop();
+  const gameId = normalizeGameId(rawId);
+
+  if (!gameId) {
+    return Response.json({ error: "Missing gameId" }, { status: 400 });
+  }
+
+  const body = await req.json();
+  const { address, amount, adminOnlySpin, spinToken, payment, closeTab } = body;
+
+  const client = await clientPromise;
+  const db = client.db();
+  const games = db.collection("a-split-game");
+
+  const game = await games.findOne({ gameId });
   if (!game) {
-    return new Response(JSON.stringify({ error: "Room not found" }), {
-      status: 404,
+    return Response.json({ error: "Room not found" }, { status: 404 });
+  }
+
+  const update: any = {};
+  const caller = address?.toLowerCase();
+
+  /* -------- settings (admin only) -------- */
+  if (caller && caller === game.admin) {
+    if (amount !== undefined) {
+      update.$set = { ...(update.$set || {}), amount };
+    }
+
+    if (adminOnlySpin !== undefined) {
+      update.$set = { ...(update.$set || {}), adminOnlySpin };
+    }
+
+    if (spinToken) {
+      update.$set = { ...(update.$set || {}), spinToken };
+    }
+  }
+
+  /* -------- chosen user closes tab (offline settlement) -------- */
+  if (closeTab === true) {
+    if (!caller) {
+      return Response.json({ error: "Missing address" }, { status: 400 });
+    }
+
+    if (!game.chosen) {
+      return Response.json(
+        { error: "Spin has not happened yet" },
+        { status: 400 }
+      );
+    }
+
+    if (caller !== game.chosen.address.toLowerCase()) {
+      return Response.json(
+        { error: "Only the chosen user can close the tab" },
+        { status: 403 }
+      );
+    }
+
+    const alreadyClosed = game.paid?.some((p: any) => p.address === caller);
+    if (alreadyClosed) {
+      return Response.json({ error: "Tab already closed" }, { status: 400 });
+    }
+
+    const closedAt = new Date();
+
+    update.$addToSet = {
+      ...(update.$addToSet || {}),
+      paid: {
+        address: caller,
+        name: game.chosen.name,
+        txHash: "offline",
+        timestamp: closedAt,
+      },
+    };
+
+    update.$set = {
+      ...(update.$set || {}),
+      archived: true,
+      closedAt,
+    };
+
+    await writeActivity({
+      address: caller,
+      type: "room_paid",
+      refType: "room",
+      refId: gameId,
+      amount: game.amount,
+      token: game.spinToken,
+      counterparty: { address: game.admin },
+      timestamp: closedAt,
     });
   }
 
-  if (game.admin.toLowerCase() !== address.toLowerCase()) {
-    return new Response(JSON.stringify({ error: "Not authorized" }), {
-      status: 403,
+  /* -------- legacy onchain payment (Mode 1 / advanced) -------- */
+  if (payment?.address && payment?.txHash) {
+    if (!game.chosen) {
+      return Response.json(
+        { error: "Spin has not happened yet" },
+        { status: 400 }
+      );
+    }
+
+    if (payment.address.toLowerCase() !== game.chosen.address.toLowerCase()) {
+      return Response.json(
+        { error: "Only the chosen user can pay" },
+        { status: 403 }
+      );
+    }
+
+    const alreadyPaid = game.paid?.some(
+      (p: any) => p.address === payment.address.toLowerCase()
+    );
+    if (alreadyPaid) {
+      return Response.json({ error: "Already paid" }, { status: 400 });
+    }
+
+    const paidAt = new Date();
+
+    update.$addToSet = {
+      ...(update.$addToSet || {}),
+      paid: {
+        address: payment.address.toLowerCase(),
+        name: payment.name,
+        txHash: payment.txHash,
+        timestamp: paidAt,
+      },
+    };
+
+    await writeActivity({
+      address: payment.address.toLowerCase(),
+      type: "room_paid",
+      refType: "room",
+      refId: gameId,
+      amount: game.amount,
+      token: game.spinToken,
+      txHash: payment.txHash,
+      counterparty: { address: game.admin },
+      timestamp: paidAt,
     });
   }
 
-  await collection.deleteOne({ gameId: roomId });
+  if (!update.$set && !update.$addToSet) {
+  return Response.json({ error: "Nothing to update" }, { status: 400 });
+}
 
-  return new Response(JSON.stringify({ success: true, deleted: roomId }));
+// ✅ APPLY UPDATE FIRST
+await games.updateOne({ gameId }, update);
+
+// ✅ THEN READ UPDATED STATE
+const updated = await games.findOne({ gameId });
+if (!updated) {
+  return Response.json(
+    { error: "Room not found after update" },
+    { status: 404 }
+  );
+}
+
+
+  /* =========================
+   TAB CLOSED — NOTIFY GROUP
+========================= */
+
+  if (
+    updated.chosen &&
+    updated.paid?.length === 1 &&
+    !updated.tabClosedNotified
+  ) {
+    const payer = updated.chosen;
+
+    for (const p of updated.participants ?? []) {
+      if (!p.fid) continue;
+
+      try {
+        await fetch("https://usetab.app/api/send-notif", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            fid: Number(p.fid),
+            title: "🎉 Tab settled",
+            message:
+              p.address.toLowerCase() === payer.address.toLowerCase()
+                ? "You covered the tab. Thanks!"
+                : `@${payer.name} covered the tab for everyone`,
+            targetUrl: `https://usetab.app/game/${updated.gameId}`,
+          }),
+        });
+      } catch {
+        console.warn("Tab settled notification failed for", p.fid);
+      }
+    }
+
+    await games.updateOne({ gameId }, { $set: { tabClosedNotified: true } });
+  }
+
+  return Response.json(updated);
+
+}
+
+/* =========================
+   DELETE game
+========================= */
+export async function DELETE(req: NextRequest) {
+  const rawId = req.nextUrl.pathname.split("/").pop();
+  const gameId = normalizeGameId(rawId);
+
+  if (!gameId) {
+    return Response.json({ error: "Missing gameId" }, { status: 400 });
+  }
+
+  const body = await req.json();
+  const { address } = body;
+
+  if (!address) {
+    return Response.json({ error: "Missing address" }, { status: 400 });
+  }
+
+  const client = await clientPromise;
+  const db = client.db();
+  const games = db.collection("a-split-game");
+
+  const game = await games.findOne({ gameId });
+  if (!game) {
+    return Response.json({ error: "Room not found" }, { status: 404 });
+  }
+
+  if (game.admin !== address.toLowerCase()) {
+    return Response.json({ error: "Not authorized" }, { status: 403 });
+  }
+
+  await games.deleteOne({ gameId });
+  return Response.json({ success: true });
 }

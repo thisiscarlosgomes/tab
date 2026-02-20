@@ -2,22 +2,27 @@
 
 import { Button } from "@/components/ui/button";
 import React, { useState, useEffect } from "react";
-import { LoaderPinwheel } from "lucide-react";
+import { toast } from "sonner";
+import clsx from "clsx";
 
 interface Player {
   name: string;
   address: string;
   pfp?: string;
+  fid?: number;
 }
 
 interface SpinButtonProps {
   participants: Player[];
   roomId: string;
   onPick: () => void;
-  userAddress: string | undefined;
+  onSpinStart: () => void;
+  userAddress?: string;
   canSpin?: boolean;
   adminOnly?: boolean;
   isAdmin?: boolean;
+  isSpinning: boolean;
+  className?: string; // ✅ NEW
 }
 
 const SPIN_COOLDOWN = 60 * 1000; // 1 minute
@@ -26,136 +31,127 @@ export function SpinButton({
   participants,
   roomId,
   onPick,
+  onSpinStart,
   userAddress,
   canSpin = true,
   adminOnly = false,
   isAdmin = false,
+  isSpinning,
+  className,
 }: SpinButtonProps) {
-  const [isSpinning, setIsSpinning] = useState(false);
   const [cooldown, setCooldown] = useState(0);
-
   const localStorageKey = `lastSpinTime-${roomId}`;
 
-  // ⏱️ Load previous spin timestamp
+  /* ----------------------------------
+     Load previous cooldown
+  ---------------------------------- */
   useEffect(() => {
     const lastSpin = localStorage.getItem(localStorageKey);
-    if (lastSpin) {
-      const diff = Date.now() - parseInt(lastSpin, 10);
-      if (diff < SPIN_COOLDOWN) {
-        setCooldown(SPIN_COOLDOWN - diff);
-      }
+    if (!lastSpin) return;
+
+    const diff = Date.now() - Number(lastSpin);
+    if (diff < SPIN_COOLDOWN) {
+      setCooldown(SPIN_COOLDOWN - diff);
     }
   }, [roomId]);
 
-  // ⏳ Decrease countdown every second
+  /* ----------------------------------
+     Cooldown ticker
+  ---------------------------------- */
   useEffect(() => {
     if (cooldown <= 0) return;
+
     const interval = setInterval(() => {
-      setCooldown((prev) => {
-        if (prev <= 1000) {
-          clearInterval(interval);
-          return 0;
-        }
-        return prev - 1000;
-      });
+      setCooldown((prev) => Math.max(0, prev - 1000));
     }, 1000);
+
     return () => clearInterval(interval);
   }, [cooldown]);
 
+  /* ----------------------------------
+     Spin handler
+  ---------------------------------- */
   const handleSpin = async () => {
     if (!roomId) return;
-    setIsSpinning(true);
+
+    onSpinStart();
 
     try {
       const res = await fetch(`/api/game/${roomId}`, {
         method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ address: userAddress }),
       });
 
-      const data = await res.json();
+      if (!res.ok) throw new Error("Spin failed");
 
-      // Save timestamp
+      const data = await res.json();
+      const picked = data?.chosen;
+
+      if (!picked?.address || !picked?.name) {
+        throw new Error("Invalid spin result");
+      }
+
       localStorage.setItem(localStorageKey, Date.now().toString());
       setCooldown(SPIN_COOLDOWN);
 
-      // Record recent spin
-      const currentUser = userAddress || "unknown";
-      // const picked = data?.chosen?.name || "someone";
-
-      const picked = data?.chosen;
-
-      if (picked?.address && picked?.name && picked?.fid) {
+      if (picked.fid) {
         try {
-          const cleanRoomName = roomId.replace(/_/g, " "); // or decodeURIComponent(roomId)
           await fetch("/api/send-notif", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
               fid: picked.fid,
-              amount: 0,
-              token: "ETH",
-              senderUsername: "usetab",
-              title: "🎲 You've been picked",
-              message: `You've been picked to pay in table ${cleanRoomName}`,
-              targetUrl: `https://tab.castfriends.com/game/${encodeURIComponent(roomId)}`,
+              title: "Spin to pay",
+              message: "You got the tab for this group",
+              targetUrl: `https://usetab.app/game/${encodeURIComponent(roomId)}`,
             }),
           });
-        } catch (err) {
-          console.warn("Notification failed:", err);
+        } catch {
+          console.warn("Failed to notify selected user");
         }
       }
 
-      const spinRecord = {
-        by: currentUser,
-        picked,
-        timestamp: Date.now(),
-      };
-
-      const key = `recent-spins-${roomId}`;
-      const existing = JSON.parse(localStorage.getItem(key) || "[]");
-      const updated = [spinRecord, ...existing].slice(0, 5);
-      localStorage.setItem(key, JSON.stringify(updated));
-
       onPick();
-    } catch {
-      // fail silently
-    } finally {
-      setIsSpinning(false);
+    } catch (err) {
+      console.error(err);
+      toast.error("Could not spin. Try again.");
     }
   };
 
-  const disabledForSetup = !canSpin;
-  const disabledForCooldown = cooldown > 0;
-  const disabledForAdminOnly = adminOnly && !isAdmin;
-
+  /* ----------------------------------
+     Disabled logic
+  ---------------------------------- */
   const fullyDisabled =
     participants.length === 0 ||
     isSpinning ||
-    disabledForCooldown ||
-    disabledForSetup ||
-    disabledForAdminOnly;
+    cooldown > 0 ||
+    !canSpin ||
+    (adminOnly && !isAdmin);
 
-  return (
-    <div className="w-full mt-3">
-      <Button
-        onClick={handleSpin}
-        disabled={fullyDisabled}
-        className="w-full flex items-center justify-center gap-2"
-      >
-        {isSpinning ? (
-          <>
-            <LoaderPinwheel className="w-6 h-6 animate-spin text-black" />
-            Spinning...
-          </>
-        ) : disabledForCooldown ? (
-          `Spin again in ${Math.ceil(cooldown / 1000)}s`
-        ) : (
-          "Spin 🎲"
-        )}
-      </Button>
-
-      {disabledForAdminOnly && !disabledForCooldown && (
-        <p className="text-sm text-muted text-center">Only admin can spin.</p>
+  /* ----------------------------------
+     Render
+  ---------------------------------- */
+  return canSpin ? (
+    <Button
+      onClick={handleSpin}
+      disabled={fullyDisabled}
+      className={clsx(
+        "w-full h-[44px] flex items-center justify-center",
+        className
       )}
-    </div>
+    >
+      {isSpinning ? "Spinning…" : "Spin"}
+    </Button>
+  ) : (
+    <Button
+      disabled
+      className={clsx(
+        "bg-white/70 w-full h-[44px] flex items-center justify-center opacity-60 cursor-not-allowed",
+        className
+      )}
+    >
+      🎉 Tab assigned
+    </Button>
   );
 }

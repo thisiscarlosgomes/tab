@@ -9,15 +9,15 @@ export async function generateMetadata(
 
   const frame = {
     version: "next",
-    imageUrl: `https://tab.castfriends.com/api/og/receive/${slug}`,
+    imageUrl: `https://usetab.app/api/og/receive/${slug}`,
     button: {
       title: "launch tab",
       action: {
         type: "launch_frame",
         name: "tab",
-        url: `https://tab.castfriends.com/r/${slug}`,
-        iconImageUrl: "https://tab.castfriends.com/app.png",
-        splashImageUrl: "https://tab.castfriends.com/splash.png",
+        url: `https://usetab.app/r/${slug}`,
+        iconImageUrl: "https://usetab.app/app.png",
+        splashImageUrl: "https://usetab.app/app.png",
         splashBackgroundColor: "#201E23",
       },
     },
@@ -27,12 +27,12 @@ export async function generateMetadata(
     title: "pay with tab",
     openGraph: {
       title: "pay with tab",
-      images: [`https://tab.castfriends.com/api/og/receive/${slug}`],
+      images: [`https://usetab.app/api/og/receive/${slug}`],
     },
     twitter: {
       card: "summary_large_image",
       title: "pay with tab",
-      images: [`https://tab.castfriends.com/api/og/receive/${slug}`],
+      images: [`https://usetab.app/api/og/receive/${slug}`],
     },
     other: {
       "fc:frame": JSON.stringify(frame),

@@ -5,31 +5,42 @@ import { useAccount } from "wagmi";
 import { usePathname } from "next/navigation";
 import clsx from "clsx";
 import sdk from "@farcaster/frame-sdk";
-import { ScanLine, Flame } from "lucide-react";
+import { Flame, Scan, Info, QrCode, ArrowLeft, ScanQrCode } from "lucide-react";
+import { Drawer } from "vaul";
 import { useScanDrawer } from "@/providers/ScanDrawerProvider";
-import { DrawerCard } from "@/components/app/drawerCard";
 import { DailySpinDrawer } from "@/components/app/DailySpinDrawer";
+import Link from "next/link";
+import { useRouter } from "next/navigation";
+
+import { ReceiveDrawer } from "@/components/app/ReceiveDrawer";
 
 const PAGE_TITLES: Record<string, string> = {
   "/": "",
-  "/activity": "Recent Activity",
-  "/split/new": "New Split",
+  "/activity": "",
+  "/split/new": "",
 };
 
 export function Header() {
+  const router = useRouter();
   const { address } = useAccount();
   const pathname = usePathname();
+  const showBackButton = pathname !== "/";
   const [username, setUsername] = useState<string | null>(null);
   const { open: openScanDrawer } = useScanDrawer();
   const [points, setPoints] = useState<number | null>(null);
   const [shake, setShake] = useState(false);
   const [spinOpen, setSpinOpen] = useState(false);
 
+  const [showReceiveDrawer, setShowReceiveDrawer] = useState(false);
+
+  // NEW
+  const [aboutOpen, setAboutOpen] = useState(false);
+
   useEffect(() => {
     const interval = setInterval(() => {
       setShake(true);
-      setTimeout(() => setShake(false), 400); // match animation duration
-    }, 5000); // every 5 seconds
+      setTimeout(() => setShake(false), 400);
+    }, 5000);
 
     return () => clearInterval(interval);
   }, []);
@@ -41,7 +52,7 @@ export function Header() {
       const data = await res.json();
       setPoints(data.points ?? 0);
     } catch {
-      setPoints(0); // fallback
+      setPoints(0);
     }
   }, [address]);
 
@@ -52,83 +63,146 @@ export function Header() {
 
   useEffect(() => {
     fetchPoints();
-    const interval = setInterval(fetchPoints, 100000); // every 10 seconds
+    const interval = setInterval(fetchPoints, 100000);
     return () => clearInterval(interval);
   }, [fetchPoints]);
 
-  const isProfile = pathname === "/profile";
-  const pageTitle = isProfile
-    ? username
-      ? `gm @${username}`
-      : "gm"
-    : (PAGE_TITLES[pathname] ?? "");
+  const isProfile = pathname === "/";
+  const pageTitle = isProfile ? (
+    username ? (
+      <span>
+        gm <span>@{username}</span>
+      </span>
+    ) : (
+      "gm"
+    )
+  ) : (
+    (PAGE_TITLES[pathname] ?? "")
+  );
 
   return (
-    <header
-      className={clsx(
-        "fixed top-0 inset-x-0 bg-background z-10",
-        "h-14 px-4 flex items-center justify-center pt-9 pb-8"
-      )}
-    >
-      {/* Page Title */}
-      <h1 className="hidden text-xl font-medium text-white">{pageTitle}</h1>
-
-      {/* Left button (QR scanner) */}
-      <div className="absolute left-4 top-6">
-        <button onClick={openScanDrawer}>
-          <ScanLine className="w-7 h-7 text-white/50 hover:text-primary" />
-        </button>
-      </div>
-
-      {/* 🔥 Points drawer */}
-      <div className="absolute right-4 top-6 flex items-center gap-3">
-        <DrawerCard
-          trigger={
-            <div
-              className={`flex items-center gap-1 text-primary hover:text-primary text-lg ${
-                shake ? "animate-shake" : ""
-              }`}
-            >
-              <Flame className="w-6 h-6" />
-              <span>{points ?? 0}</span>
-            </div>
-          }
-          title="Play to Earn. Literally."
-          // description="Earn points by taking action across Tab"
-        >
-          <p>
-            Spin. Send. Pay. Show up. Earn points. Win $TAB, instantly. Keep the streak alive.
-          </p>
-          <ul className="w-full mt-4 space-y-2">
-            <li className="p-4 rounded-xl bg-yellow-100 text-yellow-800">
-              Add & Share app +50
-            </li>
-            <li className="p-4 rounded-xl bg-green-100 text-green-800">
-              In-app Payments +200 points
-            </li>
-            {/* <li className="p-4 rounded-xl bg-blue-100 text-blue-800">
-              Joins & creates splits +150 points
-            </li> */}
-            <li className="p-4 rounded-xl bg-purple-100 text-purple-800">
-              Wins spins +100 points
-            </li>
-            {/* <li className="p-4 rounded-xl bg-pink-100 text-pink-800">
-              Top 10 of the week +500 points
-            </li> */}
-          </ul>
-        </DrawerCard>
-      </div>
-
-      {/* 🎁 Daily Spin icon in center */}
-      {/* <button
-        onClick={() => setSpinOpen(true)}
-        className="absolute top-6 left-1/2 -translate-x-1/2 text-white/50 hover:text-primary"
+    <>
+      <header
+        className={clsx(
+          "fixed top-0 inset-x-0 bg-background z-10",
+          "h-14 px-4 flex items-center justify-center pt-9 pb-8 z-10"
+        )}
       >
-       
-        <img src="/money.gif" alt="points" className="w-8 h-8 rounded-md" />
-      </button> */}
+        {/* Left side (title + back) */}
+        <div className="absolute left-4 top-6 flex items-center gap-2">
+          {showBackButton && (
+            <button
+              onClick={() => {
+                // If user is inside Farcaster / WebView — no history
+                if (window.history.length <= 2) {
+                  router.push("/");
+                  return;
+                }
 
-      <DailySpinDrawer isOpen={spinOpen} setIsOpen={setSpinOpen} />
-    </header>
+                // Otherwise: normal back
+                router.back();
+              }}
+              className="text-white text-lg flex items-center font-medium"
+            >
+              <ArrowLeft className="w-8 h-8" />
+            </button>
+          )}
+        </div>
+
+        {/* Center title */}
+        <div className="absolute left-4 top-6 text-lg font-medium">
+          {pageTitle}
+        </div>
+
+        {/* Right side — Points + NEW info button */}
+        <div className="absolute right-4 top-6 flex items-center gap-5">
+          {/* 🆕 QR Button */}
+          <button
+            onClick={() => setShowReceiveDrawer(true)}
+            className="text-white hover:text-white transition"
+          >
+            <ScanQrCode className="w-6 h-6" />
+          </button>
+
+          {/* Info Button */}
+          <button
+            onClick={() => setAboutOpen(true)}
+            className="text-white hover:text-white transition"
+          >
+            <Info className="w-6 h-6" />
+          </button>
+
+          {/* Points */}
+          <div className="hidden flex items-center gap-1 text-white font-medium text-lg">
+            <Flame className="w-6 h-6" />
+            <span>{points ?? 0}</span>
+          </div>
+        </div>
+
+        <ReceiveDrawer
+          isOpen={showReceiveDrawer}
+          onOpenChange={setShowReceiveDrawer}
+        />
+
+        <DailySpinDrawer isOpen={spinOpen} setIsOpen={setSpinOpen} />
+      </header>
+
+      {/* 🆕 About Drawer */}
+      <Drawer.Root open={aboutOpen} onOpenChange={setAboutOpen}>
+        <Drawer.Portal>
+          <Drawer.Overlay className="fixed inset-0 bg-black/60 backdrop-blur-sm z-20" />
+          <Drawer.Content className="fixed bottom-0 left-0 right-0 bg-background rounded-t-3xl p-6 pb-14 z-40">
+            <div className="w-12 h-1.5 bg-white/10 rounded-full mx-auto mb-4" />
+
+            <h2 className="text-xl font-medium mb-4 text-center ml-2 mb-2">
+              Welcome to tab
+            </h2>
+
+            <div className="space-y-2">
+              <AboutRow
+                img="/vpeople.png"
+                title="Pay and Get paid"
+                desc="Split bills. Send money. Request payments, all in seconds."
+              />
+              <AboutRow
+                img="/vpush.png"
+                title="Sping the tab"
+                desc="Spin the wheel. One friend pays the whole bill."
+              />
+
+              <AboutRow
+                img="/vcash.png"
+                title="More ways to use Tab"
+                desc="Earn yield, onchain jackpot, airdrop. Tools that turn your wallet into a supertool."
+              />
+            </div>
+
+            <div className="mt-4 text-center text-white/30 text-sm">
+              2025 © tab tech
+            </div>
+          </Drawer.Content>
+        </Drawer.Portal>
+      </Drawer.Root>
+    </>
+  );
+}
+
+function AboutRow({
+  img,
+  title,
+  desc,
+}: {
+  img: string;
+  title: string;
+  desc: string;
+}) {
+  return (
+    <div className="flex items-center gap-2 bg-white/5 p-3 rounded-xl">
+      <img src={img} className="w-10 h-10 rounded-lg" />
+      <div>
+        <div className="text-white font-medium text-md">{title}</div>
+        <div className="text-white/30 text-md leading-[1.2] mt-1">{desc}</div>
+      </div>
+    </div>
   );
 }

@@ -18,7 +18,7 @@ export default {
         },
         subtleBounce: {
           "0%, 100%": { transform: "translateY(0)" },
-          "50%": { transform: "translateY(-5px)" }, // smaller bounce
+          "80%": { transform: "translateY(-2px)" }, // smaller bounce
         },
         wheelSpin: {
           "0%, 24%": { transform: "rotate(0deg)" },

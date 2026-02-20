@@ -9,17 +9,54 @@ export async function GET(req: NextRequest) {
 
   if (!splitId) return new Response("Missing splitId", { status: 400 });
 
-  // Fetch the bill from your internal API
   const res = await fetch(`${origin}/api/split/${splitId}`, {
     cache: "no-store",
   });
 
   if (!res.ok) return new Response("Bill not found", { status: 404 });
 
-  const bill = await res.json();
-  const groupName = `${bill.description} Group Bill` || "Group Bill";
+  const getTokenPrefix = (token?: string) => {
+    switch (token) {
+      case "ETH":
+      case "WETH":
+        return "Ξ";
+      case "EURC":
+        return "€";
+      case "USDC":
+      case "TAB":
+      default:
+        return "$";
+    }
+  };
 
-  const splash = `${origin}/splash.png`;
+  const formatAmount = (amount: number, token?: string) => {
+    if (token === "USDC" || token === "EURC") {
+      return amount.toFixed(amount < 1 ? 3 : 2);
+    }
+
+    if (token === "ETH" || token === "WETH") {
+      if (amount >= 1) return amount.toFixed(2);
+      if (amount >= 0.01) return amount.toFixed(4);
+      return amount.toPrecision(3);
+    }
+  };
+
+  const bill = await res.json();
+
+  const perPersonAmount =
+    typeof bill?.totalAmount === "number" &&
+    typeof bill?.numPeople === "number" &&
+    bill.numPeople > 0
+      ? bill.totalAmount / bill.numPeople
+      : (bill?.totalAmount ?? 0);
+
+  const prefix = getTokenPrefix(bill?.token);
+  const amountFormatted = formatAmount(perPersonAmount, bill?.token);
+
+  const title = `${prefix}${amountFormatted} Split`;
+
+  const splash = `${origin}/app.png`;
+  const bg = `${origin}/ogbg.png`;
 
   return new ImageResponse(
     (
@@ -27,18 +64,20 @@ export async function GET(req: NextRequest) {
         style={{
           width: "100%",
           height: "100%",
-          backgroundColor: "#201E23",
           display: "flex",
           flexDirection: "column",
           justifyContent: "center",
           alignItems: "center",
           padding: "60px",
           fontFamily: "Inter, sans-serif",
+          backgroundImage: `url(${bg})`,
+          backgroundSize: "cover",
+          backgroundPosition: "center",
         }}
       >
         <img
           src={splash}
-          alt="splash"
+          alt="logo"
           width={180}
           height={180}
           style={{
@@ -49,11 +88,28 @@ export async function GET(req: NextRequest) {
             marginBottom: "20px",
           }}
         />
-        <div style={{ fontSize: 60, fontWeight: 600, color: "white" }}>
-          {groupName}
+
+        <div
+          style={{
+            fontSize: 64,
+            fontWeight: 600,
+            color: "white",
+            textShadow: "0 4px 10px rgba(0,0,0,0.4)",
+            letterSpacing: "-0.02em",
+          }}
+        >
+          {title}
         </div>
-        <div style={{ marginTop: 8, fontSize: 32, color: "#9FA3AF" }}>
-          Pay with Tab
+
+        <div
+          style={{
+            marginTop: 8,
+            fontSize: 46,
+            color: "#D0D3DA",
+            textShadow: "0 2px 6px rgba(0,0,0,0.4)",
+          }}
+        >
+          per person
         </div>
       </div>
     ),

@@ -1,10 +1,6 @@
-import {
-  SendNotificationRequest,
-  sendNotificationResponseSchema,
-} from "@farcaster/frame-sdk";
-import { getUserNotificationDetails } from "@/lib/kv"; // MongoDB-based notification retrieval
-
-// const appUrl = process.env.PUBLIC_URL || "https://tab.castfriends.com"; // Use your app URL
+import { SendNotificationRequest } from "@farcaster/frame-sdk";
+import { sendNotificationResponseSchema } from "@farcaster/frame-core";
+import { getUserNotificationDetails } from "@/lib/kv";
 
 type SendFrameNotificationResult =
   | { state: "error"; error: unknown }
@@ -23,49 +19,58 @@ export async function sendFrameNotification({
   body: string;
   targetUrl: string;
 }): Promise<SendFrameNotificationResult> {
-  // Retrieve the notification details from MongoDB for the user (by fid)
   const notificationDetails = await getUserNotificationDetails(fid);
 
-  // If no notification details are found, return an error
-  if (!notificationDetails) {
-    return { state: "no_token" }; // No token found for the user
+  if (!notificationDetails || !notificationDetails.token || !notificationDetails.url) {
+    console.warn(`No valid notification details for fid ${fid}`);
+    return { state: "no_token" };
   }
 
-  // Send the notification using the provided URL and token
-  const response = await fetch(notificationDetails.url, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({
-      notificationId: crypto.randomUUID(),
-      title,
-      body,
-      targetUrl,
-      tokens: [notificationDetails.token],
-    } satisfies SendNotificationRequest),
-  });
+  console.log("Sending notification to fid:", fid, "url:", notificationDetails.url);
 
-  const responseJson = await response.json();
+  const payload: SendNotificationRequest = {
+    notificationId: crypto.randomUUID(),
+    title,
+    body,
+    targetUrl,
+    tokens: [notificationDetails.token],
+  };
 
-  // Handle the response from the notification service
-  if (response.status === 200) {
-    const responseBody = sendNotificationResponseSchema.safeParse(responseJson);
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 5000); // 5s timeout
 
-    // If the response is malformed, return an error
-    if (responseBody.success === false) {
-      return { state: "error", error: responseBody.error.errors };
+  try {
+    const response = await fetch(notificationDetails.url, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(payload),
+      signal: controller.signal,
+    });
+
+    clearTimeout(timeout);
+
+    const responseJson = await response.json();
+
+    if (response.status === 200) {
+      const parsed = sendNotificationResponseSchema.safeParse(responseJson);
+      if (!parsed.success) {
+        console.error("Invalid response schema from notification server:", parsed.error);
+        return { state: "error", error: parsed.error.errors };
+      }
+
+      if (parsed.data.result.rateLimitedTokens.length) {
+        return { state: "rate_limit" };
+      }
+
+      return { state: "success" };
+    } else {
+      console.error("Notification request failed with non-200 status:", response.status, responseJson);
+      return { state: "error", error: responseJson };
     }
-
-    // If the token is rate-limited, return the rate-limit state
-    if (responseBody.data.result.rateLimitedTokens.length) {
-      return { state: "rate_limit" };
-    }
-
-    // Return success if notification was sent successfully
-    return { state: "success" };
-  } else {
-    // If the response from the notification service is not successful, return an error
-    return { state: "error", error: responseJson };
+  } catch (err) {
+    console.error(`Fetch failed for fid ${fid}:`, err);
+    return { state: "error", error: err };
   }
 }

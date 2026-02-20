@@ -6,57 +6,73 @@ import { useAccount, useConnect } from "wagmi";
 import { farcasterFrame } from "@farcaster/frame-wagmi-connector";
 import sdk from "@farcaster/frame-sdk";
 import { QRCode } from "react-qrcode-logo";
+import NumberFlow from "@number-flow/react";
+import {
+  differenceInMinutes,
+  differenceInHours,
+  differenceInDays,
+  parseISO,
+} from "date-fns";
 
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { SplitPayButton } from "@/components/app/splitPayButton";
 import { PaymentSuccessDrawer } from "@/components/app/PaymentSuccessDrawer";
-// import { useAddPoints } from "@/lib/useAddPoints";
 import Tilt from "react-parallax-tilt";
-// import { shortAddress } from "@/lib/shortAddress";
-import {
-  Loader,
-  ReceiptText,
-  Copy,
-  CopyCheck,
-  BellRing,
-  Share,
-} from "lucide-react";
-import { tokenList } from "@/lib/tokens"; // or define inline
+import { Loader, ReceiptText, Settings, Share, QrCode } from "lucide-react";
+import { tokenList } from "@/lib/tokens";
 import { getTokenPrices } from "@/lib/getTokenPrices";
 import { useFrameSplash } from "@/providers/FrameSplashProvider";
-import { getShareUrl } from "@/lib/share";
-import { useAddPoints } from "@/lib/useAddPoints";
 import { toast } from "sonner";
+import { Drawer } from "vaul";
+import { shortAddress } from "@/lib/shortAddress";
 
 interface Participant {
   address: string;
   name: string;
   pfp?: string;
-  fid?: string;
+  fid?: number; // ✅ number
+  amount?: number;
 }
 
 interface Paid {
   address: string;
+  fid: number; // ✅ ADD THIS
   name: string;
   txHash: string;
+  timestamp: string;
+  amount?: number;
 }
+
+type SplitType = "invited" | "pay_other" | "receipt_open";
 
 interface SplitBill {
   splitId: string;
-  code: string; // ✅ Add this line
+  code: string;
   creator: Participant;
+  recipient: Participant;
+
   description: string;
   totalAmount: number;
-  numPeople: number;
   token: string;
+
+  splitType: SplitType; // ✅ ADD THIS
+
+  numPeople?: number;
+
   participants?: Participant[];
+  invited?: Participant[];
   paid?: Paid[];
+
+  createdAt?: string;
+  invitedOnly?: boolean;
 }
 
 type TokenName = (typeof tokenList)[number]["name"];
 
 export default function SplitPage() {
+  const [userFid, setUserFid] = useState<number | null>(null);
+
   const { splitId } = useParams();
   const safeSplitId = Array.isArray(splitId) ? splitId[0] : (splitId ?? "");
   const { address, isConnected } = useAccount();
@@ -64,58 +80,68 @@ export default function SplitPage() {
 
   const [bill, setBill] = useState<SplitBill | null>(null);
   const [isJoining, setIsJoining] = useState(false);
-  const [copied, setCopied] = useState(false);
-  const [hasPaid, setHasPaid] = useState(false); // Add this line
+  const [hasPaid, setHasPaid] = useState(false);
   const [showSuccess, setShowSuccess] = useState(false);
   const [tokenPrices, setTokenPrices] = useState<Record<string, number>>({});
   const { dismiss } = useFrameSplash();
+
+  const [showSettingsDrawer, setShowSettingsDrawer] = useState(false);
+  const [showQrDrawer, setShowQrDrawer] = useState(false);
+
+  const normalizeBill = (bill: SplitBill): SplitBill => ({
+    ...bill,
+    participants: bill.participants?.map((p) => ({
+      ...p,
+      fid: p.fid != null ? Number(p.fid) : undefined,
+    })),
+    invited: bill.invited?.map((p) => ({
+      ...p,
+      fid: p.fid != null ? Number(p.fid) : undefined,
+    })),
+    paid: bill.paid?.map((p) => ({
+      ...p,
+      fid: Number(p.fid),
+    })),
+  });
+
+  const fetchBill = async () => {
+    const res = await fetch(`/api/split/${safeSplitId}`);
+    const data = await res.json();
+    setBill(normalizeBill(data));
+  };
+
+  useEffect(() => {
+    let mounted = true;
+
+    sdk.context.then((ctx) => {
+      if (!mounted) return;
+      if (ctx?.user?.fid) {
+        setUserFid(ctx.user.fid);
+      }
+    });
+
+    return () => {
+      mounted = false;
+    };
+  }, []);
+
+  const [paymentSuccess, setPaymentSuccess] = useState<{
+    amount: number;
+    token: string;
+    recipientUsername?: string;
+    txHash?: string;
+  } | null>(null);
 
   useEffect(() => {
     dismiss();
   }, [dismiss]);
 
   useEffect(() => {
-    const fetchPrices = async () => {
+    (async () => {
       const prices = await getTokenPrices();
       setTokenPrices(prices);
-    };
-    fetchPrices();
+    })();
   }, []);
-
-  const formatAmount = (amount: number, token: string) => {
-    const decimals = token === "USDC" || token === "EURC" ? 2 : 4;
-    return amount.toFixed(decimals);
-  };
-
-  const formatUsd = (usd: number) =>
-    usd >= 0.01 ? usd.toFixed(2) : usd.toPrecision(2);
-
-  const token = bill?.token;
-  const tokenInfo = tokenList.find((t) => t.name === token);
-  const fallbackToken = tokenList.find((t) => t.name === "ETH");
-  const effectiveTokenInfo = tokenInfo ?? fallbackToken;
-  const priceUsd = tokenPrices[token ?? "ETH"] ?? null;
-  const eachAmount =
-    bill?.totalAmount && bill?.numPeople
-      ? bill.totalAmount / bill.numPeople
-      : 0;
-  const eachAmountFormatted = formatAmount(eachAmount, token ?? "ETH");
-  const totalAmountFormatted = formatAmount(
-    bill?.totalAmount ?? 0,
-    token ?? "ETH"
-  );
-  const [copiedCode, setCopiedCode] = useState<string | null>(null);
-
-  const totalUsd = priceUsd
-    ? formatUsd((bill?.totalAmount ?? 0) * priceUsd)
-    : null;
-  const eachUsd = priceUsd ? formatUsd(eachAmount * priceUsd) : null;
-
-  const fetchBill = async () => {
-    const res = await fetch(`/api/split/${safeSplitId}`);
-    const data = await res.json();
-    setBill(data);
-  };
 
   useEffect(() => {
     fetchBill();
@@ -123,16 +149,175 @@ export default function SplitPage() {
     return () => clearInterval(interval);
   }, [safeSplitId]);
 
+  const token = bill?.token ?? "ETH";
+  const tokenInfo = tokenList.find((t) => t.name === token) ?? tokenList[0];
+
+  const priceUsd = tokenPrices[token] ?? null;
+
+  const formatTokenAmount = (amount: number, token: string) => {
+    if (token === "USDC" || token === "EURC")
+      return amount.toFixed(amount < 1 ? 2 : 1);
+    if (amount >= 1) return amount.toFixed(2);
+    if (amount >= 0.01) return amount.toFixed(3);
+    return amount.toPrecision(4);
+  };
+
+  const getTokenSuffix = (token: string) => {
+    switch (token) {
+      case "USDC":
+        return "$";
+      case "EURC":
+        return "€";
+      case "ETH":
+      case "WETH":
+        return "Ξ";
+      default:
+        return "$";
+    }
+  };
+
+  const paidList = bill?.paid ?? [];
+  const participantList = bill?.participants ?? [];
+
+  //   const participantList = (bill?.participants ?? []).filter(
+  //   (p) => p.fid !== bill?.recipient?.fid
+  // );
+
+  // canonical per-person share (same for everyone)
+  const perPersonAmount =
+    bill?.splitType === "receipt_open" && bill.numPeople
+      ? bill.totalAmount / bill.numPeople
+      : (bill?.invited?.[0]?.amount ?? 0);
+
+  // viewer-specific (optional)
+  const myInvitedEntry =
+    userFid != null ? bill?.invited?.find((i) => i.fid === userFid) : null;
+
+  const myAmount = myInvitedEntry?.amount ?? perPersonAmount;
+
+  const eachShare = formatTokenAmount(perPersonAmount, token);
+
+  // const isPaid = paidList.some(
+  //   (p) =>
+  //     p.address?.toLowerCase?.() &&
+  //     address?.toLowerCase?.() &&
+  //     p.address.toLowerCase() === address.toLowerCase()
+  // );
+
+  const isPaid = userFid != null && paidList.some((p) => p.fid === userFid);
+
+  const hasJoined =
+    userFid != null &&
+    participantList.some(
+      (p) => p.fid === userFid && p.fid !== bill?.recipient?.fid
+    );
+
+  const isCreator =
+    address &&
+    bill?.creator?.address?.toLowerCase?.() === address.toLowerCase();
+
+  const isRecipient =
+    address &&
+    bill?.recipient?.address?.toLowerCase?.() === address.toLowerCase();
+
+  const debtorCount =
+  bill?.splitType === "receipt_open"
+    ? bill.numPeople ?? 0
+    : bill?.invited?.length ?? 0;
+
+const paidCount = bill?.paid?.length ?? 0;
+
+
+
+
+
+  
+
+  const allPaid = debtorCount > 0 && paidCount === debtorCount;
+
+  const unpaidList = participantList.filter(
+    (p) =>
+      p.fid != null &&
+      p.fid !== bill?.recipient?.fid &&
+      !paidList.some((paid) => paid.fid === p.fid)
+  );
+
+  const timeAgo = (() => {
+    const date = bill?.createdAt ? parseISO(bill.createdAt) : null;
+    if (!date) return null;
+
+    const now = new Date();
+    const mins = differenceInMinutes(now, date);
+    const hrs = differenceInHours(now, date);
+    const days = differenceInDays(now, date);
+
+    if (mins < 60) return `${mins}m ago`;
+    if (hrs < 24) return `${hrs}h ago`;
+    return `${days}d ago`;
+  })();
+
+  const isInvited =
+  bill?.splitType !== "receipt_open" &&
+  userFid != null &&
+  bill?.invited?.some((i) => i.fid === userFid);
+
+
+  const isFull =
+    bill?.splitType === "receipt_open" &&
+    bill.numPeople != null &&
+    participantList.length >= bill.numPeople;
+
+  const canJoin =
+    !hasJoined &&
+    !isRecipient &&
+    !isCreator &&
+    !isFull &&
+    (!bill?.invitedOnly || isInvited);
+
+ const canPay =
+  userFid != null &&
+  hasJoined &&
+  !isPaid &&
+  !allPaid &&
+  (bill?.splitType === "receipt_open" || isInvited);
+
+
+  useEffect(() => {
+    if (isPaid) setHasPaid(true);
+  }, [isPaid]);
+
+  const invitedButNotJoined =
+    bill?.invited?.filter(
+      (inv) => !participantList.some((p) => Number(inv.fid) === p.fid)
+    ) ?? [];
+
+  const activityList = Array.from(
+    new Map(
+      [...participantList, ...invitedButNotJoined]
+        .filter((p) => p.fid)
+        .map((p) => [Number(p.fid), p])
+    ).values()
+  );
+
   const handleJoin = async () => {
+    const ctx = await sdk.context;
+
+    if (
+      bill?.invitedOnly &&
+      !bill?.invited?.some((inv) => Number(inv.fid) === userFid)
+    ) {
+      toast("Only invited users can join this split.");
+      return;
+    }
+
     if (!isConnected) await connect({ connector: farcasterFrame() });
     if (!address) return;
 
-    const context = await sdk.context;
     const participant: Participant = {
       address,
-      name: context.user?.username ?? address.slice(0, 6),
-      pfp: context.user?.pfpUrl ?? "",
-      fid: context.user?.fid?.toString() ?? "",
+      name: ctx.user?.username ?? address.slice(0, 6),
+      pfp: ctx.user?.pfpUrl ?? "",
+      fid: ctx.user?.fid!, // ✅ number
     };
 
     setIsJoining(true);
@@ -143,78 +328,37 @@ export default function SplitPage() {
       body: JSON.stringify({ participant }),
     });
 
-    fetchBill();
+    await fetchBill();
     setIsJoining(false);
   };
 
-  const hasJoined = !!bill?.participants?.some(
-    (p) => p.address.toLowerCase() === address?.toLowerCase()
-  );
-
-  const isCreator =
-    !!address &&
-    bill?.creator?.address?.toLowerCase() === address.toLowerCase();
-
-  const eachShare =
-    bill?.totalAmount && bill?.numPeople
-      ? (bill.totalAmount / bill.numPeople).toFixed(4)
-      : "0";
-
-  const paidList = bill?.paid ?? [];
-  const participantList = bill?.participants ?? [];
-
-  const unpaidList = participantList.filter(
-    (p) =>
-      !paidList.some(
-        (paid) => paid.address.toLowerCase() === p.address.toLowerCase()
-      )
-  );
-
-  const handleCopy = () => {
-    if (!bill?.code) return;
-    navigator.clipboard.writeText(bill.code);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
-  };
-
-  useEffect(() => {
-    // If user is in the paid list, mark hasPaid as true
-    if (
-      paidList.some((p) => p.address.toLowerCase() === address?.toLowerCase())
-    ) {
-      setHasPaid(true);
-    }
-  }, [paidList, address]);
-
-  const tokenIcon = effectiveTokenInfo?.icon ? (
-    <img
-      src={effectiveTokenInfo.icon}
-      alt={effectiveTokenInfo.name}
-      className="absolute bottom-0 -right-2 w-7 h-7 rounded-full border-2 border-background"
-    />
-  ) : null;
-
   const handleShare = async () => {
-    const url = getShareUrl({
-      name: bill?.description ?? "Group Bill",
-      description: "Split the bill, pay your share.",
-      url: `https://tab.castfriends.com/split/${bill?.splitId}`,
-    });
+    const url = `https://usetab.app/split/${bill?.splitId}`;
 
-    sdk.actions.openUrl(url);
+    try {
+      if (navigator.share) {
+        await navigator.share({ url });
+        return;
+      }
 
-    if (address) {
-      await useAddPoints(address, "share_frame");
+      if (navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(url);
+        toast.success("Link copied");
+        return;
+      }
+
+      // final fallback
+      const input = document.createElement("input");
+      input.value = url;
+      document.body.appendChild(input);
+      input.select();
+      document.execCommand("copy");
+      document.body.removeChild(input);
+      toast.success("Link copied");
+    } catch {
+      toast.error("Copy failed");
     }
   };
-
-  const handleCopyUrl = (copyUrl: string) => {
-    navigator.clipboard.writeText(copyUrl);
-    setCopiedCode(copyUrl);
-    setTimeout(() => setCopiedCode(null), 2000);
-  };
-
-  const copyUrl = `https://tab.castfriends.com/split/${bill?.splitId}`;
 
   const notifyUnpaid = async () => {
     if (!isCreator || unpaidList.length === 0) return;
@@ -227,254 +371,451 @@ export default function SplitPage() {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
-              fid: parseInt(p.fid),
-              title: "🧾 Payment Reminder",
-              message: `Hey @${p.name}, don't forget to pay your share for "${bill?.description}" 💸`,
-              targetUrl: `https://tab.castfriends.com/split/${bill?.splitId}`, // or your intended link
+              fid: Number(p.fid), // ✅ REQUIRED
+              title: "Reminder to Pay",
+              message: `Hey @${p.name}, remember to settle your share for "${bill?.description}" 💸`,
+              targetUrl: `https://usetab.app/split/${bill?.splitId}`,
             }),
           });
         })
       ),
       {
         loading: "Sending reminders...",
-        success: `Notified ${unpaidList.length} unpaid friend${unpaidList.length > 1 ? "s" : ""}`,
-        error: "Something went wrong sending reminders",
+        success: `Notified ${unpaidList.length} friend${
+          unpaidList.length > 1 ? "s" : ""
+        }`,
+        error: "Something went wrong",
       }
     );
   };
 
+  if (!bill) return null; // or early return above
+
+  const totalPaid = paidList.reduce((sum, p) => sum + (p.amount ?? 0), 0);
+
+  const remaining = Math.max(bill.totalAmount - totalPaid, 0);
+
   return (
-    <div className="min-h-screen w-full flex flex-col items-center justify-start p-4 pt-20 pb-32 overflow-y-auto scrollbar-hide">
-      <Card className="w-full max-w-md p-6 flex flex-col space-y-4 rounded-lg">
+    <div className="min-h-screen w-full flex flex-col items-center px-4 pt-20 pb-32 overflow-y-auto scrollbar-hide">
+      <Card className="w-full max-w-md p-4 space-y-4">
         {!bill ? (
           <div className="flex flex-1 items-center justify-center min-h-[60vh]">
             <Loader className="w-8 h-8 animate-spin text-white/30" />
           </div>
         ) : (
           <>
+            {/* HEADER */}
             <div className="flex flex-col items-center">
-              <div className="hidden relative w-16 h-16 rounded-full bg-purple-100 text-purple-800 flex items-center justify-center">
-                <ReceiptText className="w-7 h-7" />
-                {tokenIcon}
-              </div>
-              <img
-                src="/ethcoin.png"
-                alt="cover"
-                className="w-16 h-16 animate-subtleBounce"
-              />
-              <h1 className="text-xl font-bold text-center capitalize">
-                {bill.description} group bill
+              <h1 className="text-lg font-medium text-center mb-1 mt-4">
+                {bill.description}
               </h1>
-              <p className="text-primary">by @{bill.creator.name} </p>
+              <p className="text-primary">Splits by @{bill.creator.name}</p>
+              <p className=" opacity-50 py-1 text-sm px-3 bg-white/5 text-white mt-1 rounded-[6px]">
+                Recipient: {shortAddress(bill.recipient.address)}
+              </p>
             </div>
 
+            {/* AMOUNT + AVATARS + PROGRESS */}
             <div className="border rounded-lg p-4 mt-2">
               <div className="text-sm text-center">
-                <p className="text-center text-base">
-                  <strong className="text-primary">
-                    {totalAmountFormatted} {token}
-                  </strong>{" "}
-                  split between{" "}
-                  <strong className="text-primary">
-                    {bill.numPeople} people
-                  </strong>
-                </p>
-                {totalUsd && (
-                  <p className="text-center text-sm text-white/30 hidden">
-                    ≈ ${totalUsd}
-                  </p>
+                <NumberFlow
+                  value={bill.totalAmount}
+                  format={{
+                    minimumFractionDigits: token === "USDC" ? 2 : 3,
+                    maximumFractionDigits: token === "USDC" ? 2 : 6,
+                  }}
+                  prefix={getTokenSuffix(token)}
+                  className="text-4xl font-medium text-white"
+                />
+
+                {participantList.length > 0 && (
+                  <div className="flex justify-center -space-x-3 mt-2">
+                    {participantList
+                      .filter((p) => p.fid !== bill?.recipient?.fid)
+                      .slice(0, 8)
+                      .map((p) => (
+                        <img
+                          key={p.address}
+                          src={
+                            p.pfp ||
+                            `https://api.dicebear.com/9.x/glass/svg?seed=${p.name}`
+                          }
+                          alt={p.name}
+                          className="w-8 h-8 rounded-full border-2 border-white object-cover mb-4"
+                        />
+                      ))}
+
+                    {participantList.length > 8 && (
+                      <span className="w-8 h-8 rounded-full bg-card border-white border-2 text-xs flex items-center justify-center">
+                        +{participantList.length - 8}
+                      </span>
+                    )}
+                  </div>
                 )}
-                <p className="text-center text-base mt-1">
-                  Each pays:{" "}
-                  <strong className="text-primary">
-                    {eachAmountFormatted} {token}
-                  </strong>
-                </p>
-                {eachUsd && (
-                  <p className="text-center text-sm text-white/30 hidden">
-                    ≈ ${eachUsd}
+
+                <div className="w-full max-w-[180px] h-2 rounded-full bg-white/10 mx-auto overflow-hidden">
+                  <div
+                    className="h-full bg-primary transition-all duration-500"
+                    style={{
+                      width:
+                        debtorCount > 0
+                          ? `${(paidCount / debtorCount) * 100}%`
+                          : "0%",
+                    }}
+                  />
+                </div>
+
+                <div className="flex justify-center items-center gap-2 text-sm mt-2">
+                  <span className={allPaid ? "text-green-400" : "text-white"}>
+                    {allPaid
+                      ? "This split is settled"
+                      : `${formatTokenAmount(remaining, token)} ${token} left`}
+                  </span>
+
+                  <span className="text-white/40">·</span>
+
+                  <span className={allPaid ? "text-green-400" : "text-white"}>
+                    {paidCount} of {debtorCount} paid
+                  </span>
+                </div>
+
+                {timeAgo && (
+                  <p className="text-xs text-white/30 text-center mt-1">
+                    Started {timeAgo}
                   </p>
                 )}
               </div>
-              {isCreator && (
-                <div className="flex flex-row space-x-2">
+
+              {/* CREATOR ACTIONS */}
+              {/* ACTIONS */}
+              <div className="flex flex-row space-x-2 mt-3">
+                {/* Share – everyone */}
+                <Button
+                  onClick={handleShare}
+                  className="w-full bg-secondary text-white"
+                >
+                  <Share className="w-12 h-12" />
+                </Button>
+
+                {/* QR – everyone */}
+                <Button
+                  onClick={() => canPay && setShowQrDrawer(true)}
+                  disabled={!canPay}
+                  className="w-full bg-secondary text-white disabled:opacity-40"
+                >
+                  <QrCode className="w-12 h-12" />
+                </Button>
+
+                {/* Settings – creator only */}
+                {isCreator && (
                   <Button
-                    onClick={handleShare}
-                    className="w-full bg-secondary text-white mt-3"
+                    onClick={() => setShowSettingsDrawer(true)}
+                    className="w-full bg-secondary text-white"
                   >
-                    <Share className="w-12 h-12" />
+                    <Settings className="w-12 h-12" />
                   </Button>
-                  <Button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      e.nativeEvent.stopImmediatePropagation();
-                      handleCopyUrl(copyUrl);
-                    }}
-                    onMouseDown={(e) => {
-                      e.stopPropagation();
-                    }}
-                    className="w-full bg-secondary text-white mt-3"
-                  >
-                    {copiedCode === copyUrl ? (
-                      <CopyCheck className="w-12 h-12" />
-                    ) : (
-                      <Copy className="w-12 h-12" />
-                    )}
-                  </Button>
-                  <Button
-                    onClick={notifyUnpaid}
-                    disabled={unpaidList.length === 0}
-                    className="w-full bg-secondary text-white mt-3"
-                  >
-                    <BellRing className="w-12 h-12" />
-                  </Button>
-                </div>
-              )}
+                )}
+              </div>
             </div>
 
-            {isCreator ? (
-              <div className="mt-4 flex flex-col items-center space-y-2">
-                <Tilt
-                  glareEnable={true}
-                  glareMaxOpacity={0.8}
-                  glareColor="#ffffff"
-                  glarePosition="all"
-                  glareBorderRadius="16px" // same as your Tailwind rounded-xl
-                  scale={1.03}
-                  tiltMaxAngleX={8}
-                  tiltMaxAngleY={8}
-                  className="p-2 bg-white rounded-xl mb-1"
-                >
-                  <div>
-                    <QRCode
-                      value={`https://tab.castfriends.com/join-split?splitId=${bill.splitId}&payTo=${bill.creator.address}&amount=${eachShare}&token=${bill.token ?? "ETH"}`}
-                      size={200}
-                      logoImage="/splash.png"
-                      logoWidth={48}
-                      logoHeight={48}
-                      logoOpacity={1}
-                      removeQrCodeBehindLogo
-                    />
-                    <Button
-                      onClick={handleCopy}
-                      className="bg-primary w-full hidden"
-                    >
-                      {copied ? "Copied!" : `Copy Code: ${bill.code}`}
-                    </Button>
-                  </div>
-                </Tilt>
-              </div>
-            ) : (
+            {/* USER ACTIONS */}
+            {!isRecipient && (
               <>
-                {hasJoined &&
-                  address &&
-                  !paidList.some(
-                    (p) => p.address.toLowerCase() === address.toLowerCase()
-                  ) && (
-                    <SplitPayButton
-                      recipient={bill.creator.address as `0x${string}`}
-                      amount={parseFloat(eachShare)}
-                      token={bill.token as TokenName}
-                      splitId={safeSplitId}
-                      onPaid={fetchBill}
-                      payer={{
-                        address,
-                        name:
-                          bill.participants?.find(
-                            (p) =>
-                              p.address.toLowerCase() === address.toLowerCase()
-                          )?.name || "You",
-                      }}
-                      setShowSuccess={setShowSuccess}
-                      creatorFid={
-                        bill.creator.fid
-                          ? parseInt(bill.creator.fid)
-                          : undefined
-                      } // ✅ fixed
-                      description={bill.description}
-                    />
-                  )}
+                {hasJoined && !isPaid && address && (
+                  <SplitPayButton
+                    recipient={bill.recipient.address as `0x${string}`} // ✅ CORRECT
+                    amount={parseFloat(eachShare)}
+                    token={bill.token as TokenName}
+                    splitId={safeSplitId}
+                    onPaid={fetchBill}
+                    payer={{
+                      address,
+                      name:
+                        participantList.find(
+                          (p) =>
+                            p.address?.toLowerCase() === address.toLowerCase()
+                        )?.name ?? "You",
+                      fid: userFid!, // ✅ REQUIRED
+                    }}
+                    onSuccess={(data) => setPaymentSuccess(data)}
+                    creatorFid={
+                      bill.creator.fid != null
+                        ? Number(bill.creator.fid)
+                        : undefined
+                    }
+                    description={bill.description}
+                  />
+                )}
 
                 <div className="mt-2">
-                  {hasJoined ? (
-                    <div className="flex flex-col items-center space-y-2">
-                      <p className="text-base font-semibold text-active">
-                        {hasPaid ? "You've Paid!" : "You've Joined!"}
-                      </p>
+                  {canJoin && (
+                    <div className="mt-2">
+                      <Button
+                        onClick={handleJoin}
+                        disabled={isJoining}
+                        className="w-full bg-primary"
+                      >
+                        {isJoining ? "Joining..." : "Join"}
+                      </Button>
                     </div>
-                  ) : (
-                    <Button
-                      onClick={handleJoin}
-                      disabled={isJoining}
-                      className="w-full bg-primary"
-                    >
-                      {isJoining ? "Joining..." : "Join Bill"}
-                    </Button>
                   )}
                 </div>
               </>
             )}
 
-            {(paidList.length > 0 || unpaidList.length > 0) && (
-              <div className="mt-4 text-sm text-muted space-y-4">
-                {paidList.length > 0 && (
-                  <div>
-                    <p className="mb-1">✅ Paid:</p>
-                    <ul className="space-y-1">
-                      {paidList.map((p) => (
-                        <li key={p.address}>
-                          <span className="text-white">@{p.name}</span>
-                          <a
-                            href={`https://basescan.org/tx/${p.txHash}`}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="text-primary hidden"
-                          >
-                            View tx
-                          </a>
-                        </li>
-                      ))}
-                    </ul>
-                  </div>
-                )}
-                {unpaidList.length > 0 && (
-                  <div>
-                    <p className="mb-2">⏳ Waiting on:</p>
-                    <ul className="space-y-2">
-                      {unpaidList.map((p) => (
-                        <li
-                          key={p.address}
-                          className="flex items-center gap-2 mb-2"
-                        >
+            {/* ACTIVITY */}
+            {activityList.length > 0 && (
+              <div className="mt-4 text-sm text-muted pb-1">
+                <p className="mb-3 text-md font-medium">Members</p>
+
+                <ul className="space-y-2">
+                  {activityList.map((p) => {
+                    const paid = paidList.find(
+                      (x) =>
+                        x.address?.toLowerCase?.() &&
+                        p.address?.toLowerCase?.() &&
+                        x.address.toLowerCase() === p.address.toLowerCase()
+                    );
+
+                    const joined = participantList.some(
+                      (x) =>
+                        x.address?.toLowerCase?.() &&
+                        p.address?.toLowerCase?.() &&
+                        x.address.toLowerCase() === p.address.toLowerCase()
+                    );
+
+                    const isRecipient =
+                      bill.recipient?.address?.toLowerCase?.() ===
+                      p.address?.toLowerCase?.();
+
+                    const invitedEntry = bill.invited?.find(
+                      (i) => i.fid === p.fid
+                    );
+
+                    const participantEntry = participantList.find(
+                      (x) => x.fid === p.fid
+                    );
+
+                    const paidAmount: number =
+                      paid?.amount ??
+                      participantEntry?.amount ??
+                      invitedEntry?.amount ??
+                      0;
+
+                    return (
+                      <li
+                        key={p.address}
+                        className="flex items-center justify-between"
+                      >
+                        <div className="flex items-center gap-2">
                           <img
                             src={
                               p.pfp ||
                               `https://api.dicebear.com/9.x/glass/svg?seed=${p.name}`
                             }
-                            alt={p.name}
-                            className="w-7 h-7 rounded-full border-2 border-white object-cover"
+                            className="w-7 h-7 rounded-full object-cover"
                           />
-                          <span className="text-white">{p.name}</span>
-                        </li>
-                      ))}
-                    </ul>
-                  </div>
-                )}
+
+                          <div className="flex items-center gap-1">
+                            <span className="text-white me-1">@{p.name}</span>
+
+                            {/* Settled (creator only, no onchain payment) */}
+                            {isRecipient && (
+                              <span className="bg-teal-500/20 text-teal-300 border border-teal-500/30 px-1.5 py-0.5 text-xs rounded-[6px]">
+                                Recipient
+                              </span>
+                            )}
+
+                            {paid && !isRecipient && (
+                              <span className="bg-green-500/20 text-green-300 border border-green-500/30 px-1.5 py-0.5 text-xs rounded-[6px]">
+                                Paid
+                              </span>
+                            )}
+
+                            {joined && !paid && !isRecipient && (
+                              <span className="bg-yellow-600/20 text-yellow-400 border border-yellow-600/40 px-1.5 py-0.5 text-xs rounded-[6px]">
+                                Joined
+                              </span>
+                            )}
+
+                            {bill.splitType !== "receipt_open" &&
+                              !joined &&
+                              !isRecipient &&
+                              bill.invited?.length && (
+                                <span className="bg-blue-600/20 text-blue-400 border border-blue-600/40 px-1.5 py-0.5 text-xs rounded-[6px]">
+                                  Invited
+                                </span>
+                              )}
+                          </div>
+                        </div>
+
+                        {/* <span className="text-white/40 text-sm">
+                          {`${getTokenSuffix(token)}${formatTokenAmount(
+                            paidAmount,
+                            token
+                          )}`}
+                        </span> */}
+                        {!isRecipient && (
+                          <span className="text-white/40 text-sm">
+                            {`${getTokenSuffix(token)}${formatTokenAmount(
+                              paidAmount,
+                              token
+                            )}`}
+                          </span>
+                        )}
+                      </li>
+                    );
+                  })}
+                </ul>
               </div>
             )}
           </>
         )}
       </Card>
 
-      <div className="w-full max-w-md mt-4 px-16">
-        <p className="text-center text-sm opacity-30">
-          Friends can scan this and pay you instantly with Tab on Farcaster.
-        </p>
-      </div>
+      {/* SETTINGS DRAWER */}
+      <Drawer.Root
+        open={showSettingsDrawer}
+        onOpenChange={setShowSettingsDrawer}
+      >
+        <Drawer.Portal>
+          <Drawer.Overlay className="fixed inset-0 bg-black/50 backdrop-blur-sm" />
+          <Drawer.Content className="z-40 bg-background rounded-t-3xl p-6 fixed bottom-0 w-full max-h-[85vh] overflow-y-auto pb-8 mb-4">
+            <div className="mx-auto w-12 h-1.5 rounded-full bg-white/10 mb-4" />
+
+            <p className="text-center text-lg">Split Settings</p>
+
+            <p className="text-center text-white/40 mt-2">
+              Waiting on payments? Send reminders
+            </p>
+
+            <Button
+              onClick={notifyUnpaid}
+              disabled={unpaidList.length === 0}
+              className="w-full bg-white text-black mt-4"
+            >
+              Send Reminder
+            </Button>
+
+            {/* TOGGLE: INVITED ONLY */}
+            <div className="hidden mt-4 flex items-center justify-between bg-white/5 p-4 rounded-lg">
+              <span className="text-white/60">Restrict to invited only</span>
+
+              <button
+                onClick={async () => {
+                  const next = !bill?.invitedOnly;
+                  await fetch(`/api/split/${safeSplitId}`, {
+                    method: "PATCH",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ invitedOnly: next }),
+                  });
+                  fetchBill();
+                }}
+                className={`relative inline-flex h-[26px] w-[44px] rounded-full transition ${
+                  bill?.invitedOnly ? "bg-primary" : "bg-white/20"
+                }`}
+              >
+                <span
+                  className={`absolute h-[20px] w-[20px] rounded-full bg-white transition-transform ${
+                    bill?.invitedOnly
+                      ? "translate-x-[20px]"
+                      : "translate-x-[2px]"
+                  }`}
+                />
+              </button>
+            </div>
+
+            {/* DELETE SPLIT */}
+            <Button
+              className="w-full bg-red-500 text-white mt-6"
+              onClick={async () => {
+                if (!address) return;
+
+                toast.promise(
+                  fetch(`/api/split/${safeSplitId}`, {
+                    method: "DELETE",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ address }),
+                  }),
+                  {
+                    loading: "Deleting...",
+                    success: () => {
+                      setTimeout(() => {
+                        window.location.href = "/";
+                      }, 1200);
+                      return "Split deleted.";
+                    },
+                    error: "Failed to delete",
+                  }
+                );
+              }}
+            >
+              Delete Split
+            </Button>
+          </Drawer.Content>
+        </Drawer.Portal>
+      </Drawer.Root>
+
+      {/* QR DRAWER */}
+      <Drawer.Root open={showQrDrawer} onOpenChange={setShowQrDrawer}>
+        <Drawer.Portal>
+          <Drawer.Overlay className="fixed inset-0 bg-black/50 backdrop-blur-sm" />
+          <Drawer.Content className="bg-background rounded-t-3xl p-6 fixed bottom-0 w-full z-40">
+            <div className="mx-auto w-12 h-1.5 rounded-full bg-white/10 mb-4" />
+
+            <p className="text-center text-lg">Scan to pay your share</p>
+
+            {bill && canPay && (
+              <div className="flex flex-col items-center space-y-3 mt-4 mb-6">
+                <Tilt
+                  glareEnable
+                  glareMaxOpacity={0.2}
+                  glareColor="#ffffff"
+                  glarePosition="all"
+                  scale={1.02}
+                  className="p-2 bg-white rounded-xl"
+                >
+                  <QRCode
+                    value={`https://usetab.app/join-split?splitId=${bill.splitId}&payTo=${bill.recipient.address}&amount=${eachShare}&token=${bill.token}`}
+                    size={200}
+                    logoImage="/app.png"
+                    logoWidth={48}
+                    logoHeight={48}
+                    removeQrCodeBehindLogo
+                  />
+                </Tilt>
+
+                <p className="text-white/50 text-sm">
+                  Scan with Tab mini app to pay.
+                </p>
+
+                {!canPay && (
+                  <div className="text-center py-10 text-white/60">
+                    <p className="text-lg font-medium">Payment unavailable</p>
+                    <p className="text-sm mt-1">
+                      You’re not eligible to pay for this split.
+                    </p>
+                  </div>
+                )}
+              </div>
+            )}
+          </Drawer.Content>
+        </Drawer.Portal>
+      </Drawer.Root>
+
       <PaymentSuccessDrawer
-        isOpen={showSuccess}
-        setIsOpen={setShowSuccess}
-        name="Tab Paid"
+        isOpen={!!paymentSuccess}
+        setIsOpen={(open) => {
+          if (!open) setPaymentSuccess(null);
+        }}
+        name="That’s settled"
+        description={
+          paymentSuccess
+            ? `${paymentSuccess.amount} ${paymentSuccess.token}`
+            : undefined
+        }
+        recipientUsername={paymentSuccess?.recipientUsername}
+        txHash={paymentSuccess?.txHash}
       />
     </div>
   );

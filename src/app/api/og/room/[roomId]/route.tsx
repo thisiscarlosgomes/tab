@@ -13,12 +13,13 @@ export async function GET(req: NextRequest) {
     cache: "no-store",
   });
 
-  if (!res.ok) return new Response("Room not found", { status: 404 });
+  if (!res.ok) return new Response("Spin not found", { status: 404 });
 
   const room = await res.json();
-  const roomName = `${room.gameId} Pay Roulette` || "Tab Room";
+  const roomName = `${room.name} Spin` || "Spin the tab";
 
-  const splash = `${origin}/splash.png`;
+  const splash = `${origin}/app.png`;
+  const bg = `${origin}/ogbg.png`;
 
   return new ImageResponse(
     (
@@ -26,13 +27,15 @@ export async function GET(req: NextRequest) {
         style={{
           width: "100%",
           height: "100%",
-          backgroundColor: "#201E23",
           display: "flex",
           flexDirection: "column",
           justifyContent: "center",
           alignItems: "center",
           padding: "60px",
           fontFamily: "Inter, sans-serif",
+          backgroundImage: `url(${bg})`,
+          backgroundSize: "cover",
+          backgroundPosition: "center",
         }}
       >
         <img
@@ -48,10 +51,26 @@ export async function GET(req: NextRequest) {
             marginBottom: "20px",
           }}
         />
-        <div style={{ fontSize: 60, fontWeight: 600, color: "white" }}>
+
+        <div
+          style={{
+            fontSize: 60,
+            fontWeight: 600,
+            color: "white",
+            textShadow: "0 4px 10px rgba(0,0,0,0.4)",
+          }}
+        >
           {roomName}
         </div>
-        <div style={{ marginTop: 8, fontSize: 32, color: "#9FA3AF" }}>
+
+        <div
+          style={{
+            marginTop: 8,
+            fontSize: 32,
+            color: "#D0D3DA",
+            textShadow: "0 2px 6px rgba(0,0,0,0.4)",
+          }}
+        >
           Pay with tab
         </div>
       </div>

@@ -1,10 +1,12 @@
 import { useEffect, useState } from "react";
 
 interface Player {
-  name: string;
   address: string;
+  name: string;
+  fid: number; // ✅ ADD THIS
   pfp?: string;
 }
+
 interface Paid {
   address: string;
   name: string;

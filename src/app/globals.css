@@ -4,7 +4,7 @@
 
 @layer base {
   :root {
-    --background: #ffffff;
+   --background: #0D0D13;
     --foreground: #24292e;
     --card: #ffffff;
     --mat: #ffffff;
@@ -30,9 +30,9 @@
   }
 
   .dark {
-    --background: #1c1b1d;
+    --background: #0D0D13;
     --foreground: #ffffff;
-    --card: #181719;
+    --card: #19191E;
     --mat: rgba(52, 41, 66, 0.5);
     --well: rgba(0, 0, 0, 0.1);
     --popover: #242426;
@@ -43,8 +43,8 @@
     --active-foreground: #7c65c1;
     --secondary: #242426;
     --secondary-foreground: #fafafa;
-    --muted: #939393;
-    --muted-foreground: #7c8293;
+    --muted: #49494D;
+    --muted-foreground: #3D3D41;
     --destructive: #7d1a2c;
     --destructive-foreground: #fafafa;
     --action: #2a1f33;
@@ -52,6 +52,32 @@
     --border: rgba(255, 255, 255, 0.05);
     --input: #282729;
     --ring: #333333;
+  }
+
+  .light {
+    --background: #F1F3F5;
+    --foreground: #000000;
+    --card: #ffffff;
+    --mat: #ffffff;
+    --well: #f3f3f3;
+    --popover: #ffffff;
+    --popover-foreground: #24292e;
+    --primary: #A9A0ED;
+    --primary-foreground: #000000;
+    --active: #dbd4ff;
+    --active-foreground: #7867f6;
+    --secondary: #DBE1E7;
+    --secondary-foreground: #000000;
+    --muted: #8b99a4;
+    --muted-foreground: #8b99a4;
+    --destructive: #e11d48;
+    --destructive-foreground: #fafafa;
+    --action: #f2e5ff;
+    --action-foreground: #7c65c1;
+    --border: #f3f3f3;
+    --input: #222222;
+    --ring: #a5a5a9;
+    --radius: 1rem;
   }
 }
 
@@ -62,6 +88,7 @@
   body {
     @apply bg-background text-foreground;
     font-family:
+    "SF Pro Rounded",
     "SF Pro Text",
     "SF Pro Display",
     -apple-system,
@@ -101,7 +128,7 @@
   }
 
   .animate-scale-bounce {
-    animation: scale-bounce 0.3s ease-in-out;
+    animation: scale-bounce 0.2s ease-in-out;
   }
 
   @keyframes scale-bounce {
@@ -109,7 +136,7 @@
       transform: scale(1);
     }
     50% {
-      transform: scale(0.8);
+      transform: scale(0.9);
     }
     100% {
       transform: scale(1);
@@ -123,6 +150,7 @@ body {
   height: 100dvh;
   overscroll-behavior-y: contain;
   -webkit-overflow-scrolling: touch;
+  background-color: #0D0D13;
 }
 
 body {
@@ -222,4 +250,39 @@ input[type="number"] {
 
 .scrollable {
   -webkit-overflow-scrolling: touch; /* Smooth scrolling on iOS */
+}
+
+/* Universal Drawer top spacing */
+.vaul-drawer-content {
+  margin-top: 80px !important;
+}
+
+
+@keyframes shake {
+  0% { transform: translateX(0); }
+  20% { transform: translateX(-4px); }
+  40% { transform: translateX(4px); }
+  60% { transform: translateX(-3px); }
+  80% { transform: translateX(3px); }
+  100% { transform: translateX(0); }
+}
+
+.animate-balance-shake {
+  animation: shake 0.4s ease-in-out;
+}
+
+
+@keyframes fall {
+  0% {
+    transform: translateY(-10%);
+    opacity: 1;
+  }
+  100% {
+    transform: translateY(110%);
+    opacity: 0;
+  }
+}
+
+.animate-fall {
+  animation: fall 1.6s linear forwards;
 }

@@ -17,7 +17,7 @@ export function DrawerCard({
   title,
   description,
   children,
-  closeText = "Continue",
+  closeText = "Close",
 }: DrawerCardProps) {
   const [open, setOpen] = useState(false);
 
@@ -25,7 +25,7 @@ export function DrawerCard({
     <Drawer.Root open={open} onOpenChange={setOpen}>
       <Drawer.Trigger asChild>{trigger}</Drawer.Trigger>
       <Drawer.Portal>
-        <Drawer.Overlay className="fixed inset-0 bg-black/60 backdrop-blur-sm z-20" />
+        <Drawer.Overlay className="fixed inset-0 bg-[#4E4C52]/60 backdrop-blur-sm z-20" />
         <Drawer.Content className="pb-6 z-30 bg-background flex flex-col rounded-t-[32px] mt-24 h-fit fixed bottom-0 left-0 right-0 outline-none">
           
           
@@ -41,12 +41,12 @@ export function DrawerCard({
             </div>
           </div>
 
-          <div className="p-6 text-white/30 font-medium">{children}</div>
+          <div className="p-2 px-6 text-white/30 font-medium">{children}</div>
 
           <div className="px-6 pb-4">
             <Button
               onClick={() => setOpen(false)}
-              className="w-full bg-primary"
+              className="w-full bg-white"
             >
               {closeText}
             </Button>

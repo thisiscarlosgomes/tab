@@ -1,15 +1,55 @@
-// SendDrawerProvider.tsx
 "use client";
-import { createContext, useContext, useState } from "react";
+import { createContext, useContext, useState, useRef } from "react";
+
+type EnrichedCast = {
+  hash: string;
+  timestamp: string;
+  channelKey?: string;
+  author: {
+    username: string;
+    fid: number;
+    pfp_url?: string;
+  };
+};
+
+// Farcaster user type used in GlobalSendDrawer
+type FarcasterUser = {
+  fid: number;
+  username: string;
+  display_name?: string;
+  pfp_url?: string;
+  verified_addresses?: {
+    primary?: {
+      eth_address?: string | null;
+    };
+  };
+};
 
 const SendDrawerContext = createContext<{
   open: () => void;
   close: () => void;
   isOpen: boolean;
+
   query: string;
   setQuery: (value: string) => void;
+
   scannedUsername: string | null;
   setScannedUsername: (v: string | null) => void;
+
+  sharedCast: EnrichedCast | null;
+  setSharedCast: (cast: EnrichedCast | null) => void;
+
+  hasTriggeredSendFromCast: React.MutableRefObject<boolean>;
+
+  // 🔥 NEW — needed for Friends Row
+  selectedUser: FarcasterUser | null;
+  setSelectedUser: (u: FarcasterUser | null) => void;
+
+  selectedToken: string | null;
+  setSelectedToken: (t: string | null) => void;
+
+  tokenType: string;
+  setTokenType: (t: string) => void;
 }>({
   open: () => {},
   close: () => {},
@@ -18,17 +58,46 @@ const SendDrawerContext = createContext<{
   setQuery: () => {},
   scannedUsername: null,
   setScannedUsername: () => {},
+  sharedCast: null,
+  setSharedCast: () => {},
+  hasTriggeredSendFromCast: { current: false },
+
+  selectedUser: null,
+  setSelectedUser: () => {},
+
+  selectedToken: null,
+  setSelectedToken: () => {},
+
+  tokenType: "USDC",
+  setTokenType: () => {},
 });
 
 export function SendDrawerProvider({ children }: { children: React.ReactNode }) {
   const [isOpen, setIsOpen] = useState(false);
+
   const [query, setQuery] = useState("");
   const [scannedUsername, setScannedUsername] = useState<string | null>(null);
+  const [sharedCast, setSharedCast] = useState<EnrichedCast | null>(null);
+  const hasTriggeredSendFromCast = useRef(false);
+
+  // 🔥 NEW GLOBAL SEND STATE
+  const [selectedUser, setSelectedUser] = useState<FarcasterUser | null>(null);
+  const [selectedToken, setSelectedToken] = useState<string | null>(null);
+  const [tokenType, setTokenType] = useState<string>("USDC");
+
+  
 
   const open = () => setIsOpen(true);
+
   const close = () => {
     setIsOpen(false);
-    setScannedUsername(null); // clear after closing
+    setScannedUsername(null);
+    setSharedCast(null);
+
+    // auto-reset on close
+    setSelectedUser(null);
+    setSelectedToken(null);
+    setTokenType("USDC");
   };
 
   return (
@@ -37,10 +106,26 @@ export function SendDrawerProvider({ children }: { children: React.ReactNode }) 
         open,
         close,
         isOpen,
+
         query,
         setQuery,
+
         scannedUsername,
         setScannedUsername,
+
+        sharedCast,
+        setSharedCast,
+
+        hasTriggeredSendFromCast,
+
+        selectedUser,
+        setSelectedUser,
+
+        selectedToken,
+        setSelectedToken,
+
+        tokenType,
+        setTokenType,
       }}
     >
       {children}

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, useMemo } from "react";
 import { Drawer } from "vaul";
 import { useSendDrawer } from "@/providers/SendDrawerProvider";
 import { useAccount, useConnect, useSendTransaction } from "wagmi";
@@ -16,6 +16,12 @@ import { tokenList } from "@/lib/tokens"; // or define inline
 import { getTokenPrices } from "@/lib/getTokenPrices"; // or define inline
 import { useWriteContract } from "wagmi";
 import { erc20Abi, parseUnits } from "viem";
+import { useWallets } from "@privy-io/react-auth";
+
+import { LoaderCircle } from "lucide-react";
+// import { useAddPoints } from "@/lib/useAddPoints";
+
+import { getTokenBalances } from "@/hooks/getTokenBalances";
 
 type FarcasterUser = {
   fid: number;
@@ -29,10 +35,48 @@ type FarcasterUser = {
   };
 };
 
+type EnrichedCast = {
+  hash: string;
+  timestamp: string;
+  channelKey?: string;
+  author: {
+    username: string;
+    fid: number;
+    pfp_url?: string;
+  };
+};
+
 type SendStatus = "idle" | "confirming" | "sending";
 
+const getTokenSuffix = (token: string) => {
+  switch (token) {
+    case "ETH":
+    case "WETH":
+      return "Ξ";
+    case "EURC":
+      return "€";
+    case "USDC":
+    default:
+      return "$";
+  }
+};
+
 export function GlobalSendDrawer() {
-  const { isOpen, close, query, setQuery, scannedUsername } = useSendDrawer();
+  // const { isOpen, close, query, setQuery, scannedUsername } = useSendDrawer();
+
+  const {
+    isOpen,
+    close,
+    query,
+    setQuery,
+    scannedUsername,
+    setSelectedUser,
+    selectedUser,
+    selectedToken,
+    setSelectedToken,
+    tokenType,
+    setTokenType,
+  } = useSendDrawer();
 
   const { isConnected, address } = useAccount();
   const { connect } = useConnect();
@@ -41,7 +85,7 @@ export function GlobalSendDrawer() {
   const inputRef = useRef<HTMLInputElement>(null);
 
   const [results, setResults] = useState<FarcasterUser[]>([]);
-  const [selectedUser, setSelectedUser] = useState<FarcasterUser | null>(null);
+  // const [selectedUser, setSelectedUser] = useState<FarcasterUser | null>(null);
   const [amount, setAmount] = useState("0");
   const [sendDrawerOpen, setSendDrawerOpen] = useState(false);
   const [showSuccess, setShowSuccess] = useState(false);
@@ -49,14 +93,26 @@ export function GlobalSendDrawer() {
   const [customMessage, setCustomMessage] = useState("💸");
   const [lastMessage, setLastMessage] = useState("");
   const [username, setUsername] = useState<string | null>(null);
+
   const [lastTxHash, setLastTxHash] = useState<string | null>(null);
+  // const [tokenType, setTokenType] = useState(tokenList[2]?.name ?? "ETH");
   // const [ethPriceUsd, setEthPriceUsd] = useState<number | null>(null);
 
   const [tokenPrices, setTokenPrices] = useState<Record<string, number>>({});
+  const [tokenDrawerOpen, setTokenDrawerOpen] = useState(false);
 
-  const [selectedToken, setSelectedToken] = useState<
-    "ETH" | "USDC" | "TAB" | null
-  >(null);
+  const [successAmount, setSuccessAmount] = useState<number | null>(null);
+  const [successToken, setSuccessToken] = useState<string | null>(null);
+  const [successRecipient, setSuccessRecipient] = useState<string | null>(null);
+
+  const { wallets } = useWallets();
+  const walletAddress = useMemo(() => {
+    return isConnected && address ? address : (wallets[0]?.address ?? null);
+  }, [isConnected, address, wallets]);
+
+  // const [selectedToken, setSelectedToken] = useState<
+  //   "ETH" | "USDC" | "TAB" | null
+  // >(null);
 
   const [sendStatus, setSendStatus] = useState<SendStatus>("idle");
   const [mode, setMode] = useState<"search" | "token">("search");
@@ -65,37 +121,53 @@ export function GlobalSendDrawer() {
   );
 
   const { writeContractAsync } = useWriteContract();
+  const [sharedCast, setSharedCast] = useState<EnrichedCast | null>(null);
 
   useEffect(() => {
-    const fetchBalances = async () => {
-      if (!address) return;
+    const detectShareContext = async () => {
+      const context = await sdk.context;
 
-      const userAddress = address;
+      if (context?.location?.type === "cast_share") {
+        const cast = context.location.cast as unknown as EnrichedCast;
+        const sharedUsername = cast.author.username;
 
-      const balances: Record<string, string> = {};
+        const res = await fetch(
+          `/api/neynar/user/by-username?username=${sharedUsername}`
+        );
+        const data = await res.json();
 
-      for (const token of tokenList) {
-        const balance = await getTokenBalance({
-          tokenAddress: token.address as `0x${string}` | undefined,
-          userAddress,
-          decimals: token.decimals,
-        });
-
-        balances[token.name] = balance;
+        if (data?.username) {
+          setSelectedUser(data);
+          setSelectedToken("USDC");
+          setTokenType("USDC");
+          setSendDrawerOpen(true);
+        }
       }
-
-      setTokenBalances(balances);
     };
 
-    if (mode === "token") {
-      fetchBalances();
-    }
-  }, [selectedUser, mode]);
+    detectShareContext();
+  }, []);
 
   useEffect(() => {
-    if (!isOpen || !scannedUsername || sendDrawerOpen || selectedUser) return;
+    if (!walletAddress || !walletAddress.startsWith("0x")) return;
 
-    const fetchAndOpen = async () => {
+    (async () => {
+      const balances = await getTokenBalances({
+        address: walletAddress as `0x${string}`,
+        tokens: tokenList.filter(
+          (t): t is typeof t & { address: string } =>
+            typeof t.address === "string"
+        ),
+      });
+      setTokenBalances(balances);
+    })();
+  }, [walletAddress]);
+
+  // 👇 stage data first
+  useEffect(() => {
+    const fetchScannedUser = async () => {
+      if (!isOpen || !scannedUsername || selectedUser || sendDrawerOpen) return;
+
       try {
         const res = await fetch(
           `/api/neynar/user/by-username?username=${scannedUsername}`
@@ -103,15 +175,25 @@ export function GlobalSendDrawer() {
         const data = await res.json();
         if (data?.username) {
           setSelectedUser(data);
-          setSendDrawerOpen(true);
+          setSelectedToken("USDC");
+          setTokenType("USDC");
+          setMode("search");
         }
       } catch (e) {
         console.error("error fetching scanned user", e);
       }
     };
 
-    fetchAndOpen();
-  }, [scannedUsername, isOpen]);
+    fetchScannedUser();
+  }, [isOpen, scannedUsername, selectedUser, sendDrawerOpen]);
+
+  useEffect(() => {
+    if (!selectedUser) return;
+    if (!walletAddress) return;
+    if (Object.keys(tokenBalances).length === 0) return;
+
+    setSendDrawerOpen(true);
+  }, [selectedUser, walletAddress, tokenBalances]);
 
   useEffect(() => {
     if (!isOpen || !address || mode !== "search") return;
@@ -174,7 +256,7 @@ export function GlobalSendDrawer() {
     if (!isConnected) await connect({ connector: farcasterFrame() });
     if (isNaN(parsedAmount) || parsedAmount <= 0) return;
 
-    // ✅ Add this check here 
+    // ✅ Add this check here
     if (!selectedToken) {
       setSendStatus("idle");
       alert("Please select a token.");
@@ -216,8 +298,16 @@ export function GlobalSendDrawer() {
       setSendStatus("sending");
 
       setLastTxHash(txHash);
-      setLastSentAmount(parsedAmount);
-      setLastMessage(customMessage);
+
+      // snapshot success data
+      setSuccessAmount(parsedAmount);
+      setSuccessToken(selectedToken);
+      setSuccessRecipient(selectedUser?.username ?? null);
+
+      // optional message
+      setLastMessage(customMessage?.trim() || "");
+
+      // UI cleanup
       setCustomMessage("");
       setAmount("0");
       setSendDrawerOpen(false);
@@ -249,7 +339,7 @@ export function GlobalSendDrawer() {
     // Limit to 3 decimals but remove trailing zeroes
     return num.toLocaleString("en-US", {
       minimumFractionDigits: 0,
-      maximumFractionDigits: 3,
+      maximumFractionDigits: 2,
     });
   };
 
@@ -272,19 +362,12 @@ export function GlobalSendDrawer() {
       <Drawer.Root
         open={isOpen}
         onOpenChange={(v) => {
-          if (!v) {
-            close();
-            setQuery("");
-            setResults([]);
-            setSelectedUser(null);
-            setSendDrawerOpen(false);
-            // setScannedUsername(null); // <== very important
-          }
+          if (!v) close();
         }}
         repositionInputs={false}
       >
         <Drawer.Portal>
-          <Drawer.Overlay className="fixed inset-0 bg-black/60 backdrop-blur-sm z-20" />
+          <Drawer.Overlay className="fixed inset-0 bg-[#4E4C52]/60 backdrop-blur-sm z-20" />
           <Drawer.Content className="scroll-smooth z-50 fixed top-[80px] left-0 right-0 bottom-0 bg-background p-0 rounded-t-3xl flex flex-col">
             {/* drag handle */}
             <div
@@ -315,7 +398,7 @@ export function GlobalSendDrawer() {
                         }
                       }}
                       onChange={(e) => setQuery(e.target.value)}
-                      className="w-full p-4 pl-12 pr-20 rounded-lg bg-white/5 text-white placeholder-white/20"
+                      className="w-full p-4 pl-10 pr-20 rounded-lg bg-white/5 text-white placeholder-white/20"
                     />
 
                     {mode === "search" ? (
@@ -350,8 +433,9 @@ export function GlobalSendDrawer() {
                         key={user.fid}
                         onClick={() => {
                           setSelectedUser(user);
-                          setSelectedToken(null);
-                          setMode("token");
+                          setSelectedToken("USDC"); // or default
+                          setTokenType("USDC");
+                          setSendDrawerOpen(true); // ✅ open send screen
                         }}
                         className="flex items-center p-3 rounded-lg bg-white/5 hover:bg-white/10 w-full"
                       >
@@ -374,9 +458,9 @@ export function GlobalSendDrawer() {
                       </button>
                     ))}
 
-                  {mode === "token" && (
+                  {/* {mode === "token" && (
                     <div className="space-y-3">
-                      {/* <p className="ml-4">Select token</p> */}
+                     
                       {tokenList.map((token) => {
                         const balanceRaw = tokenBalances[token.name];
                         const balance = parseFloat(balanceRaw || "0");
@@ -387,11 +471,11 @@ export function GlobalSendDrawer() {
                             key={token.name}
                             onClick={() => {
                               if (!isDisabled) {
-                                // setSelectedToken(token.name as "ETH" | "USDC");
+                                
                                 setSelectedToken(
                                   token.name as "ETH" | "USDC" | "TAB"
                                 );
-
+                                setTokenType(token.name);
                                 setSendDrawerOpen(true);
                               }
                             }}
@@ -419,7 +503,7 @@ export function GlobalSendDrawer() {
                         );
                       })}
                     </div>
-                  )}
+                  )} */}
                 </div>
               </>
             )}
@@ -429,25 +513,31 @@ export function GlobalSendDrawer() {
               onOpenChange={(v) => {
                 if (!v) {
                   setSendDrawerOpen(false);
-                  setAmount("0");
 
-                  // ✅ Add these
-                  setMode("search");
-                  setQuery("");
-                  setResults([]);
+                  // reset only UI-specific fields
+                  setAmount("0");
+                  setCustomMessage("");
+                  setSendStatus("idle");
+
+                  // DO NOT reset:
+                  // - selectedUser
+                  // - tokenBalances
+                  // - tokenPrices
+                  // - selectedToken
+                  // - mode
                 }
               }}
               repositionInputs={false}
             >
               <Drawer.Portal>
-                <Drawer.Overlay className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50" />
-                <Drawer.Content className="z-50 fixed top-[80px] left-0 right-0 bottom-0 bg-background p-4 space-y-6 rounded-t-3xl h-[100dvh]">
+                <Drawer.Overlay className="fixed inset-0 bg-[#4E4C52]/60 backdrop-blur-sm z-50" />
+                <Drawer.Content className="z-50 fixed top-[80px] left-0 right-0 bottom-0 bg-background p-4 space-y-2 rounded-t-3xl h-[100dvh]">
                   <div
                     aria-hidden
                     className="mx-auto w-12 h-1.5 rounded-full bg-white/10 mb-1"
                   />
                   <Drawer.Title className="text-lg text-center font-medium">
-                    <div className="flex flex-col items-center space-y-2">
+                    <div className="flex flex-col items-center space-y-1">
                       <div className="relative w-16 h-16 rounded-full bg-purple-100 text-purple-800 flex items-center justify-center">
                         <img
                           src={
@@ -467,19 +557,16 @@ export function GlobalSendDrawer() {
                         />
                       </div>
 
-                      <Drawer.Title className="text-lg font-medium text-center">
+                      <Drawer.Title className="text-lg font-medium text-center mt-4">
                         You're sending {""}
-                        <span className="text-primary">
+                        <span className="text-primary mt-2">
                           @{selectedUser?.username}
                         </span>
                       </Drawer.Title>
+
                       <p className="text-white/30 break-all text-center">
-                        {selectedUser?.verified_addresses?.primary
-                          ?.eth_address ? (
-                          shortAddress(
-                            selectedUser.verified_addresses.primary.eth_address
-                          )
-                        ) : (
+                        {!selectedUser?.verified_addresses?.primary
+                          ?.eth_address && (
                           <span className="text-red-400 text-sm">
                             This user has no connected wallet
                           </span>
@@ -487,7 +574,7 @@ export function GlobalSendDrawer() {
                       </p>
                     </div>
                   </Drawer.Title>
-                  <div className="w-full text-6xl font-medium text-center text-primary bg-transparent outline-none flex justify-center items-baseline gap-2">
+                  <div className="w-full text-center text-primary bg-transparent outline-none flex justify-center items-baseline">
                     <div className="flex flex-col">
                       <NumericFormat
                         inputMode="decimal"
@@ -505,21 +592,37 @@ export function GlobalSendDrawer() {
                         allowNegative={false}
                         allowLeadingZeros={false}
                         decimalScale={4}
-                        suffix={` ${selectedToken || ""}`}
-                        placeholder="0"
-                        className={`text-6xl bg-transparent text-center font-medium outline-none w-full placeholder-white/20 ${
+                        // suffix={` ${selectedToken || ""}`}
+                        prefix={getTokenSuffix(tokenType)}
+                        placeholder="$0"
+                        className={`leading-none text-5xl bg-transparent text-center font-medium outline-none w-full placeholder-white/20 ${
                           amount === "" || amount === "0"
                             ? "text-white/20"
                             : "text-primary"
                         }`}
                       />
 
-                      <p className="text-center text-white/30 text-base mt-1">
-                        ≈ ${amountUsd} USD{" "}
+                      <p className="text-center text-white/30 text-sm mb-2">
+                        {selectedToken && (
+                          <>
+                            <span className="text-center text-white/30 mt-2">
+                              {tokenBalances[selectedToken] === undefined
+                                ? "Loading balance..."
+                                : `Balance: ${formatAmount(tokenBalances[selectedToken])} ${selectedToken}`}
+                            </span>
+                            <span
+                              className="ml-1 text-primary"
+                              onClick={() => setTokenDrawerOpen(true)}
+                            >
+                              Change
+                            </span>
+                          </>
+                        )}
+
                         {selectedToken &&
                           parseFloat(amount) >
                             parseFloat(tokenBalances[selectedToken] || "0") && (
-                            <span className="text-red-400 text-sm mt-2">
+                            <span className="text-red-400 ml-1">
                               Insufficient balance
                             </span>
                           )}
@@ -527,18 +630,37 @@ export function GlobalSendDrawer() {
                     </div>
                   </div>
 
-                  <div className="gap-4 space-y-2">
+                  <div className="w-full hidden">
+                    <button
+                      onClick={() => setTokenDrawerOpen(true)}
+                      className="w-full flex items-center justify-between p-4 rounded-lg bg-white/5"
+                    >
+                      <div className="flex items-center gap-2">
+                        <img
+                          src={
+                            tokenList.find((t) => t.name === selectedToken)
+                              ?.icon
+                          }
+                          className="w-6 h-6 rounded-full"
+                          alt={selectedToken ?? ""}
+                        />
+                        <span className="text-white">{selectedToken}</span>
+                      </div>
+                      <span className="text-white/20">Change</span>
+                    </button>
+                  </div>
+
+                  <div className="space-y-1">
                     <div className="relative w-full">
                       <textarea
-                        rows={3}
+                        rows={2}
                         value={customMessage}
                         onChange={(e) => setCustomMessage(e.target.value)}
                         placeholder="Add note"
                         className="w-full rounded-2xl bg-white/5 text-white placeholder-white/20 p-4 resize-none"
                       />
                       <span className="absolute bottom-5 italic left-3 text-xs text-white/30 pointer-events-none">
-                        Private notification message to @
-                        {selectedUser?.username}
+                        Private message (optional)
                       </span>
                     </div>
 
@@ -547,23 +669,97 @@ export function GlobalSendDrawer() {
                       disabled={isDisabled}
                       className="w-full bg-primary"
                     >
-                      {sendStatus === "confirming"
-                        ? "Confirming..."
-                        : sendStatus === "sending"
-                          ? "Sending..."
-                          : `Send ${amount} ${selectedToken || ""}`}
+                      {sendStatus === "confirming" ? (
+                        <>
+                          <LoaderCircle className="animate-spin w-4 h-4" />
+                          Confirming...
+                        </>
+                      ) : sendStatus === "sending" ? (
+                        "Sending..."
+                      ) : (
+                        `Send`
+                      )}
                     </Button>
-                    {selectedToken && (
+                    {/* {selectedToken && (
                       <p className="text-center text-sm text-white/30 mt-2">
                         Balance:{" "}
                         {formatAmount(tokenBalances[selectedToken] || "0")}{" "}
                         {selectedToken}
                       </p>
-                    )}
+                    )} */}
                   </div>
                 </Drawer.Content>
               </Drawer.Portal>
             </Drawer.NestedRoot>
+          </Drawer.Content>
+        </Drawer.Portal>
+      </Drawer.Root>
+
+      <Drawer.Root open={tokenDrawerOpen} onOpenChange={setTokenDrawerOpen}>
+        <Drawer.Portal>
+          <Drawer.Overlay className="fixed inset-0 bg-[#4E4C52]/60 backdrop-blur-sm z-50" />
+          <Drawer.Content className="scroll-smooth z-50 fixed top-[200px] left-0 right-0 bottom-0 bg-background p-0 rounded-t-3xl flex flex-col">
+            <div className="mx-auto w-12 h-1.5 rounded-full bg-white/10 my-4" />
+            <div className="px-4">
+              <Drawer.Title className="text-md text-center font-medium mb-4">
+                Select payment token
+              </Drawer.Title>
+
+              <div className="space-y-2">
+                {/* {tokenList.map((token) => (
+                  <button
+                    key={token.name}
+                    onClick={() => {
+                      setSelectedToken(token.name as "ETH" | "USDC" | "TAB");
+                      setTokenType(token.name);
+                      setTokenDrawerOpen(false);
+                    }}
+                    className="w-full flex items-center p-3 rounded-lg bg-white/5 hover:bg-white/10"
+                  >
+                    <img
+                      src={token.icon}
+                      className="w-8 h-8 rounded-full mr-4"
+                      alt={token.name}
+                    />
+                    <div className="text-left">
+                      <p className="text-white font-medium">{token.name}</p>
+                    </div>
+                  </button>
+                ))} */}
+
+                {tokenList.map((token) => {
+                  const balance = tokenBalances[token.name];
+                  const balanceText =
+                    balance === undefined
+                      ? "..."
+                      : `${parseFloat(balance).toFixed(3)} ${token.name}`;
+
+                  return (
+                    <button
+                      key={token.name}
+                      onClick={() => {
+                        setSelectedToken(token.name as "ETH" | "USDC" | "TAB");
+                        setTokenType(token.name);
+                        setTokenDrawerOpen(false);
+                      }}
+                      className="w-full flex items-center justify-between p-3 rounded-lg bg-white/5 hover:bg-white/10"
+                    >
+                      <div className="flex items-center gap-3">
+                        <img
+                          src={token.icon}
+                          className="w-8 h-8 rounded-full"
+                          alt={token.name}
+                        />
+                        <p className="text-white font-medium">{token.name}</p>
+                      </div>
+                      <span className="text-sm text-white/40">
+                        {balanceText}
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
           </Drawer.Content>
         </Drawer.Portal>
       </Drawer.Root>
@@ -573,16 +769,21 @@ export function GlobalSendDrawer() {
         setIsOpen={(v) => {
           setShowSuccess(v);
           if (!v) {
-            setSelectedUser(null);
-            setLastTxHash(null); // ✅ clear hash here
+            setLastTxHash(null);
+            setSuccessAmount(null);
+            setSuccessToken(null);
+            setSuccessRecipient(null);
           }
         }}
         name="Payment Sent"
         description={
-          lastMessage ||
-          `Just sent ${lastSentAmount} ${selectedToken} to @${selectedUser?.username}`
+          successAmount && successToken
+            ? `You paid ${successAmount} ${successToken}${
+                lastMessage ? ` — ${lastMessage}` : ""
+              }`
+            : undefined
         }
-        recipientUsername={selectedUser?.username}
+        recipientUsername={successRecipient ?? undefined}
         txHash={lastTxHash ?? undefined}
       />
     </>

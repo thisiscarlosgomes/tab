@@ -3,132 +3,201 @@
 import { usePathname } from "next/navigation";
 import clsx from "clsx";
 import { useEffect, useState } from "react";
-import { Home, Bell, Send } from "lucide-react";
+import { Home, Bell, ScanLine } from "lucide-react";
 import sdk from "@farcaster/frame-sdk";
-import { useSendDrawer } from "@/providers/SendDrawerProvider";
+import { useScanDrawer } from "@/providers/ScanDrawerProvider";
 import Link from "next/link";
+
+// Placeholder icon type-safe
+const NoIcon = () => null;
 
 export function FooterNav() {
   const pathname = usePathname();
+  const { open: openScanDrawer } = useScanDrawer();
+
   const [pfpUrl, setPfpUrl] = useState<string | null>(null);
   const [seed, setSeed] = useState("anon");
-  const { open } = useSendDrawer();
-  const [animateHome, setAnimateHome] = useState(false);
-  const [animateSend, setAnimateSend] = useState(false);
-  const [animateActivity, setAnimateActivity] = useState(false);
 
-  const handleAnimate = (
-    setter: React.Dispatch<React.SetStateAction<boolean>>
-  ) => {
+  const [animateHome, setAnimateHome] = useState(false);
+  const [animateScan, setAnimateScan] = useState(false);
+  const [animateActivity, setAnimateActivity] = useState(false);
+  const [animateProfile, setAnimateProfile] = useState(false);
+
+  const handleAnimate = (setter: any) => {
     setter(true);
     setTimeout(() => setter(false), 300);
   };
 
   useEffect(() => {
-    const loadContext = async () => {
-      const context = await sdk.context;
-      const user = context?.user;
+    const load = async () => {
+      const ctx = await sdk.context;
+      const user = ctx?.user;
+
       setPfpUrl(user?.pfpUrl ?? null);
-      const fallbackSeed = `user-${context?.user?.fid ?? "anon"}`;
-      setSeed(user?.username || fallbackSeed);
+      setSeed(user?.username || `user-${ctx?.user?.fid ?? "anon"}`);
     };
-    loadContext();
+    load();
   }, []);
 
-  const navItems = [
+  const triggerHaptics = async () => {
+    try {
+      await sdk.haptics.notificationOccurred("success");
+    } catch {}
+  };
+
+  /* ------------------ NAV CONFIG ------------------ */
+
+  const nav = [
     {
       href: "/",
       label: "Home",
-      icon: (
-        <span
-          className={clsx(
-            "inline-block",
-            animateHome && "animate-scale-bounce"
-          )}
-        >
-          <Home className="w-7 h-7 mb-1" />
-        </span>
-      ),
-      onClick: () => handleAnimate(setAnimateHome),
+      icon: Home,
+      animate: animateHome,
+      setAnimate: setAnimateHome,
     },
     {
-      label: "Send",
-      icon: (
-        <span
-          className={clsx(
-            "inline-block",
-            animateSend && "animate-scale-bounce"
-          )}
-        >
-          <Send className="w-7 h-7 mb-1" />
-        </span>
-      ),
-      onClick: () => {
-        handleAnimate(setAnimateSend);
-        setTimeout(() => {
-          open(); // open modal after short delay
-        }, 450); // delay matches animation duration
-      },
+      action: "scan",
+      label: "Scan",
+      icon: ScanLine,
+      animate: animateScan,
+      setAnimate: setAnimateScan,
     },
     {
       href: "/activity",
       label: "Activity",
-      icon: (
-        <span
-          className={clsx(
-            "inline-block",
-            animateActivity && "animate-scale-bounce"
-          )}
-        >
-          <Bell className="w-7 h-7 mb-1" />
-        </span>
-      ),
-      onClick: () => handleAnimate(setAnimateActivity),
+      icon: Bell,
+      animate: animateActivity,
+      setAnimate: setAnimateActivity,
     },
     {
       href: "/profile",
       label: "Profile",
-      icon: pfpUrl ? (
-        <img src={pfpUrl} alt="User" className="w-7 h-7 mb-1 rounded-full" />
-      ) : (
-        <img
-          src={`https://api.dicebear.com/9.x/fun-emoji/svg?seed=${encodeURIComponent(
-            seed
-          )}`}
-          alt="Fallback Avatar"
-          className="w-7 h-7 mb-1 rounded-full"
-        />
-      ),
+      icon: NoIcon,
+      animate: animateProfile,
+      setAnimate: setAnimateProfile,
     },
   ];
 
+  /* ------------------ RENDER ------------------ */
+
   return (
-    <footer className="fixed bottom-0 inset-x-0 bg-card p-5 pb-8 flex justify-around z-10">
-      {navItems.map(({ href, label, icon, onClick }) =>
-        href ? (
-          <Link
-            key={href}
-            href={href}
-            onClick={onClick}
-            className={clsx(
-              "flex flex-col items-center text-xs",
-              pathname === href ? "text-white" : "text-[#444444]"
-            )}
-          >
-            {icon}
-            <span className="hidden">{label}</span>
-          </Link>
-        ) : (
-          <button
-            key={label}
-            onClick={onClick}
-            className="flex flex-col items-center text-xs text-[#444444]"
-          >
-            {icon}
-            <span className="hidden">{label}</span>
-          </button>
-        )
-      )}
+    <footer className="fixed bottom-0 inset-x-0 z-20">
+      {/* Apple-style gradient */}
+      <div
+        className="
+      pointer-events-none
+      absolute inset-0
+    "
+      />
+
+      {/* Main navigation bar */}
+      <div
+        className="
+      relative 
+      mt-4 mx-auto
+      w-[85%] max-w-md
+      bg-gradient-to-b
+      from-white/5
+
+      via-white/0
+      to-transparent 
+      backdrop-blur-xl
+      border border-white/10
+      shadow-[0_4px_20px_rgba(0,0,0,0.4)]
+      rounded-full 
+      px-4 py-2
+      flex items-center justify-between
+      mb-10
+    "
+      >
+        {nav.map((item, idx) => {
+          const Icon = item.icon;
+          const isActive = item.href && pathname === item.href;
+
+          const pillClasses = clsx(
+            "flex items-center justify-center",
+            "h-11 w-20", // Proper Apple hit target
+            "rounded-full transition", // Apple UI pill geometry
+            isActive
+              ? "bg-white/0 shadow-inner text-white"
+              : "text-white/50"
+          );
+
+          /* ------------ SCAN BUTTON (MATCH OTHERS NOW) ------------ */
+          if (item.action === "scan") {
+            return (
+              <button
+                key="scan"
+                className={pillClasses}
+                onClick={async () => {
+                  handleAnimate(item.setAnimate);
+                  await triggerHaptics();
+                  setTimeout(() => openScanDrawer(), 300);
+                }}
+              >
+                <Icon
+                  className={clsx(
+                    "w-6 h-6",
+                    item.animate && "animate-scale-bounce"
+                  )}
+                />
+              </button>
+            );
+          }
+
+          /* ------------ PROFILE IMAGE ICON ------------ */
+          if (item.label === "Profile") {
+            return (
+              <Link
+                key="profile"
+                href="/profile"
+                onClick={async () => {
+                  handleAnimate(item.setAnimate);
+                  await triggerHaptics();
+                }}
+                className={pillClasses}
+              >
+                {pfpUrl ? (
+                  <img
+                    src={pfpUrl}
+                    className={clsx(
+                      "w-7 h-7 rounded-full object-cover",
+                      item.animate && "animate-scale-bounce"
+                    )}
+                  />
+                ) : (
+                  <img
+                    src={`https://api.dicebear.com/9.x/fun-emoji/svg?seed=${encodeURIComponent(
+                      seed
+                    )}`}
+                    className="w-7 h-7 rounded-full"
+                  />
+                )}
+              </Link>
+            );
+          }
+
+          /* ------------ NORMAL NAV ITEMS ------------ */
+          return item.href ? (
+            <Link
+              key={item.label}
+              href={item.href}
+              onClick={async () => {
+                handleAnimate(item.setAnimate);
+                await triggerHaptics();
+              }}
+              className={pillClasses}
+            >
+              <Icon
+                className={clsx(
+                  "w-6 h-6",
+                  item.animate && "animate-scale-bounce"
+                )}
+              />
+            </Link>
+          ) : null;
+        })}
+      </div>
     </footer>
   );
 }

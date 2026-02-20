@@ -2,7 +2,7 @@ export function getShareUrl({
   name,
   username,
   description,
-  url = "https://tab.castfriends.com", // default fallback
+  url = "https://usetab.app", // default fallback
 }: {
   name: string;
   username?: string;

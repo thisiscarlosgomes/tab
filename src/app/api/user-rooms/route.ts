@@ -1,8 +1,11 @@
 import { NextRequest } from "next/server";
 import clientPromise from "@/lib/mongodb";
 
+/* =========================
+   Types
+========================= */
 interface Participant {
-  name: string;
+  name?: string;
   address: string;
   pfp?: string;
   fid?: number;
@@ -10,64 +13,106 @@ interface Participant {
 
 interface Paid {
   address: string;
-  name: string;
+  name?: string;
   txHash: string;
+  timestamp: Date;
 }
 
 interface GameRoom {
   gameId: string;
+  name?: string;
   participants: Participant[];
   admin: string;
-  recipient?: string;
+  recipient?: string | null;
   amount?: number;
   spinToken?: string;
   adminOnlySpin?: boolean;
-  chosen?: Participant;
+  chosen?: Participant | null;
   paid?: Paid[];
   createdAt: Date;
 }
 
+const DEFAULT_LIMIT = 50;
+
+/* =========================
+   GET user rooms
+========================= */
 export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url);
-  const address = searchParams.get("address");
+
+  const address = searchParams.get("address")?.toLowerCase();
+  const limit = Number(searchParams.get("limit") ?? DEFAULT_LIMIT);
+  const before = searchParams.get("before");
 
   if (!address) {
-    return new Response(JSON.stringify({ error: "Missing address" }), {
-      status: 400,
-    });
+    return Response.json({ error: "Missing address" }, { status: 400 });
   }
 
   const client = await clientPromise;
   const db = client.db();
-  const collection = db.collection("a-split-game");
+  const roomsCol = db.collection<GameRoom>("a-split-game");
 
-  const rooms = (await collection
-    .find({ "participants.address": address })
-    .toArray()) as unknown as GameRoom[];
+  const query: any = {
+    $or: [{ "participants.address": address }, { admin: address }],
+  };
+
+  if (before) {
+    query.createdAt = { $lt: new Date(before) };
+  }
+
+  const rooms = await roomsCol
+    .find(query)
+    .project({
+      gameId: 1,
+      name: 1,
+      participants: 1,
+      admin: 1,
+      recipient: 1,
+      amount: 1,
+      spinToken: 1,
+      adminOnlySpin: 1,
+      chosen: 1,
+      paid: 1,
+      createdAt: 1,
+    })
+    .sort({ createdAt: -1 })
+    .limit(limit)
+    .toArray();
+
+  if (!rooms.length) {
+    return Response.json({ rooms: [], nextCursor: null });
+  }
 
   const formattedRooms = rooms.map((room) => ({
-    roomId: room.gameId,
-    created: room.createdAt,
+    gameId: room.gameId,
+    name: room.name ?? null,
+    createdAt: room.createdAt,
+
     admin: room.admin,
     recipient: room.recipient ?? null,
+
     amount: room.amount ?? null,
     spinToken: room.spinToken ?? "ETH",
     adminOnlySpin: room.adminOnlySpin ?? false,
+
     chosen: room.chosen ?? null,
     paid: room.paid ?? [],
-    // ✅ Keep all original participant data internally
-    members: room.participants.map((p) => ({
-      name: p.name,
+
+    members: room.participants.map((p: any) => ({
       address: p.address,
+      name: p.name ?? null,
+      fid: p.fid ?? null,
       pfp:
-        p.pfp ||
+        p.pfp ??
         `https://api.dicebear.com/9.x/glass/svg?seed=${encodeURIComponent(
           p.name || p.address.slice(0, 6)
         )}`,
-      fid: p.fid ?? null,
     })),
-    // ✅ For the UI (ProfilePage), we use simplified "members"
   }));
 
-  return Response.json({ rooms: formattedRooms });
+  return Response.json({
+    rooms: formattedRooms,
+    nextCursor:
+      rooms.length === limit ? rooms[rooms.length - 1].createdAt : null,
+  });
 }

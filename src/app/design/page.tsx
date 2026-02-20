@@ -4,7 +4,7 @@ import { useRef, useState } from "react";
 import html2canvas from "html2canvas";
 
 export default function TabitPage() {
-  const [text, setText] = useState("social payments on farcaster 💸");
+  const [text, setText] = useState("Social payments on Base and Farcaster");
   const [error, setError] = useState("");
   const captureRef = useRef<HTMLDivElement>(null);
 
@@ -68,7 +68,7 @@ export default function TabitPage() {
                 >
                   <div className="flex items-center gap-4">
                     <img
-                      src="/splash.png"
+                      src="/app.png"
                       className="w-[94px] h-[94px] mr-1 leading-none"
                       alt="Tab Logo"
                     />

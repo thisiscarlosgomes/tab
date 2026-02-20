@@ -1,6 +1,6 @@
 {
     "name": "tab",
-    "short_name": "Social payments on Farcaster",
+    "short_name": "Social payments on Base and Farcaster",
     "start_url": "/",
     "display": "standalone",
     "background_color": "#1C1B1D",

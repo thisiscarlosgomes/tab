@@ -57,7 +57,7 @@ export function SendToUserDrawer({
     {}
   );
   const [selectedToken, setSelectedToken] = useState<"ETH" | "USDC" | "TAB">(
-    "ETH"
+    "USDC"
   );
 
   const { writeContractAsync } = useWriteContract();
@@ -71,8 +71,15 @@ export function SendToUserDrawer({
 
   useEffect(() => {
     if (!isOpen) {
-      setAmount("0.01");
+      setAmount("0.1");
       setMessage("");
+      setSendStatus("idle");
+      setSending(false);
+      setSelectedToken("USDC");
+      setTokenPrices({});
+      setTokenBalances({});
+      setLastTxHash(null);
+      setLastRecipientUsername(null);
     }
   }, [isOpen]);
 
@@ -180,7 +187,7 @@ export function SendToUserDrawer({
     if (isNaN(num)) return "0";
     return num.toLocaleString("en-US", {
       minimumFractionDigits: 0,
-      maximumFractionDigits: 4,
+      maximumFractionDigits: 3,
     });
   };
 
@@ -194,7 +201,7 @@ export function SendToUserDrawer({
         repositionInputs={false}
       >
         <Drawer.Portal>
-          <Drawer.Overlay className="fixed inset-0 bg-black/60 backdrop-blur-sm z-20" />
+          <Drawer.Overlay className="fixed inset-0 bg-[#4E4C52]/60 backdrop-blur-sm z-20" />
           <Drawer.Content className="space-y-4 p-4 scroll-smooth z-50 fixed top-[80px] left-0 right-0 bottom-0 bg-background p-0 rounded-t-3xl flex flex-col">
             <div
               aria-hidden
@@ -221,7 +228,6 @@ export function SendToUserDrawer({
                 </div>
 
                 <span>
-                  You're sending{" "}
                   <span className="text-primary">@{user.username}</span>
                 </span>
                 <p className="hidden text-white/30 break-all text-center">
@@ -271,21 +277,28 @@ export function SendToUserDrawer({
                 className="text-5xl bg-transparent text-center font-medium outline-none w-full placeholder-white/20 text-primary"
               />
 
-              <p className="text-center text-white/30 text-base mt-1">
-                ≈ ${amountUsd} USD
+              <p className="text-center text-white/30 text-sm mt-1">
+                Paying with: {formatAmount(tokenBalances[selectedToken] || "0")}{" "}
+                {selectedToken}
+                <br />
+                {isInsufficient && (
+                  <span className="text-center text-sm text-red-400">
+                    Insufficient balance
+                  </span>
+                )}
               </p>
             </div>
 
             <div className="relative w-full">
               <textarea
-                rows={3}
+                rows={2}
                 value={message}
                 onChange={(e) => setMessage(e.target.value)}
                 placeholder="Add note"
                 className="w-full rounded-2xl bg-white/5 text-white placeholder-white/20 p-4 resize-none"
               />
               <span className="absolute bottom-5 italic left-3 text-xs text-white/30 pointer-events-none">
-                Private notification message to @{user?.username}
+                Private message (optional)
               </span>
             </div>
 
@@ -298,19 +311,8 @@ export function SendToUserDrawer({
                 ? "Confirming..."
                 : sendStatus === "sending"
                   ? "Sending..."
-                  : `Send ${amount} ETH`}
+                  : `Send`}
             </Button>
-
-            <p className="text-center text-white/30 text-sm mt-1">
-              Balance: {formatAmount(tokenBalances[selectedToken] || "0")}{" "}
-              {selectedToken}
-              <br />
-              {isInsufficient && (
-                <span className="text-center text-sm text-red-400">
-                  Insufficient balance
-                </span>
-              )}
-            </p>
           </Drawer.Content>
         </Drawer.Portal>
       </Drawer.Root>

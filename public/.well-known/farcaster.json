@@ -1,18 +1,38 @@
 {
   "accountAssociation": {
     "header": "eyJmaWQiOjIyMDEsInR5cGUiOiJjdXN0b2R5Iiwia2V5IjoiMHhkMjA0ZGRjYmNkM0ZGMURjNEU3ODFiYmU0NWMxQTgwQTM0MTdENDc2In0",
-    "payload": "eyJkb21haW4iOiJ0YWIuY2FzdGZyaWVuZHMuY29tIn0",
-    "signature": "MHgxMzdlZDc4Y2NlYTcyOGZkNjEyYmE2YTM4ZmIyYWZhZGM4YmY1ODdjNjM4OTkxNzBkOTdjODc0MWYxNGI2NDY2MDFmY2U2ZTYxZmYyNjE3MTJkOWY5OWEyNTNlZWNmMDlhZDg5ODI5ZDM3ZjdlYzcwNGRlNDZiOTIyNzgyNTE0OTFj"
+    "payload": "eyJkb21haW4iOiJ1c2V0YWIuYXBwIn0",
+    "signature": "ArNBqo551/IzVRG1mjdVyf5W+zRVX4yIQgIhvmo2nMJigEwl3i2hRMSJ7H1sLoBAqkw2xOC7V6bJLY4ZOhPZ3Bw="
   },
-  "frame": {
+
+  "miniapp": {
     "version": "1",
     "name": "tab",
-    "iconUrl": "https://tab.castfriends.com/app.png",
-    "homeUrl": "https://tab.castfriends.com",
-    "imageUrl": "https://tab.castfriends.com/cover.png",
-    "buttonTitle": "launch tab",
-    "splashImageUrl": "https://tab.castfriends.com/splash.png",
+    "iconUrl": "https://usetab.app/app.png",
+    "castShareUrl": "https://usetab.app",
+    "splashImageUrl": "https://usetab.app/app.png",
     "splashBackgroundColor": "#201E23",
-    "webhookUrl": "https://tab.castfriends.com/api/webhook"
+    "homeUrl": "https://usetab.app",
+    "webhookUrl": "https://usetab.app/api/webhook",
+    "subtitle": "Split, send and get paid fast",
+    "description": "Tab is your payment supertool on Base. Split bills, settle groups, send and request money, and create links anyone can pay — all with your Base wallet, instantly.",
+
+    "screenshotUrls": [
+      "https://usetab.app/vv01.jpg",
+      "https://usetab.app/vv02.jpg",
+      "https://usetab.app/vv03.jpg"
+    ],
+
+    "primaryCategory": "finance",
+    "tags": ["payments", "wallet", "split", "request", "onchain"],
+    "heroImageUrl": "https://usetab.app/heroImage.jpg",
+    "tagline": "Split, send, get paid fast.",
+    "ogTitle": "Tab – Fast onchain payments",
+    "ogDescription": "Split bills, send money, settle groups, or get paid instantly — all inside your Base wallet.",
+    "ogImageUrl": "https://usetab.app/app.png"
+  },
+
+  "baseBuilder": {
+    "ownerAddress": "0xBC1dfdc491bf396a733E567fabF0286d53Bb4292"
   }
 }

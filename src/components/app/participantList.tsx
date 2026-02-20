@@ -7,14 +7,19 @@ interface Participant {
   name: string;
   address: string;
   pfp?: string;
-  fid?: string;
+  fid?: number; // ✅ FIX
 }
+
 
 interface ParticipantListProps {
   participants: Participant[];
   adminAddress: string;
   isAdmin?: boolean;
-  onNotify?: (fid: string) => void;
+  onNotify?: (fid: number) => void; // ✅ FIX
+
+
+  /** ✅ NEW */
+  paidAddresses?: string[];
 }
 
 export function ParticipantList({
@@ -22,10 +27,11 @@ export function ParticipantList({
   adminAddress,
   isAdmin,
   onNotify,
+  paidAddresses, // ✅ ADD THIS
 }: ParticipantListProps) {
   return (
     <div className="border rounded-lg p-4">
-      <h2 className="text-md font-medium mb-2">Members</h2>
+      <h2 className="text-md text-white/40 mb-3">Members ({participants.length})</h2>
       <ul className="space-y-2">
         {participants.map((p) => (
           <li
@@ -45,26 +51,36 @@ export function ParticipantList({
                 />
               </Avatar>
               <div>
-                <p className="text-sm font-medium flex items-center gap-1">
+                <p className="text-md font-medium flex items-center gap-1">
                   @{p.name}
                   {p.address.toLowerCase() === adminAddress.toLowerCase() && (
-                    <span className="text-xs text-violet-400 bg-violet-900/30 px-2 py-0.5 rounded-md">
-                      admin
+                    <span className="px-1 py-0.5 text-xs rounded-[6px] bg-yellow-500/20 text-yellow-300 border border-yellow-500/30">
+                      Host
+                    </span>
+                  )}
+                  {paidAddresses?.includes(p.address.toLowerCase()) && (
+                    <span className="px-1 py-0.5 text-xs rounded-[6px] bg-green-500/20 text-green-300 border border-green-500/30">
+                      Paid
                     </span>
                   )}
                 </p>
-                <p className="text-sm opacity-30">{shortAddress(p.address)}</p>
+
+                <p className="text-sm opacity-30 hidden">
+                  {shortAddress(p.address)}
+                </p>
               </div>
             </div>
 
-            {isAdmin && p.fid && p.address.toLowerCase() !== adminAddress.toLowerCase() && (
-              <button
-                onClick={() => onNotify?.(p.fid!)}
-                className="p-1 rounded-full hover:bg-white/10"
-              >
-                <BellRing className="w-4 h-4" />
-              </button>
-            )}
+            {/* {isAdmin &&
+              p.fid &&
+              p.address.toLowerCase() !== adminAddress.toLowerCase() && (
+                <button
+                  onClick={() => onNotify?.(p.fid!)}
+                  className="p-1 rounded-full hover:bg-white/10"
+                >
+                  <BellRing className="w-4 h-4" />
+                </button>
+              )} */}
           </li>
         ))}
       </ul>

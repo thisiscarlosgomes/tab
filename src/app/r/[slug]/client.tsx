@@ -13,10 +13,10 @@ import Link from "next/link";
 import Tilt from "react-parallax-tilt";
 import { useFrameSplash } from "@/providers/FrameSplashProvider";
 import { getShareUrl } from "@/lib/share";
-import { useAddPoints } from "@/lib/useAddPoints";
 import sdk from "@farcaster/frame-sdk";
 import { Button } from "@/components/ui/button";
 import { SendToRawAddressDrawer } from "@/components/app/SendToRawAddressDrawer";
+import { useSearchParams } from "next/navigation";
 
 export default function ReceivePageClient() {
   const { slug } = useParams();
@@ -27,6 +27,9 @@ export default function ReceivePageClient() {
   const { dismiss } = useFrameSplash();
   const [copiedCode, setCopiedCode] = useState<string | null>(null);
   const [sendDrawerOpen, setSendDrawerOpen] = useState(false);
+  const searchParams = useSearchParams();
+  const token = searchParams.get("token") ?? "ETH";
+  const amount = searchParams.get("amount");
 
   useEffect(() => {
     dismiss();
@@ -90,49 +93,52 @@ export default function ReceivePageClient() {
 
   const url =
     typeof window !== "undefined" && address
-      ? `${window.location.origin}/r?payTo=${address}`
+      ? `${window.location.origin}/r?payTo=${address}&token=${token}${amount ? `&amount=${amount}` : ""}`
       : "";
 
   const handleShare = async () => {
-    const pageUrl = username
-      ? `https://tab.castfriends.com/r/${username}`
-      : address
-        ? `https://tab.castfriends.com/r/${address}`
-        : "https://tab.castfriends.com";
+    const shareText = "I’m on Tab. Send me coins if you’re feeling generous 💸";
+    const fullUrl = `https://usetab.app/receive/${username}`; // or however `fullUrl` is defined
 
-    const url = getShareUrl({
-      name: "Pay with tab",
-      description: "I’m on Tab. Send me coins if you’re feeling generous 💸",
-      username: username ?? undefined, // convert null → undefined
-      url: pageUrl,
-    });
-
-    sdk.actions.openUrl(url);
-
-    if (address) {
-      await useAddPoints(address, "share_frame");
+    try {
+      if (navigator.share) {
+        await navigator.share({
+          title: "Pay with Tab",
+          text: shareText,
+          url: fullUrl,
+        });
+      } else {
+        await sdk.actions.composeCast({
+          text: `${shareText}`,
+          embeds: [fullUrl],
+        });
+      }
+    } catch (err) {
+      console.warn("Share failed or cancelled", err);
     }
   };
 
-  const handleCopy = (copyUrl: string) => {
-    navigator.clipboard.writeText(copyUrl);
-    setCopiedCode(copyUrl);
+  const handleCopy = (fullUrl: string) => {
+    navigator.clipboard.writeText(fullUrl);
+    setCopiedCode(fullUrl);
     setTimeout(() => setCopiedCode(null), 2000);
   };
 
-  const copyUrl = username
-    ? `https://tab.castfriends.com/r/${username}`
-    : address
-      ? `https://tab.castfriends.com/r/${address}`
-      : "https://tab.castfriends.com";
+  const fullUrl = username
+    ? `https://usetab.app/r/?payTo=${username}?token=${token}${amount ? `&amount=${amount}` : ""}`
+    : `https://usetab.app/r/?payTo=${address}?token=${token}${amount ? `&amount=${amount}` : ""}`;
 
   return (
-    <div className="min-h-screen w-full max-w-sm mx-auto flex flex-col items-center justify-center p-6 pb-32 pt-12 relative">
-      <h1 className="text-lg font-medium mb-4 mt-6 pt-2 text-center">
-        Pay with tab
-      </h1>
+    <div className="min-h-screen w-full flex flex-col items-center justify-start p-4 pt-24 pb-32 overflow-y-auto scrollbar-hide">
       {valid && address ? (
         <div className="w-full bg-card rounded-3xl p-4 py-8 flex flex-col items-center">
+          {amount && (
+            <div className="text-5xl  text-primary mb-6">
+              {amount}
+              {token}
+            </div>
+          )}
+
           <Tilt
             glareEnable={true}
             glareMaxOpacity={0.8}
@@ -148,30 +154,12 @@ export default function ReceivePageClient() {
               <QRCode
                 value={url}
                 size={200}
-                logoImage={pfpUrl || "/splash.png"}
+                logoImage={pfpUrl || "/app.png"}
                 logoWidth={40}
                 logoHeight={40}
                 logoOpacity={1}
                 removeQrCodeBehindLogo={true}
               />
-              <a
-                href="https://warpcast.com/~/frames/launch?domain=tab.castfriends.com"
-                target="_blank"
-                rel="noopener noreferrer"
-                className="block w-full hidden"
-              >
-                <div className="flex items-center justify-center font-medium p-4 text-black rounded-2xl w-full bg-primary active:transform active:scale-90 transition-all">
-                  <QrCode className="w-5 h-5 mr-2" />
-                  Scan using Tab
-                </div>
-              </a>
-
-              <Button
-                onClick={() => setSendDrawerOpen(true)}
-                className="w-full bg-primary"
-              >
-                Pay
-              </Button>
             </div>
           </Tilt>
 
@@ -182,46 +170,40 @@ export default function ReceivePageClient() {
               rel="noopener noreferrer"
               className="block w-full text-primary text-center text-lg"
             >
-              @{username}
+              Scan to pay @{username}
             </a>
           )}
 
-          <p className="text-lg font-medium text-center lowercase">
-            {shortAddress(address)}
-          </p>
-
-          {/* <div className="w-full max-w-md mt-4 px-8">
-            <p className="text-center text-sm opacity-30">
-              Anyone on Farcaster can scan this to send you coins with Tab.
-            </p>
-          </div> */}
-
-          <div className="flex flex-row space-x-2 w-full mt-2 px-8">
-            <Button onClick={handleShare} className="w-full bg-card text-white/30 border-2">
+          <div className="flex flex-row space-x-2 w-full mt-4 px-8">
+            <Button
+              onClick={handleShare}
+              className="w-full bg-card text-white/30 border-2"
+            >
               <Share className="w-12 h-12" />
             </Button>
             <Button
               onClick={(e) => {
                 e.stopPropagation();
                 e.nativeEvent.stopImmediatePropagation();
-                handleCopy(copyUrl);
+                handleCopy(fullUrl);
               }}
               onMouseDown={(e) => {
                 e.stopPropagation();
               }}
               className="w-full bg-card text-white/30 border-2"
             >
-              {copiedCode === copyUrl ? (
+              {copiedCode === fullUrl ? (
                 <CopyCheck className="w-16 h-16" />
               ) : (
                 <Copy className="w-12 h-12" />
               )}
             </Button>
           </div>
-          <div className="w-full max-w-md mt-4 px-8">
-            <p className="text-center text-sm opacity-30">
-              Anyone on Farcaster can scan this to send you coins with Tab.
-            </p>
+          <div className="text-center opacity-30 text-sm mt-4">
+            1. Open tab app on Base or Farcaster
+            <br />
+            2. Scan or tap Pay to complete payment
+            <br />
           </div>
         </div>
       ) : (
@@ -236,7 +218,7 @@ export default function ReceivePageClient() {
           className="active:transform active:scale-90 transition-all"
         >
           <Image
-            src="/splash.png"
+            src="/app.png"
             alt="logo"
             width={40}
             height={40}
@@ -246,15 +228,17 @@ export default function ReceivePageClient() {
         </Link>
       </div>
 
-      <div className="bg-background text-center fixed bottom-0 inset-x-0 p-2 pb-6 flex justify-around z-1">
-        <a
-          href={`https://warpcast.com/~/channel/tab`}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="block w-full text-white text-center text-sm opacity-30"
-        >
-          2025 ©tab tech
-        </a>
+      <div className="flex flex-col bg-background text-center fixed bottom-0 inset-x-0 p-4 pb-6 z-1">
+        <div className="max-w-sm w-full mx-auto">
+          <a
+            href={`https://warpcast.com/~/channel/tab`}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="block w-full text-white text-center text-sm opacity-30"
+          >
+            2025 ©tab tech
+          </a>
+        </div>
       </div>
 
       {address?.startsWith("0x") && (

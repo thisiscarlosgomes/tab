@@ -4,7 +4,7 @@ export const getTokenPrices = async (): Promise<Record<string, number>> => {
   // 1. Fetch ETH, WETH, USDC, EURC from CoinGecko
   try {
     const res = await fetch(
-      "https://api.coingecko.com/api/v3/simple/price?ids=ethereum,weth,usd-coin,brz,idrx,real-mxn,euro-coin&vs_currencies=usd"
+      "https://api.coingecko.com/api/v3/simple/price?ids=ethereum,weth,usd-coin,cad-coin, brz,idrx,real-mxn,euro-coin&vs_currencies=usd"
     );
     const data = await res.json();
 

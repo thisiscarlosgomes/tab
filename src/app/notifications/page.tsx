@@ -109,7 +109,7 @@ export default function ActivityPage() {
               No activity yet. <br />
               You’ll see notifications when you receive or send payments,
               <br />
-              or when others join your tables or group bills.
+              or when others join your groups or split bills.
             </p>
           </div>
         ) : (

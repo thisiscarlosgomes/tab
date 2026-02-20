@@ -102,7 +102,7 @@ export default function SendPage() {
         {/* 🔍 Fullscreen Search Drawer */}
         <Drawer.Root open={drawerOpen} onOpenChange={setDrawerOpen}>
           <Drawer.Portal>
-            <Drawer.Overlay className="fixed inset-0 bg-black/60 backdrop-blur-sm z-20" />
+            <Drawer.Overlay className="fixed inset-0 bg-[#4E4C52]/60 backdrop-blur-sm z-20" />
             <Drawer.Content className="z-30 fixed inset-0 bg-background p-6 space-y-6 overflow-y-auto">
               <Drawer.Title className="text-lg text-center font-medium">
                 Send ETH
@@ -172,7 +172,7 @@ export default function SendPage() {
         {/* ✉️ Fullscreen Send Drawer */}
         <Drawer.Root open={sendDrawerOpen} onOpenChange={setSendDrawerOpen}>
           <Drawer.Portal>
-            <Drawer.Overlay className="fixed inset-0 bg-black/60 backdrop-blur-sm z-20" />
+            <Drawer.Overlay className="fixed inset-0 bg-[#4E4C52]/60 backdrop-blur-sm z-20" />
             <Drawer.Content className="z-30 fixed inset-0 bg-[#121212] p-6 pt-24 space-y-6 overflow-y-auto">
               <Drawer.Title className="text-lg text-center font-medium">
                 Pay ETH to{" "}

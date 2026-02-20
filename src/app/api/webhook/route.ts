@@ -43,9 +43,9 @@ export async function POST(request: NextRequest) {
         // Send a welcome notification to the user
         const sendResult = await sendFrameNotification({
           fid,
-          title: "👋 meet tab",
+          title: "meet tab",
           body: "You're all set to receive notifications. Stay close, stay notified!",
-          targetUrl:"https://tab.castfriends.com",
+          targetUrl:"https://usetab.app",
         });
 
         // Check the state and log accordingly
@@ -74,9 +74,9 @@ export async function POST(request: NextRequest) {
       await setUserNotificationDetails(fid, event.notificationDetails);
       await sendFrameNotification({
         fid,
-        title: "👋 meet tab",
+        title: "meet tab",
         body: "You're all set to receive notifications. Stay close, stay notified!",
-        targetUrl:"https://tab.castfriends.com",
+        targetUrl:"https://usetab.app",
       });
       break;
 

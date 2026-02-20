@@ -17,8 +17,10 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   }, []);
 
   return (
-    <div className="min-h-screen w-full overflow-y-auto scrollbar-hide">
+    <div className="bg-background min-h-screen w-full overflow-y-auto scrollbar-hide">
       {insideFrame && <Header />}
+      {/* <Header />
+      <FooterNav /> */}
       {children}
       {insideFrame && <FooterNav />}
     </div>

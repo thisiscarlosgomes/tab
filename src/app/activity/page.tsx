@@ -7,358 +7,315 @@ import {
   differenceInHours,
   differenceInDays,
   format,
-  parseISO,
   isToday,
 } from "date-fns";
 import { shortAddress } from "@/lib/shortAddress";
 import sdk from "@farcaster/frame-sdk";
-
 import { useRouter } from "next/navigation";
-import { Loader } from "lucide-react";
 
-type ActivityType =
-  | "created"
-  | "joined"
-  | "paid"
-  | "received" // ✅ add this
-  | "room_created"
-  | "room_joined"
-  | "room_paid"
-  | "room_received";
+import {
+  Loader,
+  ReceiptText,
+  Plus,
+  ArrowUpRight,
+  ArrowDownLeft,
+  Dice5,
+  Gamepad2,
+  Ticket,
+  Sprout,
+} from "lucide-react";
 
 interface ActivityItem {
-  type: ActivityType;
-  counterparty?: string;
+  type: string;
   amount?: number;
   token?: string;
-  txHash?: string;
-  description: string;
+  description?: string;
   splitId?: string;
   roomId?: string;
-  timestamp: string;
-  recipient?: string; // <- ✅ optional
-  recipientUsername?: string; // <- ✅ optional
-  pfp?: string; // <- ✅ optional
+  dropId?: string;
+  counterparty?: string;
+  recipient?: string;
+  recipientUsername?: string;
+  pfp?: string;
+  ticketCount?: number;
+  rewarded?: boolean;
+  rewardAmount?: number;
+  timestamp: string | Date;
 }
+
+const ACTIVITY_VISUALS: Record<string, { icon: React.ReactNode; bg: string }> =
+  {
+    /* Bills */
+    bill_created: {
+      icon: <ReceiptText className="w-4 h-4" />,
+      bg: "bg-blue-500/20 text-blue-300",
+    },
+    bill_joined: {
+      icon: <Plus className="w-4 h-4" />,
+      bg: "bg-blue-500/20 text-blue-300",
+    },
+    bill_paid: {
+      icon: <ArrowUpRight className="w-4 h-4" />,
+      bg: "bg-green-500/20 text-green-300",
+    },
+    bill_received: {
+      icon: <ArrowDownLeft className="w-4 h-4" />,
+      bg: "bg-emerald-500/20 text-emerald-300",
+    },
+
+    /* Rooms */
+    room_created: {
+      icon: <Dice5 className="w-4 h-4" />,
+      bg: "bg-purple-500/20 text-purple-300",
+    },
+    room_joined: {
+      icon: <Gamepad2 className="w-4 h-4" />,
+      bg: "bg-purple-500/20 text-purple-300",
+    },
+    room_paid: {
+      icon: <ArrowUpRight className="w-4 h-4" />,
+      bg: "bg-indigo-500/20 text-indigo-300",
+    },
+    room_received: {
+      icon: <ArrowDownLeft className="w-4 h-4" />,
+      bg: "bg-indigo-500/20 text-indigo-300",
+    },
+
+    /* Jackpot */
+    jackpot_deposit: {
+      icon: <Ticket className="w-4 h-4" />,
+      bg: "bg-yellow-500/20 text-yellow-300",
+    },
+
+    /* Earn */
+    earn_deposit: {
+      icon: <Sprout className="w-4 h-4" />,
+      bg: "bg-green-600/20 text-green-400",
+    },
+  };
 
 export default function ActivityPage() {
   const { address, isConnected } = useAccount();
-  const [activity, setActivity] = useState<ActivityItem[]>([]);
-  const [loading, setLoading] = useState(true);
   const router = useRouter();
 
-  const [friends, setFriends] = useState<string[]>([]);
-
-
-
-
-  
-
+  const [activity, setActivity] = useState<ActivityItem[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [cursor, setCursor] = useState<string | null>(null);
+  const [friends, setFriends] = useState<Set<string>>(new Set());
   const [myUsername, setMyUsername] = useState<string | null>(null);
+  const [range, setRange] = useState<"7d" | "30d" | "all">("7d");
 
+  /* ---------- USER CONTEXT ---------- */
   useEffect(() => {
-    const fetchUsername = async () => {
-      try {
-        const context = await sdk.context; // ✅ Await the context
-        setMyUsername(context.user?.username?.toLowerCase() ?? null);
-      } catch (err) {
-        console.error("Failed to get Farcaster username", err);
-      }
-    };
-
-    fetchUsername();
+    sdk.context.then((ctx) => {
+      setMyUsername(ctx.user?.username?.toLowerCase() ?? null);
+    });
   }, []);
 
-
-
-
-
-
-
   useEffect(() => {
-    const fetchFriends = async () => {
+    const loadFriends = async () => {
       if (!address) return;
 
-      try {
-        const context = await sdk.context;
-        const username = context.user?.username;
-        if (!username) return;
+      const ctx = await sdk.context;
+      if (!ctx.user?.username) return;
 
-        const res = await fetch(
-          `/api/neynar/user/following?username=${username}`
-        );
-        const data = await res.json();
+      const res = await fetch(
+        `/api/neynar/user/following?username=${ctx.user.username}`
+      );
+      const data = await res.json();
 
-        const followedUsernames = Array.isArray(data)
-          ? data.map((entry) => entry.user?.username?.toLowerCase())
-          : [];
-
-        setFriends(followedUsernames);
-      } catch (err) {
-        console.error("Failed to fetch following list:", err);
+      const set = new Set<string>();
+      if (Array.isArray(data)) {
+        data.forEach((e) => {
+          if (e?.user?.username) set.add(e.user.username.toLowerCase());
+        });
       }
+      setFriends(set);
     };
 
-    fetchFriends();
+    loadFriends();
   }, [address]);
 
-  const friendsSet = useMemo(() => new Set(friends), [friends]);
-
+  /* ---------- ACTIVITY FETCH ---------- */
   useEffect(() => {
+    if (!isConnected || !address) return;
+
     const fetchActivity = async () => {
-      if (!address) return;
       setLoading(true);
-      const res = await fetch(`/api/activity?address=${address}`);
+
+      const qs = new URLSearchParams({
+        address,
+        limit: "50",
+        ...(cursor ? { before: cursor } : {}),
+      });
+
+      const res = await fetch(`/api/activity?${qs.toString()}`);
       const data = await res.json();
-      setActivity(data.activity || []);
+
+      setActivity(data.activity ?? []);
+      setCursor(data.nextCursor ?? null);
       setLoading(false);
     };
 
-    if (isConnected) fetchActivity();
+    fetchActivity();
   }, [isConnected, address]);
 
-  const filteredActivity = activity.filter((item) => {
-    if (
-      ["paid", "received", "room_paid", "room_received"].includes(item.type)
-    ) {
-      return true;
-    }
+  /* ---------- FILTERING ---------- */
+  const now = new Date();
 
-    if (item.type === "joined" || item.type === "room_joined") {
-      // someone else joined the user's bill or room
-      return true;
-    }
+  const timeFiltered = useMemo(() => {
+    if (range === "all") return activity;
 
-    return false;
-  });
+    const days = range === "7d" ? 7 : 30;
 
-  const grouped = filteredActivity.reduce(
-    (acc, item) => {
-      if (!item.timestamp) return acc;
+    return activity.filter((item) => {
+      const ts = new Date(item.timestamp);
+      return differenceInDays(now, ts) <= days;
+    });
+  }, [activity, range]);
 
-      const date = parseISO(item.timestamp);
-      const dateStr = isToday(date) ? "Today" : format(date, "MMMM d, yyyy");
+  const grouped = useMemo(() => {
+    return timeFiltered.reduce<Record<string, ActivityItem[]>>((acc, item) => {
+      const date = new Date(item.timestamp);
+      const label = isToday(date) ? "Today" : format(date, "MMMM d, yyyy");
 
-      if (!acc[dateStr]) acc[dateStr] = [];
-      acc[dateStr].push(item);
+      acc[label] ??= [];
+      acc[label].push(item);
       return acc;
-    },
-    {} as Record<string, ActivityItem[]>
-  );
+    }, {});
+  }, [timeFiltered]);
 
+  /* ---------- RENDER ---------- */
   return (
-    <div className="min-h-screen w-full flex flex-col items-center justify-start p-4 pt-16 pb-32 overflow-y-auto scrollbar-hide">
-      <div className="mt-4 w-full max-w-md">
-        <h1 className="text-xl font-bold mb-4 text-center hidden">Activity</h1>
-        {loading ? (
-          <div className="flex flex-1 items-center justify-center min-h-[60vh]">
-            <Loader className="w-8 h-8 animate-spin text-white/30" />
-          </div>
-        ) : activity.length === 0 ? (
-          <div className="flex flex-1 flex-col items-center justify-center min-h-[40vh]">
-            <div className="bg-white/5 rounded-sm p-6 shadow-sm w-full px-16 mx-8 max-w-[240px] mb-2" />
-            <div className="bg-white/5 rounded-sm p-6 shadow-sm w-full px-16 mx-8 max-w-[200px] mb-2" />
+    <div className="min-h-screen p-4 pt-16 pb-32">
+      <div className="max-w-md mx-auto">
+        {/* RANGE */}
+        <div className="flex gap-2 mb-4 mt-6">
+          {(["7d", "30d", "all"] as const).map((r) => (
+            <button
+              key={r}
+              onClick={() => setRange(r)}
+              className={`px-4 py-2 text-sm rounded-md border ${
+                range === r
+                  ? "bg-white text-black border-white"
+                  : "border-white/20 text-white/60"
+              }`}
+            >
+              {r.toUpperCase()}
+            </button>
+          ))}
+        </div>
 
-            <p className="text-white/30 text-center text-base mt-2">
-              No activity yet. <br />
-              You’ll see notifications when you receive or send payments,
-              <br />
-              or when others join your tables or group bills.
-            </p>
+        {loading ? (
+          <div className="flex justify-center mt-20">
+            <Loader className="animate-spin text-white/30" />
+          </div>
+        ) : Object.keys(grouped).length === 0 ? (
+          <div className="text-center text-white/40 mt-20">
+            Once you start marking transactions, they will appear here.
           </div>
         ) : (
-          <>
-            <div>
-              {Object.entries(grouped)
-                .sort(
-                  ([a], [b]) => new Date(b).getTime() - new Date(a).getTime()
-                ) // newest first
-                .map(([date, items]) => (
-                  <div key={date} className="mb-6">
-                    <h2 className="text-white/40 text-lg d mb-3">{date}</h2>
-                    <ul className="space-y-3">
-                      {items.map((item, idx) => {
-                        const isRoom = item.type.startsWith("room_");
-                        const label = (() => {
-                          if (
-                            item.type === "received" ||
-                            item.type === "room_received" ||
-                            item.type === "joined" ||
-                            item.type === "room_joined"
-                          ) {
-                            return item.counterparty
-                              ? `@${item.counterparty}`
-                              : "Someone";
+          Object.entries(grouped)
+            .sort(([a], [b]) => new Date(b).getTime() - new Date(a).getTime())
+            .map(([date, items]) => (
+              <div key={date} className="mb-6">
+                <h2 className="text-white/40 mb-3">{date}</h2>
+                <ul className="space-y-3">
+                  {items.map((item) => {
+                    const key = `${item.type}-${item.timestamp}-${item.splitId ?? item.roomId ?? ""}`;
+
+                    const ts = new Date(item.timestamp);
+                    const minutes = differenceInMinutes(now, ts);
+                    const hours = differenceInHours(now, ts);
+                    const days = differenceInDays(now, ts);
+
+                    const timeLabel =
+                      minutes < 60
+                        ? `${minutes}m`
+                        : hours < 24
+                          ? `${hours}h`
+                          : `${days}d`;
+
+                    const label =
+                      item.type === "bill_joined"
+                        ? "You"
+                        : item.counterparty
+                          ? `@${item.counterparty}`
+                          : item.recipientUsername
+                            ? `@${item.recipientUsername}`
+                            : "You";
+
+                    const visual = ACTIVITY_VISUALS[item.type] ?? {
+                      icon: <span className="text-xs">•</span>,
+                      bg: "bg-white/10 text-white/60",
+                    };
+
+                    const showAvatar =
+                      (item.type === "bill_paid" ||
+                        item.type === "bill_received") &&
+                      !!item.pfp;
+
+                    return (
+                      <li
+                        key={key}
+                        className="p-3 border border-white/10 rounded-lg hover:bg-white/5 cursor-pointer flex justify-between"
+                        onClick={() => {
+                          if (item.roomId) {
+                            router.push(`/game/${item.roomId}`);
+                            return;
                           }
 
-                          if (
-                            item.type === "paid" ||
-                            item.type === "room_paid"
-                          ) {
-                            const isMe =
-                              item.recipient?.toLowerCase() ===
-                                address?.toLowerCase() ||
-                              item.recipientUsername?.toLowerCase() ===
-                                myUsername;
-
-                            return isMe
-                              ? "You"
-                              : item.recipientUsername
-                                ? `@${item.recipientUsername}`
-                                : item.counterparty
-                                  ? `@${item.counterparty}`
-                                  : item.recipient
-                                    ? shortAddress(item.recipient)
-                                    : "Someone";
+                          if (item.splitId) {
+                            router.push(`/split/${item.splitId}`);
+                            return;
                           }
 
-                          return "You";
-                        })();
-
-                        const detail = (() => {
-                          switch (item.type) {
-                            case "received":
-                            case "room_received":
-                              return `Paid you ${item.amount} ${item.token ?? "ETH"}`;
-                            case "paid":
-                            case "room_paid":
-                              return `You paid ${item.amount} ${item.token ?? "ETH"}`;
-                            case "joined":
-                            case "room_joined":
-                              return "Joined your group bill";
-                            default:
-                              return item.description;
+                          if (item.dropId) {
+                            router.push(`/claim/${item.dropId}`);
+                            return;
                           }
-                        })();
 
-                        return (
-                          <li
-                            key={idx}
-                            className="hover:bg-white/5 cursor-pointer p-3 border-2 border-white/10 rounded-lg flex justify-between items-center mb-3"
-                            onClick={() =>
-                              router.push(
-                                isRoom
-                                  ? `/game/${item.roomId}`
-                                  : `/split/${item.splitId}`
-                              )
-                            }
-                          >
-                            <div className="flex items-center gap-2">
-                              <div className="relative w-10 h-10 shrink-0">
-                                {(item.type === "paid" ||
-                                  item.type === "room_paid") &&
-                                item.recipientUsername ? (
-                                  // Show the recipient's avatar when you paid them
-                                  <img
-                                    src={item.pfp ?? "/splash.png"}
-                                    alt="pfp"
-                                    className="w-full h-full rounded-full object-cover"
-                                  />
-                                ) : (item.type === "received" ||
-                                    item.type === "room_received") &&
-                                  item.counterparty ? (
-                                  // Show the counterparty who paid you
-                                  <img
-                                    src={item.pfp ?? "/splash.png"}
-                                    alt="pfp"
-                                    className="w-full h-full rounded-full object-cover"
-                                  />
-                                ) : (item.type === "room_joined" ||
-                                    item.type === "joined") &&
-                                  item.counterparty ? (
-                                  // Show the counterparty who paid you
-                                  <img
-                                    src={item.pfp ?? "/splash.png"}
-                                    alt="pfp"
-                                    className="w-full h-full rounded-full object-cover"
-                                  />
-                                ) : (
-                                  <img
-                                    className="w-full h-full rounded-full object-cover"
-                                    src={`https://api.dicebear.com/9.x/glass/svg?seed=${item.counterparty ?? item.recipient ?? "anon"}`}
-                                  />
-                                )}
+                          // ✅ fallback: homepage
+                          router.push("/");
+                        }}
+                      >
+                        <div className="flex gap-3 items-start">
+                          {/* ICON */}
+                          <div className="shrink-0">
+                            {showAvatar ? (
+                              <img
+                                src={item.pfp}
+                                alt={item.counterparty ?? "User"}
+                                className="w-9 h-9 rounded-full object-cover border border-white/10"
+                              />
+                            ) : (
+                              <div
+                                className={`w-9 h-9 rounded-full flex items-center justify-center ${visual.bg}`}
+                              >
+                                {visual.icon}
                               </div>
+                            )}
+                          </div>
 
-                              <div>
-                                <div className="text-sm font-medium text-white">
-                                  {label}
-                                  {friendsSet.has(
-                                    label.slice(1).toLowerCase()
-                                  ) && (
-                                    <span className="ml-1 text-xs text-violet-400 bg-violet-900/30 px-2 py-0.5 rounded-md">
-                                      Friend
-                                    </span>
-                                  )}
-                                </div>
-                                <div className="text-sm text-white/40">
-                                  {detail}
-                                </div>
-                              </div>
-
-                              {/* <div className="">
-                                <p className="text-white font-medium">
-                                  {label}
-                                </p>
-
-                                <p className="text-sm text-white/40">
-                                  {item.description}
-                                </p>
-
-                                {item.txHash && (
-                                  <a
-                                    href={`https://basescan.org/tx/${item.txHash}`}
-                                    target="_blank"
-                                    rel="noopener noreferrer"
-                                    className="text-sm text-primary truncate mt-1"
-                                  >
-                                    tx: {item.txHash.slice(0, 8)}...
-                                  </a>
-                                )}
-                              </div> */}
+                          {/* TEXT */}
+                          <div>
+                            <div className="text-white font-medium text-sm flex items-center gap-2">
+                              {label}
                             </div>
 
-                            {/* Right: Timestamp + Action */}
-                            <div className="flex flex-col items-end text-sm text-white/30 text-right ml-4">
-                              {item.type === "received" ||
-                              item.type === "room_received" ? (
-                                <span className="text-green-400">
-                                  +{parseFloat(item.amount?.toFixed(4) ?? "0")}{" "}
-                                  {item.token ?? "ETH"}
-                                </span>
-                              ) : item.type === "paid" ||
-                                item.type === "room_paid" ? (
-                                <span className="text-white/30">
-                                  {parseFloat(item.amount?.toFixed(4) ?? "0")}{" "}
-                                  {item.token ?? "ETH"}
-                                </span>
-                              ) : null}
-
-                              <span className="text-sm text-white/30">
-                                {(() => {
-                                  const date = new Date(item.timestamp);
-                                  const now = new Date();
-                                  const minutes = differenceInMinutes(
-                                    now,
-                                    date
-                                  );
-                                  const hours = differenceInHours(now, date);
-                                  const days = differenceInDays(now, date);
-
-                                  if (minutes < 60) return `${minutes}m ago`;
-                                  if (hours < 24) return `${hours}h ago`;
-                                  return `${days}d ago`;
-                                })()}
-                              </span>
+                            <div className="text-white/40 text-sm leading-snug">
+                              {item.description ?? item.type.replace("_", " ")}
                             </div>
-                          </li>
-                        );
-                      })}
-                    </ul>
-                  </div>
-                ))}
-            </div>
-          </>
+                          </div>
+                        </div>
+
+                        <div className="text-white/30 text-sm">{timeLabel}</div>
+                      </li>
+                    );
+                  })}
+                </ul>
+              </div>
+            ))
         )}
       </div>
     </div>

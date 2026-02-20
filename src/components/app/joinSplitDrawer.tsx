@@ -44,7 +44,7 @@ export function SplitJoinDrawer() {
 
       <Drawer.Root open={open} onOpenChange={setOpen} repositionInputs={false}>
         <Drawer.Portal>
-          <Drawer.Overlay className="fixed inset-0 !bg-black/60 backdrop-blur-[7.5px] z-20" />
+          <Drawer.Overlay className="fixed inset-0 bg-[#4E4C52]/60 backdrop-blur-[7.5px] z-20" />
           <Drawer.Content className="z-30 bg-background flex flex-col rounded-t-[32px] mt-24 h-fit fixed bottom-0 left-0 right-0 outline-none">
             <Drawer.Title className="text-lg font-normal text-center mt-6">
               Enter Code

@@ -9,30 +9,30 @@ export async function generateMetadata(
 
   const frame = {
     version: "next",
-    imageUrl: `https://tab.castfriends.com/api/og/split/${splitId}`,
+    imageUrl: `https://usetab.app/api/og/split/${splitId}`,
     button: {
-      title: "launch tab",
+      title: "Pay with tab",
       action: {
         type: "launch_frame",
         name: "tab",
-        url: `https://tab.castfriends.com/split/${splitId}`,
-        iconImageUrl: "https://tab.castfriends.com/app.png",
-        splashImageUrl: "https://tab.castfriends.com/splash.png",
+        url: `https://usetab.app/split/${splitId}`,
+        iconImageUrl: "https://usetab.app/app.png",
+        splashImageUrl: "https://usetab.app/app.png",
         splashBackgroundColor: "#201E23",
       },
     },
   };
 
   return {
-    title: "Group Bill",
+    title: "Bill Split",
     openGraph: {
       title: "Split a Bill",
-      images: [`https://tab.castfriends.com/api/og/split/${splitId}`],
+      images: [`https://usetab.app/api/og/split/${splitId}`],
     },
     twitter: {
       card: "summary_large_image",
       title: "Split a Bill",
-      images: [`https://tab.castfriends.com/api/og/split/${splitId}`],
+      images: [`https://usetab.app/api/og/split/${splitId}`],
     },
     other: {
       "fc:frame": JSON.stringify(frame),
