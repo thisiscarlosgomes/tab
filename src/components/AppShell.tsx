@@ -98,7 +98,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
   if (!ready) {
     return (
-      <div className="bg-background min-h-screen w-full overflow-x-hidden overflow-y-auto scrollbar-hide">
+      <div className="bg-background min-h-screen w-full overflow-x-hidden scrollbar-hide">
         {children}
         <InstallQrCard />
       </div>
@@ -108,12 +108,12 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   if (!authenticated) {
     if (!isPublicRoute) {
       return (
-        <div className="bg-background min-h-screen w-full overflow-x-hidden overflow-y-auto scrollbar-hide" />
+        <div className="bg-background min-h-screen w-full overflow-x-hidden scrollbar-hide" />
       );
     }
 
     return (
-      <div className="bg-background min-h-screen w-full overflow-x-hidden overflow-y-auto scrollbar-hide">
+      <div className="bg-background min-h-screen w-full overflow-x-hidden scrollbar-hide">
         {children}
         <InstallQrCard />
       </div>
@@ -121,7 +121,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   }
 
   return (
-    <div className="bg-background min-h-screen w-full overflow-x-hidden overflow-y-auto scrollbar-hide">
+    <div className="bg-background min-h-screen w-full overflow-x-hidden scrollbar-hide">
       {isAuthed && !hideHeaderOnRoute ? <Header /> : null}
       {isAuthed && hideHeaderOnRoute && showDesktopHeaderOnly ? (
         <div className="hidden md:block">

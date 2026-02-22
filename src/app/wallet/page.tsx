@@ -320,8 +320,8 @@ export default function WalletPage() {
         if (cancelled) return;
       }
 
-      // 2) agent access second
-      if (!agentAccessLoaded && !agentAccessLoading) {
+      // 2) agent access second (always revalidate even if we hydrated from cache)
+      if (!agentAccessLoading) {
         await fetchAgentAccess();
         if (cancelled) return;
       }

@@ -184,6 +184,7 @@ export async function GET(req: NextRequest) {
     bucket: "agent-access-get",
     limit: 80,
     windowMs: 60_000,
+    allowBearerAuthorization: true,
   });
   if (denied) return denied;
 
@@ -312,6 +313,7 @@ export async function PUT(req: NextRequest) {
     bucket: "agent-access-put",
     limit: 40,
     windowMs: 60_000,
+    allowBearerAuthorization: true,
   });
   if (denied) return denied;
 
@@ -402,6 +404,7 @@ export async function POST(req: NextRequest) {
     bucket: "agent-access-post",
     limit: 30,
     windowMs: 60_000,
+    allowBearerAuthorization: true,
   });
   if (denied) return denied;
 

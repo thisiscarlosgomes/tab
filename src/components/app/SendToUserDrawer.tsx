@@ -255,7 +255,7 @@ export function SendToUserDrawer({
                 <span>
                   <span className="text-primary">@{user.username}</span>
                 </span>
-                <p className="hidden text-white/30 break-all text-center">
+                <p className="text-white/30 text-sm break-all text-center">
                   {user.verified_addresses?.primary?.eth_address
                     ? shortAddress(user.verified_addresses.primary.eth_address)
                     : "No address"}
