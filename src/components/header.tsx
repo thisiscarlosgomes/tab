@@ -319,13 +319,10 @@ export function Header() {
                   <div className="text-white text-lg font-semibold leading-tight">
                     {currentAboutStep.title}
                   </div>
-                  <div className="mt-1 text-xs text-white/40">
-                    Step {aboutStep + 1} of {ABOUT_STEPS.length}
-                  </div>
                 </div>
               </div>
 
-              <p className="mt-5 text-white/75 text-md leading-relaxed text-center md:text-left">
+              <p className="mt-5 text-white/75 text-md leading-relaxed text-left">
                 {currentAboutStep.desc}
               </p>
             </div>

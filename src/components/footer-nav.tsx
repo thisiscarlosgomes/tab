@@ -126,7 +126,7 @@ export function FooterNav({
         "relative flex items-center",
         isDesktopInline
           ? "h-full w-full justify-center gap-8 px-0 bg-transparent border-0 backdrop-blur-none"
-          : "w-full justify-between bg-background backdrop-blur-xl border-t border-white/10 shadow-[0_4px_20px_rgba(0,0,0,0.35)] px-3 pt-3 pb-[calc(1.5rem+env(safe-area-inset-bottom))] mb-0"
+          : "w-full justify-between bg-background backdrop-blur-xl border-t border-white/10 shadow-[0_4px_20px_rgba(0,0,0,0.35)] px-3 pt-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] mb-0"
       )}
     >
       {nav.map((item) => {
