@@ -1,36 +1,35 @@
-import { erc20Abi, formatUnits } from "viem";
-import { createPublicClient, http, isAddress } from "viem";
-import { base } from "viem/chains"; // change to your target chain if needed
-
-const client = createPublicClient({
-  chain: base,
-  transport: http(),
-});
+import { isAddress } from "viem";
+import { tokenList } from "@/lib/tokens";
+import { getMoralisBalanceForSymbol } from "@/lib/moralis-portfolio-client";
 
 export async function getTokenBalance({
   tokenAddress,
   userAddress,
-  decimals,
+  decimals: _decimals,
+  force = false,
 }: {
   tokenAddress?: `0x${string}`; // if undefined, assume ETH
   userAddress: `0x${string}`;
   decimals?: number;
+  force?: boolean;
 }) {
   if (!isAddress(userAddress)) return "0";
 
+  const symbol = !tokenAddress
+    ? "ETH"
+    : (tokenList.find(
+        (token) =>
+          typeof token.address === "string" &&
+          token.address.toLowerCase() === tokenAddress.toLowerCase()
+      )?.name ?? null);
+
+  if (!symbol) return "0";
+
   try {
-    if (!tokenAddress) {
-      const balance = await client.getBalance({ address: userAddress });
-      return formatUnits(balance, 18);
-    } else {
-      const balance = await client.readContract({
-        abi: erc20Abi,
-        address: tokenAddress,
-        functionName: "balanceOf",
-        args: [userAddress],
-      });
-      return formatUnits(balance, decimals || 18);
-    }
+    return await getMoralisBalanceForSymbol(userAddress, symbol, {
+      baseOnly: true,
+      force,
+    });
   } catch {
     return "0";
   }

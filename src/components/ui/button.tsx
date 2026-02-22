@@ -1,7 +1,6 @@
 import { Slot } from '@radix-ui/react-slot';
 import { cva, type VariantProps } from 'class-variance-authority';
 import * as React from 'react';
-import { sdk } from '@farcaster/frame-sdk'; // import sdk
 
 import { cn } from '@/lib/cn';
 
@@ -46,12 +45,10 @@ const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
   ({ className, variant, size, asChild = false, onClick, ...props }, ref) => {
     const Comp = asChild ? Slot : 'button';
 
-    const handleClick = async (e: React.MouseEvent<HTMLButtonElement>) => {
+    const handleClick = (e: React.MouseEvent<HTMLButtonElement>) => {
       onClick?.(e);
-      try {
-        await sdk.haptics.impactOccurred('medium');
-      } catch (err) {
-        console.error('Haptics failed', err);
+      if (typeof navigator !== 'undefined' && 'vibrate' in navigator) {
+        navigator.vibrate(10);
       }
     };
 

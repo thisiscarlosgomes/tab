@@ -19,6 +19,7 @@ function encrypt(text: string) {
 
 export async function POST(req: NextRequest) {
   const { creator, token, amount, numRecipients = 1 } = await req.json();
+  const baseUrl = process.env.PUBLIC_URL?.trim() || req.nextUrl.origin;
 
   if (!creator?.address || !token || !amount) {
     return Response.json({ error: "Missing required fields" }, { status: 400 });
@@ -78,11 +79,11 @@ export async function POST(req: NextRequest) {
     drops.push({
       dropId,
       claimToken,
-      claimUrl: `${process.env.PUBLIC_URL}/claim/${dropId}?claimToken=${claimToken}`,
+      claimUrl: `${baseUrl}/claim/${dropId}?claimToken=${claimToken}`,
     });
   }
 
-  const groupUrl = `${process.env.PUBLIC_URL}/claims/group/${groupId}`;
+  const groupUrl = `${baseUrl}/claims/group/${groupId}`;
 
   return Response.json({ drops, groupUrl });
 }
@@ -107,7 +108,7 @@ export async function GET(req: NextRequest) {
     .sort({ createdAt: -1 })
     .toArray();
 
-  const grouped: Record<string, any[]> = {};
+  const grouped: Record<string, unknown[]> = {};
 
   for (const drop of allDrops) {
     const key = drop.groupId || drop.dropId;

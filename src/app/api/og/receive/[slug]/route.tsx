@@ -10,6 +10,7 @@ export const runtime = "edge";
 export async function GET(req: NextRequest) {
   const { pathname } = new URL(req.url);
   const slug = pathname.split("/").pop();
+  const baseUrl = process.env.PUBLIC_URL?.trim() || req.nextUrl.origin;
 
   if (!slug) return new Response("Missing slug", { status: 400 });
 
@@ -21,7 +22,7 @@ export async function GET(req: NextRequest) {
     label = `${slug.slice(0, 6)}…${slug.slice(-4)}`;
     try {
       const res = await fetch(
-        `${process.env.PUBLIC_URL}/api/neynar/user/by-address/${slug}`
+        `${baseUrl}/api/neynar/user/by-address/${slug}`
       );
       const data = await res.json();
       if (data?.username) label = `@${data.username}`;
@@ -30,7 +31,7 @@ export async function GET(req: NextRequest) {
   } else {
     try {
       const res = await fetch(
-        `${process.env.PUBLIC_URL}/api/neynar/user/by-username?username=${slug}`
+        `${baseUrl}/api/neynar/user/by-username?username=${slug}`
       );
       const data = await res.json();
       const eth = data?.verified_addresses?.primary?.eth_address;
@@ -48,9 +49,9 @@ export async function GET(req: NextRequest) {
     }
   }
 
-  const fallbackPfp = `${process.env.PUBLIC_URL}/app.png`;
+  const fallbackPfp = `${baseUrl}/app.png`;
 
-  const bg = `${process.env.PUBLIC_URL}/ogbg.png`;
+  const bg = `${baseUrl}/ogbg.png`;
 
   return new ImageResponse(
     (

@@ -1,19 +1,30 @@
 "use client";
 
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import clsx from "clsx";
-import { useEffect, useState } from "react";
-import { Home, Bell, ScanLine } from "lucide-react";
-import sdk from "@farcaster/frame-sdk";
+import { useEffect, useState, type Dispatch, type SetStateAction } from "react";
+import { Home, Bell, ScanLine, QrCode, CreditCard } from "lucide-react";
+import { usePrivy } from "@privy-io/react-auth";
 import { useScanDrawer } from "@/providers/ScanDrawerProvider";
 import Link from "next/link";
+import { UserAvatar } from "@/components/ui/user-avatar";
+import { useTabIdentity } from "@/lib/useTabIdentity";
 
 // Placeholder icon type-safe
 const NoIcon = () => null;
 
-export function FooterNav() {
+export function FooterNav({
+  variant = "mobile",
+  onDesktopScanAction,
+}: {
+  variant?: "mobile" | "desktop-inline";
+  onDesktopScanAction?: () => void;
+}) {
   const pathname = usePathname();
+  const router = useRouter();
   const { open: openScanDrawer } = useScanDrawer();
+  const { pfp, username, fid } = useTabIdentity();
+  const { user } = usePrivy();
 
   const [pfpUrl, setPfpUrl] = useState<string | null>(null);
   const [seed, setSeed] = useState("anon");
@@ -21,33 +32,41 @@ export function FooterNav() {
   const [animateHome, setAnimateHome] = useState(false);
   const [animateScan, setAnimateScan] = useState(false);
   const [animateActivity, setAnimateActivity] = useState(false);
+  const [animateWallet, setAnimateWallet] = useState(false);
   const [animateProfile, setAnimateProfile] = useState(false);
 
-  const handleAnimate = (setter: any) => {
+  const handleAnimate = (setter: Dispatch<SetStateAction<boolean>>) => {
     setter(true);
     setTimeout(() => setter(false), 300);
   };
 
   useEffect(() => {
-    const load = async () => {
-      const ctx = await sdk.context;
-      const user = ctx?.user;
+    const privyPfp =
+      (user?.farcaster as { pfp?: string | null } | undefined)?.pfp ??
+      (user?.linkedAccounts?.find(
+        (account) => account.type === "farcaster"
+      ) as { pfp?: string | null } | undefined)?.pfp ??
+      null;
+    setPfpUrl(pfp ?? privyPfp ?? null);
+    setSeed(username || `user-${fid ?? "anon"}`);
+  }, [pfp, username, fid, user]);
 
-      setPfpUrl(user?.pfpUrl ?? null);
-      setSeed(user?.username || `user-${ctx?.user?.fid ?? "anon"}`);
-    };
-    load();
-  }, []);
-
-  const triggerHaptics = async () => {
-    try {
-      await sdk.haptics.notificationOccurred("success");
-    } catch {}
+  const triggerHaptics = () => {
+    if (typeof navigator !== "undefined" && "vibrate" in navigator) {
+      navigator.vibrate(15);
+    }
   };
+
+  const prefetchHref = (href?: string) => {
+    if (!href) return;
+    router.prefetch(href);
+  };
+
+  const isDesktopInline = variant === "desktop-inline";
 
   /* ------------------ NAV CONFIG ------------------ */
 
-  const nav = [
+  const navBase = [
     {
       href: "/",
       label: "Home",
@@ -58,7 +77,7 @@ export function FooterNav() {
     {
       action: "scan",
       label: "Scan",
-      icon: ScanLine,
+      icon: isDesktopInline ? QrCode : ScanLine,
       animate: animateScan,
       setAnimate: setAnimateScan,
     },
@@ -69,16 +88,142 @@ export function FooterNav() {
       animate: animateActivity,
       setAnimate: setAnimateActivity,
     },
-    {
-      href: "/profile",
-      label: "Profile",
-      icon: NoIcon,
-      animate: animateProfile,
-      setAnimate: setAnimateProfile,
-    },
   ];
 
+  const mobileWalletItem = {
+    href: "/wallet",
+    label: "Wallet",
+    icon: CreditCard,
+    animate: animateWallet,
+    setAnimate: setAnimateWallet,
+  };
+
+  const profileItem = {
+    href: "/profile",
+    label: "Profile",
+    icon: NoIcon,
+    animate: animateProfile,
+    setAnimate: setAnimateProfile,
+  };
+
+  const nav = isDesktopInline
+    ? [...navBase, mobileWalletItem, profileItem]
+    : [...navBase, mobileWalletItem, profileItem];
+
+  useEffect(() => {
+    nav.forEach((item) => {
+      if (item.href) {
+        prefetchHref(item.href);
+      }
+    });
+  }, [router]);
+
   /* ------------------ RENDER ------------------ */
+
+  const renderNavBar = () => (
+    <div
+      className={clsx(
+        "relative flex items-center",
+        isDesktopInline
+          ? "h-full w-full justify-center gap-8 px-0 bg-transparent border-0 backdrop-blur-none"
+          : "w-full justify-between bg-background backdrop-blur-xl border-t border-white/10 shadow-[0_4px_20px_rgba(0,0,0,0.35)] px-3 pt-3 pb-6 mb-0"
+      )}
+    >
+      {nav.map((item) => {
+        const Icon = item.icon;
+        const isActive = item.href && pathname === item.href;
+
+        const pillClasses = clsx(
+          "flex items-center justify-center rounded-full transition",
+          isDesktopInline ? "h-11 w-16 rounded-2xl" : "h-11 flex-1",
+          isDesktopInline
+            ? (isActive
+                ? "bg-white/5 border border-white/5 text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.03)]"
+                : "text-white/50 hover:text-white/80")
+            : (isActive ? "bg-white/5 text-white" : "text-white/50 hover:text-white/80")
+        );
+
+        if (item.action === "scan") {
+          return (
+            <button
+              key="scan"
+              className={pillClasses}
+              onClick={() => {
+                handleAnimate(item.setAnimate);
+                triggerHaptics();
+                if (isDesktopInline && onDesktopScanAction) {
+                  onDesktopScanAction();
+                  return;
+                }
+                setTimeout(() => openScanDrawer(), 300);
+              }}
+              aria-label={isDesktopInline ? "Open get paid QR" : "Open scanner"}
+            >
+              <Icon
+                className={clsx(
+                  "w-6 h-6",
+                  item.animate && "animate-scale-bounce"
+                )}
+              />
+            </button>
+          );
+        }
+
+        if (item.label === "Profile") {
+          return (
+            <Link
+              key="profile"
+              href="/profile"
+              prefetch
+              onClick={() => {
+                handleAnimate(item.setAnimate);
+                triggerHaptics();
+              }}
+              onMouseEnter={() => prefetchHref("/profile")}
+              onTouchStart={() => prefetchHref("/profile")}
+              className={pillClasses}
+            >
+              <UserAvatar
+                src={pfpUrl}
+                seed={seed}
+                width={28}
+                className={clsx(
+                  "w-7 h-7 rounded-full object-cover",
+                  item.animate && "animate-scale-bounce"
+                )}
+              />
+            </Link>
+          );
+        }
+
+        return item.href ? (
+          <Link
+            key={item.label}
+            href={item.href}
+            prefetch
+            onClick={() => {
+              handleAnimate(item.setAnimate);
+              triggerHaptics();
+            }}
+            onMouseEnter={() => prefetchHref(item.href)}
+            onTouchStart={() => prefetchHref(item.href)}
+            className={pillClasses}
+          >
+            <Icon
+              className={clsx(
+                "w-6 h-6",
+                item.animate && "animate-scale-bounce"
+              )}
+            />
+          </Link>
+        ) : null;
+      })}
+    </div>
+  );
+
+  if (isDesktopInline) {
+    return renderNavBar();
+  }
 
   return (
     <footer className="fixed bottom-0 inset-x-0 z-20">
@@ -91,113 +236,7 @@ export function FooterNav() {
       />
 
       {/* Main navigation bar */}
-      <div
-        className="
-      relative 
-      mt-4 mx-auto
-      w-[85%] max-w-md
-      bg-gradient-to-b
-      from-white/5
-
-      via-white/0
-      to-transparent 
-      backdrop-blur-xl
-      border border-white/10
-      shadow-[0_4px_20px_rgba(0,0,0,0.4)]
-      rounded-full 
-      px-4 py-2
-      flex items-center justify-between
-      mb-10
-    "
-      >
-        {nav.map((item, idx) => {
-          const Icon = item.icon;
-          const isActive = item.href && pathname === item.href;
-
-          const pillClasses = clsx(
-            "flex items-center justify-center",
-            "h-11 w-20", // Proper Apple hit target
-            "rounded-full transition", // Apple UI pill geometry
-            isActive
-              ? "bg-white/0 shadow-inner text-white"
-              : "text-white/50"
-          );
-
-          /* ------------ SCAN BUTTON (MATCH OTHERS NOW) ------------ */
-          if (item.action === "scan") {
-            return (
-              <button
-                key="scan"
-                className={pillClasses}
-                onClick={async () => {
-                  handleAnimate(item.setAnimate);
-                  await triggerHaptics();
-                  setTimeout(() => openScanDrawer(), 300);
-                }}
-              >
-                <Icon
-                  className={clsx(
-                    "w-6 h-6",
-                    item.animate && "animate-scale-bounce"
-                  )}
-                />
-              </button>
-            );
-          }
-
-          /* ------------ PROFILE IMAGE ICON ------------ */
-          if (item.label === "Profile") {
-            return (
-              <Link
-                key="profile"
-                href="/profile"
-                onClick={async () => {
-                  handleAnimate(item.setAnimate);
-                  await triggerHaptics();
-                }}
-                className={pillClasses}
-              >
-                {pfpUrl ? (
-                  <img
-                    src={pfpUrl}
-                    className={clsx(
-                      "w-7 h-7 rounded-full object-cover",
-                      item.animate && "animate-scale-bounce"
-                    )}
-                  />
-                ) : (
-                  <img
-                    src={`https://api.dicebear.com/9.x/fun-emoji/svg?seed=${encodeURIComponent(
-                      seed
-                    )}`}
-                    className="w-7 h-7 rounded-full"
-                  />
-                )}
-              </Link>
-            );
-          }
-
-          /* ------------ NORMAL NAV ITEMS ------------ */
-          return item.href ? (
-            <Link
-              key={item.label}
-              href={item.href}
-              onClick={async () => {
-                handleAnimate(item.setAnimate);
-                await triggerHaptics();
-              }}
-              className={pillClasses}
-            >
-              <Icon
-                className={clsx(
-                  "w-6 h-6",
-                  item.animate && "animate-scale-bounce"
-                )}
-              />
-            </Link>
-          ) : null;
-        })}
-      </div>
+      {renderNavBar()}
     </footer>
   );
 }

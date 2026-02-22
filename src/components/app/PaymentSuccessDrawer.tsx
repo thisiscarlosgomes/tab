@@ -4,8 +4,6 @@ import { useEffect } from "react";
 import { Drawer } from "vaul";
 import { useCallback } from "react";
 import { Button } from "@/components/ui/button";
-import { useViewer } from "@/providers/FrameContextProvider";
-import sdk from "@farcaster/frame-sdk";
 import confetti from "canvas-confetti";
 import { useAccount } from "wagmi";
 
@@ -31,12 +29,13 @@ export function PaymentSuccessDrawer({
   recipientUsername,
   txHash,
 }: PaymentSuccessDrawerProps) {
-  const { frameAdded } = useViewer();
   const { address } = useAccount();
 
   const handleAddFrame = useCallback(async () => {
     if (isOpen) setIsOpen(false);
-    sdk.actions.addFrame();
+    if (typeof window !== "undefined") {
+      window.open("https://warpcast.com/miniapps/VQkdXWdIPV4K/tab", "_blank");
+    }
   }, [setIsOpen, isOpen]);
 
   const handleShare = useCallback(async () => {
@@ -45,14 +44,22 @@ export function PaymentSuccessDrawer({
     const text = `${name}\n\n${description || ""}`;
 
     try {
-      await sdk.actions.composeCast({
-        text,
-        embeds: ["https://usetab.app/"], // Add links or media if needed
-      });
-    } catch (err) {
-      console.error("Failed to compose cast", err);
-    }
+      if (typeof navigator !== "undefined" && navigator.share) {
+        await navigator.share({ text, url: "https://usetab.app/" });
+        return;
+      }
+      if (typeof window !== "undefined") {
+        window.open("https://x.com/intent/post?text=" + encodeURIComponent(text));
+      }
+    } catch {}
   }, [name, description, setIsOpen, isOpen]);
+
+  const openTx = useCallback(() => {
+    if (!txHash) return;
+    if (typeof window !== "undefined") {
+      window.open(`https://basescan.org/tx/${txHash}`, "_blank");
+    }
+  }, [txHash]);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -108,9 +115,7 @@ export function PaymentSuccessDrawer({
               <Button
                 variant="ghost"
                 className="hidden w-full mb-2"
-                onClick={() =>
-                  sdk.actions.openUrl(`https://basescan.org/tx/${txHash}`)
-                }
+                onClick={openTx}
               >
                 View transaction
               </Button>

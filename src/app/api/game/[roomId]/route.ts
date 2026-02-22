@@ -5,6 +5,8 @@ import clientPromise from "@/lib/mongodb";
 import { encrypt, decrypt } from "@/lib/encryption";
 import { isAddress } from "viem";
 import { writeActivity } from "@/lib/writeActivity";
+import { requireTrustedRequest } from "@/lib/security";
+import { sendFrameNotification } from "@/lib/notifs";
 
 /* =========================
    Helpers
@@ -61,6 +63,13 @@ export async function GET(req: NextRequest) {
    POST – JOIN game
 ========================= */
 export async function POST(req: NextRequest) {
+  const denied = requireTrustedRequest(req, {
+    bucket: "game-room-post",
+    limit: 120,
+    windowMs: 60_000,
+  });
+  if (denied) return denied;
+
   const rawId = req.nextUrl.pathname.split("/").pop();
   const gameId = normalizeGameId(rawId);
 
@@ -125,6 +134,13 @@ export async function POST(req: NextRequest) {
    PUT – SPIN
 ========================= */
 export async function PUT(req: NextRequest) {
+  const denied = requireTrustedRequest(req, {
+    bucket: "game-room-put",
+    limit: 120,
+    windowMs: 60_000,
+  });
+  if (denied) return denied;
+
   const rawId = req.nextUrl.pathname.split("/").pop();
   const gameId = normalizeGameId(rawId);
 
@@ -178,6 +194,13 @@ export async function PUT(req: NextRequest) {
    PATCH – CLOSE TAB / PAYMENT
 ========================= */
 export async function PATCH(req: NextRequest) {
+  const denied = requireTrustedRequest(req, {
+    bucket: "game-room-patch",
+    limit: 140,
+    windowMs: 60_000,
+  });
+  if (denied) return denied;
+
   const rawId = req.nextUrl.pathname.split("/").pop();
   const gameId = normalizeGameId(rawId);
 
@@ -268,6 +291,22 @@ export async function PATCH(req: NextRequest) {
       counterparty: { address: game.admin },
       timestamp: closedAt,
     });
+
+    if (game.admin && game.admin.toLowerCase() !== caller) {
+      await writeActivity({
+        address: game.admin.toLowerCase(),
+        type: "room_received",
+        refType: "room",
+        refId: gameId,
+        amount: game.amount,
+        token: game.spinToken,
+        counterparty: {
+          address: caller,
+          name: game.chosen?.name,
+        },
+        timestamp: closedAt,
+      });
+    }
   }
 
   /* -------- legacy onchain payment (Mode 1 / advanced) -------- */
@@ -316,6 +355,26 @@ export async function PATCH(req: NextRequest) {
       counterparty: { address: game.admin },
       timestamp: paidAt,
     });
+
+    if (
+      game.admin &&
+      game.admin.toLowerCase() !== payment.address.toLowerCase()
+    ) {
+      await writeActivity({
+        address: game.admin.toLowerCase(),
+        type: "room_received",
+        refType: "room",
+        refId: gameId,
+        amount: game.amount,
+        token: game.spinToken,
+        txHash: payment.txHash,
+        counterparty: {
+          address: payment.address.toLowerCase(),
+          name: payment.name,
+        },
+        timestamp: paidAt,
+      });
+    }
   }
 
   if (!update.$set && !update.$addToSet) {
@@ -350,18 +409,14 @@ if (!updated) {
       if (!p.fid) continue;
 
       try {
-        await fetch("https://usetab.app/api/send-notif", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            fid: Number(p.fid),
-            title: "🎉 Tab settled",
-            message:
-              p.address.toLowerCase() === payer.address.toLowerCase()
-                ? "You covered the tab. Thanks!"
-                : `@${payer.name} covered the tab for everyone`,
-            targetUrl: `https://usetab.app/game/${updated.gameId}`,
-          }),
+        await sendFrameNotification({
+          fid: Number(p.fid),
+          title: "🎉 Tab settled",
+          body:
+            p.address.toLowerCase() === payer.address.toLowerCase()
+              ? "You covered the tab. Thanks!"
+              : `@${payer.name} covered the tab for everyone`,
+          targetUrl: `https://usetab.app/game/${updated.gameId}`,
         });
       } catch {
         console.warn("Tab settled notification failed for", p.fid);
@@ -379,6 +434,13 @@ if (!updated) {
    DELETE game
 ========================= */
 export async function DELETE(req: NextRequest) {
+  const denied = requireTrustedRequest(req, {
+    bucket: "game-room-delete",
+    limit: 40,
+    windowMs: 60_000,
+  });
+  if (denied) return denied;
+
   const rawId = req.nextUrl.pathname.split("/").pop();
   const gameId = normalizeGameId(rawId);
 

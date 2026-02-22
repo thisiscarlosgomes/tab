@@ -4,6 +4,7 @@ import { NextRequest } from "next/server";
 import clientPromise from "@/lib/mongodb";
 import { encrypt } from "@/lib/encryption";
 import { writeActivity } from "@/lib/writeActivity";
+import { requireTrustedRequest } from "@/lib/security";
 
 /* =========================
    Helpers
@@ -20,6 +21,13 @@ function slugify(input: string) {
    POST – Create room
 ========================= */
 export async function POST(req: NextRequest) {
+  const denied = requireTrustedRequest(req, {
+    bucket: "game-create",
+    limit: 80,
+    windowMs: 60_000,
+  });
+  if (denied) return denied;
+
   console.log("➡️ POST /api/game");
 
   /* ---------- parse body ---------- */

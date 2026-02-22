@@ -3,8 +3,7 @@
 import { useState } from "react";
 import { ChevronDown } from "lucide-react";
 import clsx from "clsx";
-import sdk from "@farcaster/frame-sdk";
-import { Button } from "@/components/ui/button";
+import { isFrameRuntime } from "@/lib/isFrame";
 
 /* ----------------------------
    Chat Bubble
@@ -47,6 +46,24 @@ function ChatBubble({
 ---------------------------- */
 export default function TabAgentFAQPage() {
   const [open, setOpen] = useState(false);
+  const [openingChat, setOpeningChat] = useState(false);
+
+  const handleOpenChat = async () => {
+    const targetUrl =
+      "bwallet://messaging/0x6b13e4babaffc0337f68ac4635cb2cb43f8a46cd";
+    if (!isFrameRuntime()) {
+      window.open(targetUrl, "_self");
+      return;
+    }
+
+    try {
+      setOpeningChat(true);
+      const { default: sdk } = await import("@farcaster/frame-sdk");
+      await sdk.actions.openUrl(targetUrl);
+    } finally {
+      setOpeningChat(false);
+    }
+  };
 
   return (
     <div className="min-h-screen px-4 pt-20 pb-48 mb-16">
@@ -64,14 +81,10 @@ export default function TabAgentFAQPage() {
           </p>
 
           <button
-            onClick={() =>
-              sdk.actions.openUrl(
-                `bwallet://messaging/0x6b13e4babaffc0337f68ac4635cb2cb43f8a46cd`
-              )
-            }
-            className={`cursor-not-allowed mt-6 w-full bg-white/20 transition-colors text-black py-3 rounded-lg text-base font-semibold col-span-2`}
+            onClick={handleOpenChat}
+            className="mt-6 w-full bg-white/20 transition-colors text-black py-3 rounded-lg text-base font-semibold col-span-2"
           >
-            Chat - Soon
+            {openingChat ? "Opening..." : "Chat - Soon"}
           </button>
         </div>
 

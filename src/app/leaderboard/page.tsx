@@ -2,7 +2,8 @@
 
 import { useEffect, useState } from "react";
 import { useAccount } from "wagmi";
-import { Loader } from "lucide-react";
+import { Skeleton } from "@/components/ui/skeleton";
+import { UserAvatar } from "@/components/ui/user-avatar";
 
 interface Spender {
   address: string;
@@ -55,9 +56,21 @@ export default function LeaderboardPage() {
       <div className="w-full max-w-md">
         <h1 className="text-lg font-semibold mb-4">Top Spenders</h1>
         {isLoading ? (
-          <div className="flex justify-center items-center min-h-[20vh]">
-            <Loader className="w-6 h-6 animate-spin text-white/30" />
-          </div>
+          <ul className="space-y-1">
+            {Array.from({ length: 8 }).map((_, idx) => (
+              <li
+                key={idx}
+                className="flex items-center justify-between rounded-lg px-4 py-2 bg-white/5"
+              >
+                <div className="flex items-center space-x-3">
+                  <Skeleton className="h-4 w-10" />
+                  <Skeleton className="w-8 h-8 rounded-full" />
+                  <Skeleton className="h-4 w-24" />
+                </div>
+                <Skeleton className="h-4 w-12" />
+              </li>
+            ))}
+          </ul>
         ) : (
           <ul className="space-y-1">
           {leaders.map((user, index) => {
@@ -86,11 +99,10 @@ export default function LeaderboardPage() {
                   <span className={`font-medium w-8 text-left ${rankColor}`}>
                     {getOrdinal(index + 1)}
                   </span>
-                  <img
-                    src={
-                      user.pfp ||
-                      `https://api.dicebear.com/9.x/glass/svg?seed=${user.username}`
-                    }
+                  <UserAvatar
+                    src={user.pfp}
+                    seed={user.username}
+                    width={32}
                     alt={user.username}
                     className="w-8 h-8 rounded-full object-cover"
                   />

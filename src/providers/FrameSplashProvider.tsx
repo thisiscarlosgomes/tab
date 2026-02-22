@@ -1,6 +1,5 @@
 'use client';
 
-import sdk from '@farcaster/frame-sdk';
 import React from 'react';
 
 type FrameSplashProviderContextValue = {
@@ -12,9 +11,7 @@ const FrameSplashProviderContext =
 
 function FrameSplashProvider({ children }: React.PropsWithChildren) {
   const dismiss = React.useCallback(async () => {
-    sdk.actions.ready({
-      disableNativeGestures: false,
-    });
+    return;
   }, []);
 
   return (

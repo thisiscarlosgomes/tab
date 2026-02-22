@@ -2,11 +2,14 @@ import { NextRequest } from "next/server";
 import { createWalletClient, http, parseEther, parseUnits } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 import { base } from "viem/chains";
+import { isAddress } from "viem";
 import erc20ABI from "@/lib/erc20-abi";
 import clientPromise from "@/lib/mongodb";
+import { requireTrustedRequest } from "@/lib/security";
 
 const ALCHEMY_URL = process.env.ALCHEMY_URL!;
-const PRIVATE_KEY = process.env.PRIVATE_KEY!;
+const RAW_PRIVATE_KEY = process.env.PRIVATE_KEY!;
+const PRIVATE_KEY = RAW_PRIVATE_KEY.trim().replace(/^0x/i, "");
 const TOKEN_DECIMALS = 18;
 
 const BANNED_ADDRESSES = new Set([
@@ -16,6 +19,12 @@ const BANNED_ADDRESSES = new Set([
   "0x96f3a9b16e310ce46f09ee85f5cf5722e6b98870",
 ]);
 
+if (!/^[0-9a-fA-F]{64}$/.test(PRIVATE_KEY)) {
+  throw new Error(
+    "Invalid PRIVATE_KEY environment variable: expected 32-byte hex (with or without 0x prefix)"
+  );
+}
+
 const account = privateKeyToAccount(`0x${PRIVATE_KEY}`);
 const walletClient = createWalletClient({
   account,
@@ -24,6 +33,14 @@ const walletClient = createWalletClient({
 });
 
 export async function POST(req: NextRequest) {
+  const denied = requireTrustedRequest(req, {
+    bucket: "send",
+    limit: 40,
+    windowMs: 60_000,
+    requireInternalSecret: true,
+  });
+  if (denied) return denied;
+
   try {
     const body = await req.json();
     const {
@@ -40,6 +57,25 @@ export async function POST(req: NextRequest) {
         JSON.stringify({ error: "Missing 'to' or 'amount'" }),
         { status: 400 }
       );
+    }
+
+    if (!isAddress(to)) {
+      return new Response(JSON.stringify({ error: "Invalid recipient address" }), {
+        status: 400,
+      });
+    }
+
+    const parsedAmount = Number(amount);
+    if (!Number.isFinite(parsedAmount) || parsedAmount <= 0) {
+      return new Response(JSON.stringify({ error: "Invalid amount" }), {
+        status: 400,
+      });
+    }
+
+    if (type !== "eth" && type !== "erc20") {
+      return new Response(JSON.stringify({ error: "Invalid type" }), {
+        status: 400,
+      });
     }
 
     const lowerTo = to.toLowerCase();
@@ -74,7 +110,6 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    // 🚫 Blocklisted address check
     if (BANNED_ADDRESSES.has(lowerTo)) {
       return new Response(JSON.stringify({ error: "Blocked address" }), {
         status: 403,
@@ -89,6 +124,12 @@ export async function POST(req: NextRequest) {
           JSON.stringify({ error: "Missing tokenAddress for ERC20 send" }),
           { status: 400 }
         );
+      }
+
+      if (!isAddress(tokenAddress)) {
+        return new Response(JSON.stringify({ error: "Invalid token address" }), {
+          status: 400,
+        });
       }
 
       const value = parseUnits(amount.toString(), decimals);
@@ -124,89 +165,3 @@ export async function POST(req: NextRequest) {
     });
   }
 }
-
-// import { NextRequest } from "next/server";
-// import {
-//   //   createPublicClient,
-//   createWalletClient,
-//   http,
-//   parseEther,
-//   parseUnits,
-// } from "viem";
-// import { privateKeyToAccount } from "viem/accounts";
-// import { base } from "viem/chains";
-// import erc20ABI from "@/lib/erc20-abi"; // you’ll need to add this
-
-// const ALCHEMY_URL = process.env.ALCHEMY_URL!;
-// const PRIVATE_KEY = process.env.PRIVATE_KEY!;
-
-// const account = privateKeyToAccount(`0x${PRIVATE_KEY}`);
-
-// const walletClient = createWalletClient({
-//   account,
-//   chain: base,
-//   transport: http(ALCHEMY_URL),
-// });
-
-// export async function POST(req: NextRequest) {
-//   try {
-//     const body = await req.json();
-//     const {
-//       to,
-//       amount,
-//       type = "eth",
-//       tokenAddress,
-//       decimals = 18,
-//       reason,
-//     } = body;
-
-//     if (!to || !amount) {
-//       return new Response(
-//         JSON.stringify({ error: "Missing 'to' or 'amount'" }),
-//         { status: 400 }
-//       );
-//     }
-
-//     let hash;
-
-//     if (type === "erc20") {
-//       if (!tokenAddress) {
-//         return new Response(
-//           JSON.stringify({ error: "Missing tokenAddress for ERC20 send" }),
-//           { status: 400 }
-//         );
-//       }
-
-//       const value = parseUnits(amount.toString(), decimals);
-
-//       hash = await walletClient.writeContract({
-//         address: tokenAddress,
-//         abi: erc20ABI,
-//         functionName: "transfer",
-//         args: [to, value],
-//       });
-
-//       console.log(
-//         `[SEND] Sent ${amount} tokens to ${to} (${reason}) — tx: ${hash}`
-//       );
-//     } else {
-//       const value = parseEther(amount.toString());
-
-//       hash = await walletClient.sendTransaction({
-//         to,
-//         value,
-//       });
-
-//       console.log(
-//         `[SEND] Sent ${amount} ETH to ${to} (${reason}) — tx: ${hash}`
-//       );
-//     }
-
-//     return new Response(JSON.stringify({ success: true, hash }));
-//   } catch (e) {
-//     console.error("[SEND] Error:", e);
-//     return new Response(JSON.stringify({ error: "Send failed" }), {
-//       status: 500,
-//     });
-//   }
-// }

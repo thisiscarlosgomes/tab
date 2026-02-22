@@ -114,6 +114,17 @@
 }
 
 @layer utilities {
+  .text-md {
+    font-size: 1rem;
+    line-height: 1.5rem;
+  }
+
+  .text-xs,
+  .text-sm {
+    font-size: 1rem !important;
+    line-height: 1.5rem !important;
+  }
+
   @keyframes border-slide {
     from {
       stroke-dashoffset: 33;
@@ -148,7 +159,11 @@
 html,
 body {
   height: 100dvh;
+  width: 100%;
+  max-width: 100%;
+  overflow-x: hidden;
   overscroll-behavior-y: contain;
+  overscroll-behavior-x: none;
   -webkit-overflow-scrolling: touch;
   background-color: #0D0D13;
 }

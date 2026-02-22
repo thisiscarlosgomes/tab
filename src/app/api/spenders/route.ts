@@ -5,9 +5,10 @@ export const dynamic = "force-dynamic";
 
 const ALLOWED_TOKENS = ["USDC", "EURC", "ETH"];
 
-export async function GET(_req: NextRequest) {
+export async function GET(req: NextRequest) {
   const client = await clientPromise;
   const db = client.db();
+  const baseUrl = process.env.PUBLIC_URL?.trim() || req.nextUrl.origin;
 
   const bills = await db.collection("a-split-bill").find({}).toArray();
 
@@ -38,31 +39,34 @@ export async function GET(_req: NextRequest) {
     .sort((a, b) => b[1].amount - a[1].amount)
     .slice(0, 50);
 
-  const enriched = [];
+  const enriched = (
+    await Promise.all(
+      topSpenders.map(async ([address, data]) => {
+        try {
+          const res = await fetch(
+            `${baseUrl}/api/neynar/user/by-address/${address}`
+          );
+          if (!res.ok) return null;
+          const profile = await res.json();
+          const score = profile?.experimental?.neynar_user_score ?? 0;
 
-  for (const [address, data] of topSpenders) {
-    try {
-      const res = await fetch(
-        `${process.env.PUBLIC_URL}/api/neynar/user/by-address/${address}`
-      );
-      const profile = await res.json();
-      const score = profile?.experimental?.neynar_user_score ?? 0;
+          if (score < 0.3) return null;
 
-      if (score >= 0.3) {
-        enriched.push({
-          address,
-          totalSpent: data.amount,
-          fid: profile?.fid,
-          username: profile?.username,
-          displayName: profile?.display_name,
-          pfp: profile?.pfp_url,
-          score,
-        });
-      }
-    } catch {
-      // skip on failure
-    }
-  }
+          return {
+            address,
+            totalSpent: data.amount,
+            fid: profile?.fid,
+            username: profile?.username,
+            displayName: profile?.display_name,
+            pfp: profile?.pfp_url,
+            score,
+          };
+        } catch {
+          return null;
+        }
+      })
+    )
+  ).filter(Boolean);
 
   return Response.json({ leaders: enriched });
 }

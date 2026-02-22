@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useState, useMemo } from "react";
-import { useAccount } from "wagmi";
 import {
   differenceInMinutes,
   differenceInHours,
@@ -10,11 +9,10 @@ import {
   isToday,
 } from "date-fns";
 import { shortAddress } from "@/lib/shortAddress";
-import sdk from "@farcaster/frame-sdk";
 import { useRouter } from "next/navigation";
+import { useTabIdentity } from "@/lib/useTabIdentity";
 
 import {
-  Loader,
   ReceiptText,
   Plus,
   ArrowUpRight,
@@ -24,6 +22,8 @@ import {
   Ticket,
   Sprout,
 } from "lucide-react";
+import { Skeleton } from "@/components/ui/skeleton";
+import { UserAvatar } from "@/components/ui/user-avatar";
 
 interface ActivityItem {
   type: string;
@@ -36,12 +36,21 @@ interface ActivityItem {
   counterparty?: string;
   recipient?: string;
   recipientUsername?: string;
+  recipientResolutionSource?: "address" | "ens" | "tab" | "farcaster" | null;
   pfp?: string;
   ticketCount?: number;
   rewarded?: boolean;
   rewardAmount?: number;
+  executionMode?: "user_session" | "service_agent" | null;
+  agentId?: string | null;
   timestamp: string | Date;
 }
+
+const ACTIVITY_CACHE_TTL_MS = 30_000;
+const activityCache = new Map<
+  string,
+  { ts: number; activity: ActivityItem[] }
+>();
 
 const ACTIVITY_VISUALS: Record<string, { icon: React.ReactNode; bg: string }> =
   {
@@ -95,87 +104,127 @@ const ACTIVITY_VISUALS: Record<string, { icon: React.ReactNode; bg: string }> =
   };
 
 export default function ActivityPage() {
-  const { address, isConnected } = useAccount();
+  const { address } = useTabIdentity();
   const router = useRouter();
 
   const [activity, setActivity] = useState<ActivityItem[]>([]);
   const [loading, setLoading] = useState(true);
-  const [cursor, setCursor] = useState<string | null>(null);
-  const [friends, setFriends] = useState<Set<string>>(new Set());
-  const [myUsername, setMyUsername] = useState<string | null>(null);
-  const [range, setRange] = useState<"7d" | "30d" | "all">("7d");
+  const [tag, setTag] = useState<"all" | "payments" | "agent" | "other">(
+    "all"
+  );
 
-  /* ---------- USER CONTEXT ---------- */
-  useEffect(() => {
-    sdk.context.then((ctx) => {
-      setMyUsername(ctx.user?.username?.toLowerCase() ?? null);
-    });
-  }, []);
-
-  useEffect(() => {
-    const loadFriends = async () => {
-      if (!address) return;
-
-      const ctx = await sdk.context;
-      if (!ctx.user?.username) return;
-
-      const res = await fetch(
-        `/api/neynar/user/following?username=${ctx.user.username}`
-      );
-      const data = await res.json();
-
-      const set = new Set<string>();
-      if (Array.isArray(data)) {
-        data.forEach((e) => {
-          if (e?.user?.username) set.add(e.user.username.toLowerCase());
-        });
-      }
-      setFriends(set);
-    };
-
-    loadFriends();
-  }, [address]);
+  const getRecipientSourceText = (item: ActivityItem) => {
+    if (item.executionMode !== "service_agent") return "";
+    if (item.recipientResolutionSource === "tab") return " on Tab";
+    if (item.recipientResolutionSource === "farcaster") return " via Farcaster";
+    return "";
+  };
 
   /* ---------- ACTIVITY FETCH ---------- */
   useEffect(() => {
-    if (!isConnected || !address) return;
+    let cancelled = false;
+    const controller = new AbortController();
 
     const fetchActivity = async () => {
-      setLoading(true);
+      if (!address) {
+        setActivity([]);
+        setLoading(false);
+        return;
+      }
 
-      const qs = new URLSearchParams({
-        address,
-        limit: "50",
-        ...(cursor ? { before: cursor } : {}),
-      });
+      const cached = activityCache.get(address.toLowerCase());
+      if (cached && Date.now() - cached.ts < ACTIVITY_CACHE_TTL_MS) {
+        setActivity(cached.activity);
+        setLoading(false);
+        return;
+      }
 
-      const res = await fetch(`/api/activity?${qs.toString()}`);
-      const data = await res.json();
+      if (!cached) {
+        setLoading(true);
+      } else {
+        // Show stale cached activity while refreshing in the background.
+        setActivity(cached.activity);
+        setLoading(false);
+      }
+      const timeoutId = window.setTimeout(() => controller.abort(), 15000);
 
-      setActivity(data.activity ?? []);
-      setCursor(data.nextCursor ?? null);
-      setLoading(false);
+      try {
+        const qs = new URLSearchParams({
+          address,
+          limit: "50",
+        });
+
+        const res = await fetch(`/api/activity?${qs.toString()}`, {
+          signal: controller.signal,
+          cache: "no-store",
+        });
+        if (!res.ok) {
+          if (!cancelled) {
+            if (!cached) setActivity([]);
+            setLoading(false);
+          }
+          return;
+        }
+        const data = await res.json();
+
+        if (!cancelled) {
+          const nextActivity = data.activity ?? [];
+          setActivity(nextActivity);
+          activityCache.set(address.toLowerCase(), {
+            ts: Date.now(),
+            activity: nextActivity,
+          });
+        }
+      } catch {
+        if (!cancelled) {
+          if (!cached) setActivity([]);
+          setLoading(false);
+        }
+      } finally {
+        clearTimeout(timeoutId);
+        if (!cancelled) {
+          setLoading(false);
+        }
+      }
     };
 
-    fetchActivity();
-  }, [isConnected, address]);
+    void fetchActivity();
+
+    return () => {
+      cancelled = true;
+      controller.abort();
+    };
+  }, [address]);
 
   /* ---------- FILTERING ---------- */
   const now = new Date();
 
-  const timeFiltered = useMemo(() => {
-    if (range === "all") return activity;
-
-    const days = range === "7d" ? 7 : 30;
-
+  const tagFiltered = useMemo(() => {
     return activity.filter((item) => {
-      const ts = new Date(item.timestamp);
-      return differenceInDays(now, ts) <= days;
+      if (tag === "all") return true;
+      if (tag === "agent") return item.executionMode === "service_agent";
+      if (tag === "payments") {
+        return [
+          "bill_paid",
+          "bill_received",
+          "room_paid",
+          "room_received",
+        ].includes(item.type);
+      }
+      if (tag === "other") {
+        return [
+          "bill_joined",
+          "room_joined",
+          "jackpot_deposit",
+          "earn_deposit",
+        ].includes(item.type);
+      }
+      return true;
     });
-  }, [activity, range]);
+  }, [activity, tag]);
 
-  const grouped = useMemo(() => {
-    return timeFiltered.reduce<Record<string, ActivityItem[]>>((acc, item) => {
+  const groupedSections = useMemo(() => {
+    const grouped = tagFiltered.reduce<Record<string, ActivityItem[]>>((acc, item) => {
       const date = new Date(item.timestamp);
       const label = isToday(date) ? "Today" : format(date, "MMMM d, yyyy");
 
@@ -183,41 +232,86 @@ export default function ActivityPage() {
       acc[label].push(item);
       return acc;
     }, {});
-  }, [timeFiltered]);
+
+    return Object.entries(grouped).sort(([, aItems], [, bItems]) => {
+      const aTs = Math.max(
+        ...aItems.map((item) => new Date(item.timestamp).getTime()).filter(Number.isFinite)
+      );
+      const bTs = Math.max(
+        ...bItems.map((item) => new Date(item.timestamp).getTime()).filter(Number.isFinite)
+      );
+      if (!Number.isFinite(aTs) && !Number.isFinite(bTs)) return 0;
+      if (!Number.isFinite(aTs)) return 1;
+      if (!Number.isFinite(bTs)) return -1;
+      return bTs - aTs;
+    });
+  }, [tagFiltered]);
+
+  const renderLoadingSkeleton = () => (
+    <div className="mt-4">
+      <div className="flex gap-2 mb-4 mt-6">
+        <Skeleton className="h-9 w-14" />
+        <Skeleton className="h-9 w-16" />
+        <Skeleton className="h-9 w-14" />
+      </div>
+
+      <Skeleton className="h-4 w-32 mb-3" />
+      <ul className="space-y-3">
+        {Array.from({ length: 6 }).map((_, idx) => (
+          <li
+            key={idx}
+            className="p-3 border border-white/10 rounded-lg flex justify-between"
+          >
+            <div className="flex gap-3 items-start w-full">
+              <Skeleton className="w-9 h-9 rounded-full shrink-0" />
+              <div className="flex-1">
+                <Skeleton className="h-4 w-40 mb-2" />
+                <Skeleton className="h-3 w-24" />
+              </div>
+              <Skeleton className="h-3 w-8" />
+            </div>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
 
   /* ---------- RENDER ---------- */
   return (
     <div className="min-h-screen p-4 pt-16 pb-32">
       <div className="max-w-md mx-auto">
-        {/* RANGE */}
+        {/* TAG FILTERS */}
         <div className="flex gap-2 mb-4 mt-6">
-          {(["7d", "30d", "all"] as const).map((r) => (
+          {(
+            [
+              ["all", "All"],
+              ["payments", "Payments"],
+              ["agent", "Agent"],
+              ["other", "Other"],
+            ] as const
+          ).map(([value, label]) => (
             <button
-              key={r}
-              onClick={() => setRange(r)}
+              key={value}
+              onClick={() => setTag(value)}
               className={`px-4 py-2 text-sm rounded-md border ${
-                range === r
+                tag === value
                   ? "bg-white text-black border-white"
                   : "border-white/20 text-white/60"
               }`}
             >
-              {r.toUpperCase()}
+              {label}
             </button>
           ))}
         </div>
 
         {loading ? (
-          <div className="flex justify-center mt-20">
-            <Loader className="animate-spin text-white/30" />
-          </div>
-        ) : Object.keys(grouped).length === 0 ? (
+          renderLoadingSkeleton()
+        ) : groupedSections.length === 0 ? (
           <div className="text-center text-white/40 mt-20">
-            Once you start marking transactions, they will appear here.
+            No activity for this tag yet.
           </div>
         ) : (
-          Object.entries(grouped)
-            .sort(([a], [b]) => new Date(b).getTime() - new Date(a).getTime())
-            .map(([date, items]) => (
+          groupedSections.map(([date, items]) => (
               <div key={date} className="mb-6">
                 <h2 className="text-white/40 mb-3">{date}</h2>
                 <ul className="space-y-3">
@@ -240,10 +334,13 @@ export default function ActivityPage() {
                       item.type === "bill_joined"
                         ? "You"
                         : item.counterparty
-                          ? `@${item.counterparty}`
+                          ? item.counterparty.startsWith("0x")
+                            ? shortAddress(item.counterparty)
+                            : `@${item.counterparty}`
                           : item.recipientUsername
                             ? `@${item.recipientUsername}`
-                            : "You";
+                          : "You";
+                    const recipientSourceText = getRecipientSourceText(item);
 
                     const visual = ACTIVITY_VISUALS[item.type] ?? {
                       icon: <span className="text-xs">•</span>,
@@ -283,8 +380,10 @@ export default function ActivityPage() {
                           {/* ICON */}
                           <div className="shrink-0">
                             {showAvatar ? (
-                              <img
+                              <UserAvatar
                                 src={item.pfp}
+                                seed={item.counterparty ?? item.recipient ?? key}
+                                width={36}
                                 alt={item.counterparty ?? "User"}
                                 className="w-9 h-9 rounded-full object-cover border border-white/10"
                               />
@@ -301,10 +400,16 @@ export default function ActivityPage() {
                           <div>
                             <div className="text-white font-medium text-sm flex items-center gap-2">
                               {label}
+                              {item.executionMode === "service_agent" && (
+                                <span className="text-[10px] px-1.5 py-0.5 rounded border border-primary/40 text-primary/90">
+                                  Agent
+                                </span>
+                              )}
                             </div>
 
                             <div className="text-white/40 text-sm leading-snug">
-                              {item.description ?? item.type.replace("_", " ")}
+                              {(item.description ?? item.type.replace("_", " ")) +
+                                (item.type === "bill_paid" ? recipientSourceText : "")}
                             </div>
                           </div>
                         </div>

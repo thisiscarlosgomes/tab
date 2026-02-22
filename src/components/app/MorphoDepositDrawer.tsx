@@ -1,9 +1,13 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Drawer } from "vaul";
 import { NumericFormat } from "react-number-format";
 import { Button } from "../ui/button";
+import {
+  ResponsiveDialog,
+  ResponsiveDialogContent,
+  ResponsiveDialogTitle,
+} from "@/components/ui/responsive-dialog";
 import {
   useAccount,
   useConnect,
@@ -164,13 +168,10 @@ export function AaveDepositDrawer({
   };
 
   return (
-    <Drawer.Root open={isOpen} onOpenChange={onOpenChange}>
-      <Drawer.Portal>
-        <Drawer.Overlay className="fixed inset-0 bg-[#4E4C52]/60 backdrop-blur-sm z-20" />
-        <Drawer.Content className="scroll-smooth z-50 fixed top-[80px] left-0 right-0 bottom-0 bg-background p-4 space-y-4 rounded-t-3xl">
-          <div className="mx-auto w-12 h-1.5 rounded-full bg-white/10" />
-
-          <Drawer.Title className="text-lg text-center font-medium">
+    <ResponsiveDialog open={isOpen} onOpenChange={onOpenChange}>
+      <ResponsiveDialogContent className="top-[110px] md:top-1/2 p-4 md:w-[min(92vw,560px)] md:max-w-none max-h-[calc(100dvh-110px)] md:max-h-[85vh] overflow-y-auto">
+        <div className="scroll-smooth space-y-4">
+          <ResponsiveDialogTitle className="text-lg text-center font-medium">
             <div className="flex flex-col items-center">
               <div className="text-2xl mb-6 relative w-16 h-16 rounded-full bg-green-200 text-purple-800 flex items-center justify-center">
                 💸
@@ -189,7 +190,7 @@ export function AaveDepositDrawer({
               5.3%
             </a>{" "}
             yield on USDC
-          </Drawer.Title>
+          </ResponsiveDialogTitle>
 
           <div className="flex flex-col text-center">
             <p className="text-white/50 px-12 text-md mb-6">
@@ -351,8 +352,8 @@ export function AaveDepositDrawer({
               </div>
             </div>
           </div>
-        </Drawer.Content>
-      </Drawer.Portal>
-    </Drawer.Root>
+        </div>
+      </ResponsiveDialogContent>
+    </ResponsiveDialog>
   );
 }

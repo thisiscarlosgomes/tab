@@ -1,6 +1,5 @@
 "use client";
 
-import { farcasterFrame } from "@farcaster/frame-wagmi-connector";
 import { useEffect, useRef, useState } from "react";
 import {
   useAccount,
@@ -15,6 +14,7 @@ import { erc20Abi, parseUnits, isAddress } from "viem";
 import { createPublicClient, http } from "viem";
 import { mainnet } from "viem/chains";
 import { normalize } from "viem/ens";
+import { getPreferredConnector } from "@/lib/wallet";
 
 interface PayButtonProps {
   recipient: string; // ENS or 0x
@@ -48,7 +48,7 @@ export function PayButton({
   onSuccess,
 }: PayButtonProps) {
   const { isConnected, address } = useAccount();
-  const { connect } = useConnect();
+  const { connect, connectors } = useConnect();
   const { sendTransactionAsync } = useSendTransaction();
   const { writeContractAsync } = useWriteContract();
 
@@ -95,6 +95,17 @@ export function PayButton({
         // 2. Local state
         setHasPaid(true);
         setIsPaying(false);
+        if (typeof window !== "undefined") {
+          if (token === "USDC") {
+            window.dispatchEvent(
+              new CustomEvent("tab:balance-updated", {
+                detail: { deltaUsdc: -amount },
+              })
+            );
+          } else {
+            window.dispatchEvent(new Event("tab:balance-updated"));
+          }
+        }
 
         // 3. Notify parent (drawer / confetti / copy)
         onSuccess?.({
@@ -117,7 +128,9 @@ export function PayButton({
     if (disabled || hasPaid || isPaying || !!hash) return;
 
     if (!isConnected || !address) {
-      await connect({ connector: farcasterFrame() });
+      const preferred = getPreferredConnector(connectors);
+      if (!preferred) return;
+      await connect({ connector: preferred });
       return;
     }
 

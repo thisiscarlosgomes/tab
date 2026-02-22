@@ -1,27 +1,65 @@
 import { neynarApi } from "@/lib/neynar";
 import { FollowSortType } from "@neynar/nodejs-sdk/build/api";
 import type { NextRequest } from "next/server";
+import { fetchFarcasterUsersByAddresses } from "@/lib/proxy";
 
 export const GET = async (req: NextRequest) => {
+  const fidParam = req.nextUrl.searchParams.get("fid");
   const username = req.nextUrl.searchParams.get("username");
-  if (!username)
-    return Response.json({ error: "Missing username" }, { status: 400 });
+  const address = req.nextUrl.searchParams.get("address")?.toLowerCase();
+  const fidFromParam = fidParam ? Number(fidParam) : null;
+
+  if (!username && !address && !fidFromParam) {
+    return Response.json([]);
+  }
 
   try {
-    // First, resolve username to FID
-    const { user } = await neynarApi.lookupUserByUsername({ username });
+    let fid: number | null = null;
+
+    if (Number.isFinite(fidFromParam) && fidFromParam! > 0) {
+      fid = fidFromParam!;
+    } else if (username) {
+      try {
+        const { user } = await neynarApi.lookupUserByUsername({ username });
+        fid = user?.fid ?? null;
+      } catch {
+        // Username not found or Neynar unavailable: return no following.
+        return Response.json([]);
+      }
+    } else if (address) {
+      const farcasterUser = await fetchFarcasterUsersByAddresses(address);
+      fid = farcasterUser?.[address]?.fid ?? null;
+    }
+
+    if (!fid) {
+      return Response.json([]);
+    }
 
     // Then, get their following list
-    const { users } = await neynarApi.fetchUserFollowing({
-      fid: user.fid,
-      sortType: FollowSortType.Algorithmic,
-    });
+    try {
+      const { users } = await neynarApi.fetchUserFollowing({
+        fid,
+        sortType: FollowSortType.Algorithmic,
+      });
 
-    return Response.json(users);
+      if (!Array.isArray(users)) return Response.json([]);
+
+      type FollowingEntry = {
+        user?: unknown;
+      };
+
+      const normalized = users
+        .map((entry: unknown) => {
+          const maybeEntry = entry as FollowingEntry;
+          return maybeEntry?.user ? maybeEntry : { user: entry };
+        })
+        .filter((entry: FollowingEntry) => Boolean(entry?.user));
+
+      return Response.json(normalized);
+    } catch {
+      return Response.json([]);
+    }
   } catch {
-    return Response.json(
-      { error: "Failed to fetch following" },
-      { status: 500 }
-    );
+    return Response.json([]);
   }
 };

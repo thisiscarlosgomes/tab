@@ -10,13 +10,15 @@ import {
 import { base } from "viem/chains";
 import { formatUnits } from "viem";
 import { BaseJackpotAbi } from "@/lib/BaseJackpotAbi";
-import { farcasterFrame } from "@farcaster/frame-wagmi-connector";
 import { Button } from "@/components/ui/button";
 import { LoaderCircle, Loader } from "lucide-react";
 import { SuccessShareDrawer } from "@/components/app/SuccessShareDrawer";
 import { createPublicClient, http, erc20Abi } from "viem";
+import { Drawer } from "vaul";
 import sdk from "@farcaster/frame-sdk";
 import { REFERRER_ADDRESS, USDC_DECIMALS } from "@/lib/constants";
+import { getPreferredConnector } from "@/lib/wallet";
+import { usePrivy } from "@privy-io/react-auth";
 import {
   useJackpotAmount,
   useTimeRemaining,
@@ -47,16 +49,89 @@ interface RecentJackpotUser {
   pfp_url: string | null;
 }
 
+type GuaranteedPrizeEntry = {
+  prizeValueTotal?: string | number;
+  claimedAt?: string;
+  claimTransactionHashes?: string[];
+};
+
+function shortAddress(address: string) {
+  return `${address.slice(0, 6)}...${address.slice(-4)}`;
+}
+
+function getDicebearAvatar(seed: string) {
+  return `https://api.dicebear.com/9.x/fun-emoji/svg?seed=${encodeURIComponent(
+    seed
+  )}`;
+}
+
+function getRecentUserAvatar(user: RecentJackpotUser) {
+  const seed = user.username || user.address || "user";
+  const pfp = (user.pfp_url || "").trim();
+  if (!pfp) return getDicebearAvatar(seed);
+  if (pfp.startsWith("http://") || pfp.startsWith("https://")) return pfp;
+  return getDicebearAvatar(seed);
+}
+
+function formatJackpotAmount(value: number | null | undefined) {
+  if (typeof value !== "number" || !Number.isFinite(value)) return "0";
+  return new Intl.NumberFormat("en-US", {
+    maximumFractionDigits: 0,
+  }).format(value);
+}
+
+function resolveCssColor(raw: string, fallback: string) {
+  const value = raw.trim();
+  if (!value) return fallback;
+  if (value.startsWith("#")) return value;
+  if (value.startsWith("rgb") || value.startsWith("hsl")) return value;
+  // Handles tokenized values like "222 84% 5%" (used in some theme systems).
+  if (/[\d.%\s]+/.test(value)) return `hsl(${value})`;
+  return fallback;
+}
+
+function roundRect(
+  ctx: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  width: number,
+  height: number,
+  radius: number
+) {
+  const r = Math.min(radius, width / 2, height / 2);
+  ctx.beginPath();
+  ctx.moveTo(x + r, y);
+  ctx.arcTo(x + width, y, x + width, y + height, r);
+  ctx.arcTo(x + width, y + height, x, y + height, r);
+  ctx.arcTo(x, y + height, x, y, r);
+  ctx.arcTo(x, y, x + width, y, r);
+  ctx.closePath();
+}
+
+function loadImage(src: string) {
+  return new Promise<HTMLImageElement>((resolve, reject) => {
+    const img = new Image();
+    img.crossOrigin = "anonymous";
+    img.onload = () => resolve(img);
+    img.onerror = reject;
+    img.src = src;
+  });
+}
+
 export default function JackpotPage() {
   const { address, isConnected } = useAccount();
-  const { connect } = useConnect();
+  const { connect, connectors } = useConnect();
   const { writeContractAsync } = useWriteContract();
   const { dismiss } = useFrameSplash();
+  const { user } = usePrivy();
 
   const [ticketPriceWei, setTicketPriceWei] = useState<bigint | null>(null);
   const [balance, setBalance] = useState<number | null>(null);
-  const [isApproved, setIsApproved] = useState(false);
   const [sending, setSending] = useState(false);
+  const [buyStep, setBuyStep] = useState<"idle" | "approving" | "buying">(
+    "idle"
+  );
+  const [justPurchased, setJustPurchased] = useState(false);
   const [txHash, setTxHash] = useState<string | null>(null);
   const [showSuccessDrawer, setShowSuccessDrawer] = useState(false);
 
@@ -67,7 +142,9 @@ export default function JackpotPage() {
   const { data: ticketPrice, isLoading: loadingPrice } = useTicketPrice(); // USD per ticket
   const { data: ticketPriceInWei } = useTicketPriceInWei(); // raw wei for contract
 
-  const [guaranteedPrizes, setGuaranteedPrizes] = useState<any>(null);
+  const [guaranteedPrizes, setGuaranteedPrizes] = useState<
+    Record<string, GuaranteedPrizeEntry> | null
+  >(null);
 
   const { data: jackpotAmount, isLoading: isLoadingAmount } =
     useJackpotAmount();
@@ -111,15 +188,28 @@ export default function JackpotPage() {
   const [loadingRecentTickets, setLoadingRecentTickets] = useState(false);
 
   const [recentUsers, setRecentUsers] = useState<RecentJackpotUser[]>([]);
+  const [sharingCard, setSharingCard] = useState(false);
+  const [showSharePreview, setShowSharePreview] = useState(false);
+
+  const shareParticipants = useMemo(
+    () =>
+      recentUsers
+        .map((u) => (u.username ? `@${u.username}` : "Guest"))
+        .slice(0, 8),
+    [recentUsers]
+  );
 
   useEffect(() => {
-    fetch("/api/jackpot/recent-users")
+    const controller = new AbortController();
+    fetch("/api/jackpot/recent-users", { signal: controller.signal })
       .then((r) => r.json())
       .then((d) => setRecentUsers(d.users || []))
       .catch(() => setRecentUsers([]));
+    return () => controller.abort();
   }, []);
   useEffect(() => {
     if (!address) return;
+    let cancelled = false;
 
     const fetchRecentTickets = async () => {
       setLoadingRecentTickets(true);
@@ -130,15 +220,35 @@ export default function JackpotPage() {
 
         const contractData = history.contractData ?? [];
         const grouped: Record<string, number> = {};
+        const blockNumberKeys = Array.from(
+          new Set(
+            contractData
+              .map((entry: { blockNumber?: string | number }) =>
+                entry?.blockNumber?.toString?.()
+              )
+              .filter(Boolean)
+          )
+        ) as string[];
+        const blockTimeByNumber = new Map<string, number>();
+        await Promise.all(
+          blockNumberKeys.map(async (blockNumberKey) => {
+            const block = await client.getBlock({
+              blockNumber: BigInt(blockNumberKey),
+            });
+            blockTimeByNumber.set(
+              blockNumberKey,
+              Number(block.timestamp) * 1000
+            );
+          })
+        );
 
         for (const entry of contractData) {
-          const block = await client.getBlock({
-            blockNumber: BigInt(entry.blockNumber),
-          });
-          const timestamp = Number(block.timestamp) * 1000;
+          const blockNumberKey = entry?.blockNumber?.toString?.();
+          if (!blockNumberKey) continue;
+          const timestamp = blockTimeByNumber.get(blockNumberKey);
+          if (!timestamp) continue;
           const dateObj = new Date(timestamp);
           const key = dateObj.toISOString().split("T")[0];
-
           grouped[key] = (grouped[key] || 0) + entry.ticketsPurchased;
         }
 
@@ -152,16 +262,21 @@ export default function JackpotPage() {
           recent[date] = count;
         }
 
-        setRecentTickets(recent);
-        setGuaranteedPrizes(history.guaranteedPrizes);
+        if (!cancelled) {
+          setRecentTickets(recent);
+          setGuaranteedPrizes(history.guaranteedPrizes);
+        }
       } catch (err) {
         console.error("Failed to fetch recent ticket history", err);
       } finally {
-        setLoadingRecentTickets(false);
+        if (!cancelled) setLoadingRecentTickets(false);
       }
     };
 
     fetchRecentTickets();
+    return () => {
+      cancelled = true;
+    };
   }, [address]);
 
   useEffect(() => {
@@ -169,6 +284,15 @@ export default function JackpotPage() {
   }, [dismiss]);
 
   useEffect(() => {
+    if (!address) {
+      setBalance(null);
+      setIsLoadingBalance(false);
+      return;
+    }
+
+    let cancelled = false;
+    setIsLoadingBalance(true);
+
     const fetchTicketPrice = async () => {
       try {
         const result = await client.readContract({
@@ -176,7 +300,9 @@ export default function JackpotPage() {
           abi: BaseJackpotAbi,
           functionName: "ticketPrice",
         });
-        setTicketPriceWei(result as bigint);
+        if (!cancelled) {
+          setTicketPriceWei(result as bigint);
+        }
       } catch (err) {
         console.error("Failed to get ticket price", err);
       }
@@ -193,56 +319,50 @@ export default function JackpotPage() {
         const formatted = parseFloat(
           formatUnits(result as bigint, USDC_DECIMALS)
         );
-        setBalance(formatted);
+        if (!cancelled) {
+          setBalance(formatted);
+        }
       } catch (err) {
         console.error("Failed to get balance", err);
       } finally {
-        setIsLoadingBalance(false);
+        if (!cancelled) setIsLoadingBalance(false);
       }
     };
 
-    if (address) {
-      fetchTicketPrice();
-      fetchBalance();
-    }
+    fetchTicketPrice();
+    fetchBalance();
+    return () => {
+      cancelled = true;
+    };
   }, [address]);
-
-  useEffect(() => {
-    if (allowance !== undefined && ticketPriceWei !== null) {
-      setIsApproved(allowance >= parsedAmount);
-    }
-  }, [allowance, parsedAmount, ticketPriceWei]);
-
-  const handleApprove = async () => {
-    try {
-      if (!isConnected) await connect({ connector: farcasterFrame() });
-      if (!address || !ticketPriceWei) return;
-
-      setSending(true);
-
-      await writeContractAsync({
-        address: ERC20_TOKEN_ADDRESS,
-        abi: erc20Abi,
-        functionName: "approve",
-        args: [CONTRACT_ADDRESS, parsedAmount],
-        chainId: base.id,
-      });
-
-      await refetchAllowance?.();
-      setIsApproved(true);
-    } catch (e) {
-      console.error("Approve failed", e);
-    } finally {
-      setSending(false);
-    }
-  };
 
   const handleBuy = async () => {
     try {
-      if (!isConnected) await connect({ connector: farcasterFrame() });
+      if (!isConnected) {
+        const preferred = getPreferredConnector(connectors);
+        if (!preferred) return;
+        await connect({ connector: preferred });
+        return;
+      }
       if (!address || parsedAmount === 0n) return;
 
       setSending(true);
+      setBuyStep("approving");
+
+      const currentAllowance = allowance ?? 0n;
+      if (currentAllowance < parsedAmount) {
+        const approvalTx = await writeContractAsync({
+          address: ERC20_TOKEN_ADDRESS,
+          abi: erc20Abi,
+          functionName: "approve",
+          args: [CONTRACT_ADDRESS, parsedAmount],
+          chainId: base.id,
+        });
+        await client.waitForTransactionReceipt({ hash: approvalTx });
+        await refetchAllowance?.();
+      }
+
+      setBuyStep("buying");
 
       const tx = await writeContractAsync({
         address: CONTRACT_ADDRESS,
@@ -254,6 +374,7 @@ export default function JackpotPage() {
 
       setTxHash(tx);
       setShowSuccessDrawer(true);
+      setJustPurchased(true);
 
       // ✅ WAIT FOR CONFIRMATION
       await client.waitForTransactionReceipt({ hash: tx });
@@ -262,23 +383,25 @@ export default function JackpotPage() {
       window.dispatchEvent(new Event("tab:balance-updated"));
 
       // Log jackpot entry
-      const context = await sdk.context;
-      const fid = context?.user?.fid;
+      const linkedFid = user?.farcaster?.fid ?? null;
 
-      await fetch("/api/jackpot", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          address,
-          amount: parsedAmountUsd,
-          ticketCount: derivedTicketCount,
-          fid,
-        }),
-      });
+      if (linkedFid) {
+        await fetch("/api/jackpot", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            address,
+            amount: parsedAmountUsd,
+            ticketCount: derivedTicketCount,
+            fid: linkedFid,
+          }),
+        });
+      }
     } catch (e) {
       console.error("Buy failed", e);
     } finally {
       setSending(false);
+      setBuyStep("idle");
     }
   };
 
@@ -320,6 +443,181 @@ export default function JackpotPage() {
       month: "long",
       day: "numeric",
     });
+  };
+
+  const buildShareCardBlob = async () => {
+    const canvas = document.createElement("canvas");
+    canvas.width = 1080;
+    canvas.height = 680;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) throw new Error("Canvas not available");
+
+    const rootStyles = getComputedStyle(document.documentElement);
+    const primaryVar = rootStyles.getPropertyValue("--primary").trim();
+    const foregroundVar = rootStyles
+      .getPropertyValue("--primary-foreground")
+      .trim();
+    const mutedVar = rootStyles.getPropertyValue("--muted-foreground").trim();
+
+    const primaryColor = resolveCssColor(primaryVar, "#a9a0ed");
+    const foregroundColor = resolveCssColor(foregroundVar, "#111111");
+    const mutedColor = resolveCssColor(mutedVar, "rgba(17,17,17,0.72)");
+
+    // Transparent background + rounded primary card
+    roundRect(ctx, 18, 18, canvas.width - 36, canvas.height - 36, 38);
+    ctx.fillStyle = primaryColor;
+    ctx.fill();
+
+    const jackpotValue = formatJackpotAmount(jackpotAmount);
+    const myTickets =
+      typeof ticketCount === "number" && Number.isFinite(ticketCount)
+        ? Math.round(ticketCount)
+        : 0;
+    const avatarUsers = recentUsers.slice(0, 6);
+    const hasParticipants = avatarUsers.length > 0;
+
+    ctx.fillStyle = mutedColor;
+    ctx.font = "600 42px Inter, system-ui, sans-serif";
+    ctx.fillText("TAB JACKPOT", 60, 115);
+
+    try {
+      const logo = await loadImage("/app.png");
+      const logoSize = 72;
+      const logoX = canvas.width - 60 - logoSize;
+      const logoY = 58;
+      ctx.save();
+      roundRect(ctx, logoX, logoY, logoSize, logoSize, 18);
+      ctx.clip();
+      ctx.drawImage(logo, logoX, logoY, logoSize, logoSize);
+      ctx.restore();
+    } catch {
+      // Optional decoration; ignore if logo asset cannot be loaded.
+    }
+
+    ctx.fillStyle = foregroundColor;
+    ctx.font = "700 116px Inter, system-ui, sans-serif";
+    ctx.fillText(`$${jackpotValue}`, 60, 235);
+
+    ctx.fillStyle = mutedColor;
+    ctx.font = "500 44px Inter, system-ui, sans-serif";
+    ctx.fillText(`My Tickets: ${myTickets}`, 60, 365);
+
+    const avatarSize = 78;
+    const avatarY = 420;
+    const overlap = 16;
+    let avatarX = 60;
+
+    if (hasParticipants) {
+      for (let i = 0; i < avatarUsers.length; i += 1) {
+        const user = avatarUsers[i];
+        const src = getRecentUserAvatar(user);
+
+        try {
+          const img = await loadImage(src);
+          // Avatar circle clip
+          ctx.save();
+          ctx.beginPath();
+          ctx.arc(
+            avatarX + avatarSize / 2,
+            avatarY + avatarSize / 2,
+            avatarSize / 2,
+            0,
+            Math.PI * 2
+          );
+          ctx.closePath();
+          ctx.clip();
+          ctx.drawImage(img, avatarX, avatarY, avatarSize, avatarSize);
+          ctx.restore();
+        } catch {
+          // Fallback to a deterministic DiceBear avatar if external image fails.
+          try {
+            const fallback = await loadImage(
+              getDicebearAvatar(user.username || user.address || String(i))
+            );
+            ctx.save();
+            ctx.beginPath();
+            ctx.arc(
+              avatarX + avatarSize / 2,
+              avatarY + avatarSize / 2,
+              avatarSize / 2,
+              0,
+              Math.PI * 2
+            );
+            ctx.closePath();
+            ctx.clip();
+            ctx.drawImage(fallback, avatarX, avatarY, avatarSize, avatarSize);
+            ctx.restore();
+          } catch {
+            ctx.fillStyle = "rgba(255,255,255,0.25)";
+            ctx.beginPath();
+            ctx.arc(
+              avatarX + avatarSize / 2,
+              avatarY + avatarSize / 2,
+              avatarSize / 2,
+              0,
+              Math.PI * 2
+            );
+            ctx.fill();
+          }
+        }
+
+        // White ring border
+        ctx.strokeStyle = "#ffffff";
+        ctx.lineWidth = 5;
+        ctx.beginPath();
+        ctx.arc(
+          avatarX + avatarSize / 2,
+          avatarY + avatarSize / 2,
+          avatarSize / 2 - 2,
+          0,
+          Math.PI * 2
+        );
+        ctx.stroke();
+
+        avatarX += avatarSize - overlap;
+      }
+    }
+
+    const blob = await new Promise<Blob | null>((resolve) =>
+      canvas.toBlob(resolve, "image/png")
+    );
+    if (!blob) throw new Error("Unable to build share image");
+    return blob;
+  };
+
+  const shareJackpotCard = async () => {
+    if (sharingCard) return;
+    setSharingCard(true);
+
+    try {
+      const blob = await buildShareCardBlob();
+      const file = new File([blob], "tab-jackpot-card.png", {
+        type: "image/png",
+      });
+      const shareText = "I joined the Tab USDC jackpot.";
+
+      if (navigator.share && navigator.canShare?.({ files: [file] })) {
+        await navigator.share({
+          title: "Tab Jackpot",
+          text: shareText,
+          files: [file],
+        });
+        return;
+      }
+
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = "tab-jackpot-card.png";
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      console.error("Share card failed", err);
+    } finally {
+      setSharingCard(false);
+    }
   };
 
   return (
@@ -368,6 +666,7 @@ export default function JackpotPage() {
               onClick={() => {
                 setAmount(val.toString());
                 setIsCustomInput(false);
+                setJustPurchased(false);
               }}
               className={`p-4 text-[#a9a0ed]/70 text-base rounded-md bg-[#a9a0ed]/10 border-2 transition ${
                 amount === val.toString() && !isCustomInput
@@ -396,6 +695,7 @@ export default function JackpotPage() {
               onChange={(e) => {
                 setAmount(e.target.value);
                 setIsCustomInput(true);
+                setJustPurchased(false);
               }}
               onFocus={(e) => e.target.select()}
             />
@@ -414,40 +714,32 @@ export default function JackpotPage() {
         )} */}
 
         <div className="mt-6">
-          {!isApproved ? (
-            <Button
-              onClick={handleApprove}
-              disabled={sending || isLoadingAmount || isLoadingBalance}
-              className="w-full bg-primary"
-            >
-              {sending ? (
-                <>
-                  <LoaderCircle className="w-4 h-4 animate-spin mr-2" />
-                  Approving...
-                </>
-              ) : (
-                <>Approve ${parsedAmountUsd || 0}</>
-              )}
-            </Button>
-          ) : (
-            <Button
-              onClick={handleBuy}
-              disabled={sending || insufficientFunds || derivedTicketCount <= 0}
-              className="w-full bg-primary"
-            >
-              {sending ? (
-                <>
-                  <LoaderCircle className="w-4 h-4 animate-spin mr-2" />
-                  Buying...
-                </>
-              ) : (
-                <>
-                  Buy {derivedTicketCount} Ticket
-                  {derivedTicketCount > 1 ? "s" : ""}
-                </>
-              )}
-            </Button>
-          )}
+          <Button
+            onClick={handleBuy}
+            disabled={
+              sending ||
+              justPurchased ||
+              insufficientFunds ||
+              derivedTicketCount <= 0 ||
+              isLoadingAmount ||
+              isLoadingBalance
+            }
+            className="w-full bg-primary"
+          >
+            {sending ? (
+              <>
+                <LoaderCircle className="w-4 h-4 animate-spin mr-2" />
+                {buyStep === "approving" ? "Approving..." : "Buying..."}
+              </>
+            ) : justPurchased ? (
+              <>Ticket Purchased</>
+            ) : (
+              <>
+                Buy {derivedTicketCount} Ticket
+                {derivedTicketCount > 1 ? "s" : ""}
+              </>
+            )}
+          </Button>
         </div>
 
         {/* 💵 Available balance (Morpho-style) */}
@@ -470,7 +762,7 @@ export default function JackpotPage() {
               <Loader className="w-7 h-7 animate-spin text-white/50" />
             </div>
           ) : guaranteedPrizes && Object.keys(guaranteedPrizes).length > 0 ? (
-            Object.values(guaranteedPrizes).map((entry: any, idx: number) => {
+            Object.values(guaranteedPrizes).map((entry, idx: number) => {
               const prizeAmount = entry.prizeValueTotal;
               const claimedDate = format(
                 parseISO(entry.claimedAt),
@@ -597,8 +889,13 @@ export default function JackpotPage() {
               {recentUsers.map((u, i) => (
                 <img
                   key={i}
-                  src={u.pfp_url || "/app.png"}
-                  alt={u.username || ""}
+                  src={getRecentUserAvatar(u)}
+                  onError={(e) => {
+                    e.currentTarget.src = getDicebearAvatar(
+                      u.username || u.address || String(i)
+                    );
+                  }}
+                  alt={u.username || shortAddress(u.address)}
                   className="w-8 h-8 rounded-full border-2 border-[#0d0d13] object-cover"
                 />
               ))}
@@ -615,16 +912,7 @@ export default function JackpotPage() {
           <>
             <div className="flex justify-center mt-1">
               <Button
-                onClick={async () => {
-                  try {
-                    await sdk.actions.composeCast({
-                      text: `🎰 I’m in the USDC jackpot on @usetab — ${ticketCount} active ticket${ticketCount > 1 ? "s" : ""}!`,
-                      embeds: ["https://usetab.app/jackpot"],
-                    });
-                  } catch (err) {
-                    console.warn("Share failed or cancelled", err);
-                  }
-                }}
+                onClick={() => setShowSharePreview(true)}
                 className="w-full bg-white text-black font-semibold py-4 rounded-lg"
               >
                 Share to Feed
@@ -636,6 +924,62 @@ export default function JackpotPage() {
         <p className="hidden text-white/30 text-sm text-center">
           Powered by Megapot
         </p>
+
+        <Drawer.Root open={showSharePreview} onOpenChange={setShowSharePreview}>
+          <Drawer.Portal>
+            <Drawer.Overlay className="fixed inset-0 bg-black/60 backdrop-blur-sm z-30" />
+            <Drawer.Content className="fixed bottom-0 left-0 right-0 z-40 rounded-t-3xl bg-background p-4 pb-6">
+              <div className="mx-auto w-12 h-1.5 rounded-full bg-white/10 mb-4" />
+              <Drawer.Title className="text-center text-lg font-medium mb-4">
+                Share Jackpot Card
+              </Drawer.Title>
+
+              <div className="rounded-2xl bg-primary text-primary-foreground p-5 space-y-3">
+                <div className="flex items-start justify-between gap-3">
+                  <p className="text-sm opacity-80">TAB JACKPOT</p>
+                  <img
+                    src="/app.png"
+                    alt="Tab logo"
+                    className="w-9 h-9 rounded-lg object-cover shrink-0"
+                  />
+                </div>
+                <p className="text-4xl font-semibold">
+                  ${formatJackpotAmount(jackpotAmount)}
+                </p>
+                <p className="text-sm opacity-90">
+                  My Tickets: {typeof ticketCount === "number" ? Math.round(ticketCount) : 0}
+                </p>
+                {recentUsers.length > 0 && (
+                  <div className="pt-1">
+                    <div className="flex -space-x-3 py-1">
+                      {recentUsers.slice(0, 8).map((u, idx) => (
+                        <img
+                          key={`${u.address}-${idx}`}
+                          src={getRecentUserAvatar(u)}
+                          onError={(e) => {
+                            e.currentTarget.src = getDicebearAvatar(
+                              u.username || u.address || String(idx)
+                            );
+                          }}
+                          alt={u.username || "User avatar"}
+                          className="w-9 h-9 rounded-full border-2 border-white object-cover bg-white/20"
+                        />
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              <Button
+                onClick={shareJackpotCard}
+                disabled={sharingCard}
+                className="w-full mt-4 bg-white text-black"
+              >
+                {sharingCard ? "Preparing card..." : "Share Card"}
+              </Button>
+            </Drawer.Content>
+          </Drawer.Portal>
+        </Drawer.Root>
 
         <SuccessShareDrawer
           isOpen={showSuccessDrawer}

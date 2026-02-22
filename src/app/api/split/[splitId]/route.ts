@@ -1,6 +1,8 @@
 import { NextRequest } from "next/server";
 import clientPromise from "@/lib/mongodb";
 import { writeActivity } from "@/lib/writeActivity";
+import { requireTrustedRequest } from "@/lib/security";
+import { buildUserKey, resolveUserFid } from "@/lib/identity";
 
 /* =========================
    Helpers
@@ -23,11 +25,59 @@ function normalizeFid(fid?: string | number) {
 
 function normalizeUser(user: any) {
   if (!user) return user;
+  const address = normalizeAddress(user.address);
+  const fid = resolveUserFid({ fid: normalizeFid(user.fid), address });
+  const userKey =
+    buildUserKey({ fid, address }) ??
+    (typeof user.userKey === "string" ? user.userKey.toLowerCase() : null);
   return {
     ...user,
-    fid: normalizeFid(user.fid),
-    address: normalizeAddress(user.address),
+    fid,
+    address,
+    userKey,
   };
+}
+
+function getUserKeys(user: any) {
+  const keys = new Set<string>();
+  if (!user) return keys;
+
+  const normalizedAddress = normalizeAddress(user.address);
+  const normalizedFid = normalizeFid(user.fid);
+
+  if (typeof user.userKey === "string" && user.userKey) {
+    keys.add(user.userKey.toLowerCase());
+  }
+
+  const canonicalKey = buildUserKey({
+    fid: normalizedFid,
+    address: normalizedAddress,
+  });
+  if (canonicalKey) keys.add(canonicalKey.toLowerCase());
+
+  if (normalizedAddress) keys.add(`wallet:${normalizedAddress}`);
+  if (normalizedFid && Number.isFinite(normalizedFid)) {
+    keys.add(`fid:${Number(normalizedFid)}`);
+  }
+
+  return keys;
+}
+
+function isSameUser(a: any, b: any) {
+  if (!a || !b) return false;
+
+  const aAddress = normalizeAddress(a.address);
+  const bAddress = normalizeAddress(b.address);
+  if (aAddress && bAddress && aAddress === bAddress) return true;
+
+  const aKeys = getUserKeys(a);
+  const bKeys = getUserKeys(b);
+
+  for (const key of aKeys) {
+    if (bKeys.has(key)) return true;
+  }
+
+  return false;
 }
 
 /* =========================
@@ -58,6 +108,13 @@ export async function GET(req: NextRequest) {
    POST create split
 ========================= */
 export async function POST(req: NextRequest) {
+  const denied = requireTrustedRequest(req, {
+    bucket: "split-post",
+    limit: 60,
+    windowMs: 60_000,
+  });
+  if (denied) return denied;
+
   const splitId = req.nextUrl.pathname.split("/").pop()?.toLowerCase();
   if (!splitId) {
     return Response.json({ error: "Missing splitId" }, { status: 400 });
@@ -89,7 +146,6 @@ export async function POST(req: NextRequest) {
   }
 
   if (
-    !normalizedCreator?.fid ||
     !normalizedCreator?.address ||
     !description ||
     !totalAmount ||
@@ -180,6 +236,13 @@ export async function POST(req: NextRequest) {
    PATCH join / pay
 ========================= */
 export async function PATCH(req: NextRequest) {
+  const denied = requireTrustedRequest(req, {
+    bucket: "split-patch",
+    limit: 120,
+    windowMs: 60_000,
+  });
+  if (denied) return denied;
+
   const splitId = req.nextUrl.pathname.split("/").pop()?.toLowerCase();
   if (!splitId) {
     return Response.json({ error: "Missing splitId" }, { status: 400 });
@@ -203,18 +266,22 @@ export async function PATCH(req: NextRequest) {
   const updateOps: any = {};
 
   /* -------- JOIN -------- */
-  if (normalizedParticipant?.fid) {
-    const fid = normalizedParticipant.fid;
+  if (normalizedParticipant?.address) {
+    if (getUserKeys(normalizedParticipant).size === 0) {
+      return Response.json({ error: "Invalid participant" }, { status: 400 });
+    }
 
     // recipient can never join
-    if (fid === existing.recipient.fid) {
+    if (isSameUser(normalizedParticipant, existing.recipient)) {
       return Response.json(
         { error: "Recipient cannot join or pay this split" },
         { status: 400 }
       );
     }
 
-    const isInvited = existing.invited?.some((i: any) => i.fid === fid);
+    const isInvited = existing.invited?.some(
+      (invited: any) => isSameUser(invited, normalizedParticipant)
+    );
 
     // invited-only enforcement
     if (!isReceiptOpen && !isInvited) {
@@ -244,7 +311,11 @@ export async function PATCH(req: NextRequest) {
     }
 
     const alreadyParticipant = existing.participants?.some(
-      (p: any) => p.fid === fid
+      (participant: any) => isSameUser(participant, normalizedParticipant)
+    );
+
+    const invitedEntry = existing.invited.find(
+      (invited: any) => isSameUser(invited, normalizedParticipant)
     );
 
     if (!alreadyParticipant) {
@@ -255,7 +326,7 @@ export async function PATCH(req: NextRequest) {
           amount:
             isReceiptOpen
               ? existing.totalAmount / existing.numPeople
-              : existing.invited.find((i: any) => i.fid === fid)?.amount,
+              : invitedEntry?.amount,
         },
       };
 
@@ -276,9 +347,7 @@ export async function PATCH(req: NextRequest) {
   /* -------- PAYMENT -------- */
   if (
     normalizedPayment &&
-    (normalizedPayment.fid === existing.recipient.fid ||
-      normalizeAddress(normalizedPayment.address) ===
-        normalizeAddress(existing.recipient.address))
+    isSameUser(normalizedPayment, existing.recipient)
   ) {
     return Response.json(
       { error: "Recipient does not owe this split" },
@@ -286,20 +355,29 @@ export async function PATCH(req: NextRequest) {
     );
   }
 
-  if (normalizedPayment?.fid) {
-    const fid = normalizedPayment.fid;
-    const invitedEntry = existing.invited.find((i: any) => i.fid === fid);
+  if (normalizedPayment?.address) {
+    const paymentKeys = getUserKeys(normalizedPayment);
+    const paymentKey =
+      [...paymentKeys].find((key) => key.startsWith("fid:")) ??
+      [...paymentKeys][0] ??
+      null;
+    const invitedEntry = existing.invited.find(
+      (invited: any) => isSameUser(invited, normalizedPayment)
+    );
 
     if (!invitedEntry) {
       return Response.json({ error: "Not a debtor" }, { status: 403 });
     }
 
-    const alreadyPaid = existing.paid?.some((p: any) => p.fid === fid);
+    const alreadyPaid = existing.paid?.some(
+      (paid: any) => isSameUser(paid, normalizedPayment)
+    );
     if (!alreadyPaid) {
       updateOps.$addToSet = {
         ...(updateOps.$addToSet ?? {}),
         paid: {
-          fid,
+          fid: normalizedPayment.fid,
+          userKey: paymentKey,
           address: normalizedPayment.address,
           name: normalizedPayment.name,
           txHash: normalizedPayment.txHash,
@@ -324,6 +402,25 @@ export async function PATCH(req: NextRequest) {
         },
         timestamp: new Date(),
       });
+
+      const recipientAddress = normalizeAddress(existing.recipient?.address);
+      if (recipientAddress && recipientAddress !== normalizedPayment.address) {
+        writeActivity({
+          address: recipientAddress,
+          type: "bill_received",
+          refType: "bill",
+          refId: splitId,
+          amount: invitedEntry.amount,
+          token: normalizedPayment.token ?? existing.token,
+          txHash: normalizedPayment.txHash,
+          counterparty: {
+            address: normalizedPayment.address,
+            name: normalizedPayment.name,
+            pfp: normalizedPayment.pfp,
+          },
+          timestamp: new Date(),
+        });
+      }
     }
   }
 
@@ -341,6 +438,13 @@ export async function PATCH(req: NextRequest) {
    DELETE split
 ========================= */
 export async function DELETE(req: NextRequest) {
+  const denied = requireTrustedRequest(req, {
+    bucket: "split-delete",
+    limit: 40,
+    windowMs: 60_000,
+  });
+  if (denied) return denied;
+
   const splitId = req.nextUrl.pathname.split("/").pop()?.toLowerCase();
   if (!splitId) {
     return Response.json({ error: "Missing splitId" }, { status: 400 });

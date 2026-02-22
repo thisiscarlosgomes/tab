@@ -3,9 +3,10 @@
 
 import { useState } from "react";
 import { useAccount, useConnect, useSendTransaction } from "wagmi";
-import { farcasterFrame } from "@farcaster/frame-wagmi-connector";
 import { Button } from "@/components/ui/button";
 import { shortAddress } from "@/lib/shortAddress";
+import { getPreferredConnector } from "@/lib/wallet";
+import { UserAvatar } from "@/components/ui/user-avatar";
 
 type FarcasterUser = {
   fid: number;
@@ -31,7 +32,7 @@ export default function SendToUserForm({ user, onSuccess, onCancel }: Props) {
   const [isLoading, setIsLoading] = useState(false);
 
   const { isConnected } = useAccount();
-  const { connect } = useConnect();
+  const { connect, connectors } = useConnect();
   const { sendTransactionAsync } = useSendTransaction();
 
   const ethAddress = user?.verified_addresses?.primary?.eth_address;
@@ -43,7 +44,9 @@ export default function SendToUserForm({ user, onSuccess, onCancel }: Props) {
     try {
       setIsLoading(true);
       if (!isConnected) {
-        await connect({ connector: farcasterFrame() });
+        const preferred = getPreferredConnector(connectors);
+        if (!preferred) return;
+        await connect({ connector: preferred });
       }
 
       const txHash = await sendTransactionAsync({
@@ -63,10 +66,12 @@ export default function SendToUserForm({ user, onSuccess, onCancel }: Props) {
   return (
     <div className="flex flex-col h-full items-center justify-center px-4 space-y-6">
       <div className="flex flex-col items-center">
-        <img
+        <UserAvatar
           src={user.pfp_url}
+          seed={user.username}
+          width={64}
           alt={user.username}
-          className="w-16 h-16 rounded-full mb-2"
+          className="w-16 h-16 rounded-full mb-2 object-cover"
         />
         <div className="text-lg font-semibold text-primary">@{user.username}</div>
         <div className="text-sm text-white/30">

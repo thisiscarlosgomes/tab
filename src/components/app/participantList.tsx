@@ -43,7 +43,7 @@ export function ParticipantList({
                 <AvatarImage
                   src={
                     p.pfp ||
-                    `https://api.dicebear.com/9.x/glass/svg?seed=${p.name}`
+                    `https://api.dicebear.com/9.x/fun-emoji/svg?seed=${p.name}`
                   }
                   alt={p.name}
                   width={24}

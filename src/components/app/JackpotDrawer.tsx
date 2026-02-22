@@ -243,7 +243,7 @@ export function JackpotDrawer({
     <Drawer.Root open={isOpen} onOpenChange={onOpenChange}>
       <Drawer.Portal>
         <Drawer.Overlay className="fixed inset-0 bg-[#4E4C52]/60 backdrop-blur-sm z-20" />
-        <Drawer.Content className="z-40 fixed inset-0 top-[80px] bg-background p-4 rounded-t-3xl flex flex-col max-h-[calc(100vh-80px)] pb-8">
+        <Drawer.Content className="z-40 fixed inset-0 top-[110px] bg-background p-4 rounded-t-3xl flex flex-col max-h-[calc(100vh-110px)] pb-8">
           <div className="mx-auto w-12 h-1.5 rounded-full bg-white/10 mb-4" />
 
           <Drawer.Title className="text-lg text-center font-medium shrink-0">

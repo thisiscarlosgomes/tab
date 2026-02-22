@@ -438,7 +438,7 @@ const paidCount = bill?.paid?.length ?? 0;
                           key={p.address}
                           src={
                             p.pfp ||
-                            `https://api.dicebear.com/9.x/glass/svg?seed=${p.name}`
+                            `https://api.dicebear.com/9.x/fun-emoji/svg?seed=${p.name}`
                           }
                           alt={p.name}
                           className="w-8 h-8 rounded-full border-2 border-white object-cover mb-4"
@@ -611,7 +611,7 @@ const paidCount = bill?.paid?.length ?? 0;
                           <img
                             src={
                               p.pfp ||
-                              `https://api.dicebear.com/9.x/glass/svg?seed=${p.name}`
+                              `https://api.dicebear.com/9.x/fun-emoji/svg?seed=${p.name}`
                             }
                             className="w-7 h-7 rounded-full object-cover"
                           />

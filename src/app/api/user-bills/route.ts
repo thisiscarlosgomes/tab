@@ -1,5 +1,6 @@
 // /app/api/user-bills/route.ts
 import { NextRequest } from "next/server";
+import { Collection } from "mongodb";
 import clientPromise from "@/lib/mongodb";
 
 interface Participant {
@@ -31,6 +32,22 @@ interface Bill {
 }
 
 const DEFAULT_LIMIT = 50;
+let ensureBillsIndexesPromise: Promise<void> | null = null;
+
+function ensureBillsIndexes(collection: Collection<Bill>) {
+  if (!ensureBillsIndexesPromise) {
+    ensureBillsIndexesPromise = (async () => {
+      await collection.createIndexes([
+        { key: { "creator.address": 1, createdAt: -1 } },
+        { key: { "participants.address": 1, createdAt: -1 } },
+        { key: { "invited.address": 1, createdAt: -1 } },
+      ]);
+    })().catch(() => {
+      ensureBillsIndexesPromise = null;
+    });
+  }
+  return ensureBillsIndexesPromise;
+}
 
 export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url);
@@ -48,8 +65,12 @@ export async function GET(req: NextRequest) {
   const client = await clientPromise;
   const db = client.db();
   const collection = db.collection<Bill>("a-split-bill");
+  await ensureBillsIndexes(collection);
 
-  const query: any = {
+  const query: {
+    $or: Array<Record<string, string>>;
+    createdAt?: { $lt: Date };
+  } = {
     $or: [
       { "creator.address": address },
       { "participants.address": address },
@@ -89,11 +110,11 @@ export async function GET(req: NextRequest) {
     const isCreator = bill.creator.address.toLowerCase() === addr;
 
     const isParticipant =
-      bill.participants?.some((p: any) => p.address?.toLowerCase() === addr) ??
+      bill.participants?.some((p: Participant) => p.address?.toLowerCase() === addr) ??
       false;
 
     const isInvited =
-      bill.invited?.some((i: any) => i.address?.toLowerCase() === addr) ??
+      bill.invited?.some((i: Participant) => i.address?.toLowerCase() === addr) ??
       false;
 
     const userStatus: "creator" | "participant" | "invited" | null = isCreator
@@ -106,7 +127,7 @@ export async function GET(req: NextRequest) {
 
     const hasPaid = isCreator
       ? true // creator already paid IRL
-      : (bill.paid?.some((p: any) => p.address?.toLowerCase() === addr) ??
+      : (bill.paid?.some((p: Payment) => p.address?.toLowerCase() === addr) ??
         false);
 
     const debtorCount = bill.invited?.length ?? 0;
@@ -149,20 +170,20 @@ export async function GET(req: NextRequest) {
       // people
       creator: bill.creator.address,
 
-      participants: (bill.participants || []).map((p: any) => ({
+      participants: (bill.participants || []).map((p: Participant) => ({
         name: p.name,
         pfp:
           p.pfp ||
-          `https://api.dicebear.com/9.x/glass/svg?seed=${encodeURIComponent(
+          `https://api.dicebear.com/9.x/fun-emoji/svg?seed=${encodeURIComponent(
             p.name
           )}`,
       })),
 
-      invited: (bill.invited || []).map((p: any) => ({
+      invited: (bill.invited || []).map((p: Participant) => ({
         name: p.name,
         pfp:
           p.pfp ||
-          `https://api.dicebear.com/9.x/glass/svg?seed=${encodeURIComponent(
+          `https://api.dicebear.com/9.x/fun-emoji/svg?seed=${encodeURIComponent(
             p.name
           )}`,
       })),

@@ -1,4 +1,27 @@
-export function mapActivity(a: any) {
+type ActivityRecord = {
+  type?: string;
+  refId?: string;
+  refType?: string;
+  amount?: number;
+  token?: string;
+  timestamp?: string | Date;
+  executionMode?: "user_session" | "service_agent" | null;
+  agentId?: string | null;
+  ticketCount?: number;
+  rewarded?: boolean;
+  rewardAmount?: number;
+  summary?: string;
+  recipient?: string;
+  recipientUsername?: string;
+  recipientResolutionSource?: "address" | "ens" | "tab" | "farcaster" | null;
+  counterparty?: {
+    address?: string | null;
+    name?: string | null;
+    pfp?: string | null;
+  } | null;
+};
+
+export function mapActivity(a: ActivityRecord) {
   switch (a.type) {
     /* ---------------- Bills ---------------- */
 
@@ -21,28 +44,61 @@ export function mapActivity(a: any) {
       };
 
     case "bill_paid":
+      {
+        const hasAmountToken =
+          typeof a.amount === "number" &&
+          Number.isFinite(a.amount) &&
+          Boolean(a.token);
+        const description =
+          typeof a.summary === "string" && a.summary.trim()
+            ? a.summary.trim()
+            : hasAmountToken
+              ? `Sent ${a.amount} ${a.token}`
+              : "Sent transfer";
       return {
         type: "bill_paid",
-        splitId: a.refId,
+        splitId: a.refType === "bill" ? a.refId : undefined,
         amount: a.amount,
         token: a.token,
+        recipient: a.recipient ?? a.counterparty?.address ?? undefined,
+        recipientUsername: a.recipientUsername,
+        recipientResolutionSource: a.recipientResolutionSource ?? null,
         counterparty: a.counterparty?.name ?? null,
+        counterpartyAddress: a.counterparty?.address ?? null,
         pfp: a.counterparty?.pfp ?? null, // ✅ recipient avatar
-        description: `Sent ${a.amount} ${a.token}`,
+        executionMode: a.executionMode ?? null,
+        agentId: a.agentId ?? null,
+        description,
         timestamp: a.timestamp,
       };
+      }
 
     case "bill_received":
+      {
+        const hasAmountToken =
+          typeof a.amount === "number" &&
+          Number.isFinite(a.amount) &&
+          Boolean(a.token);
+        const description =
+          typeof a.summary === "string" && a.summary.trim()
+            ? a.summary.trim()
+            : hasAmountToken
+              ? `Received ${a.amount} ${a.token}`
+              : "Received transfer";
       return {
         type: "bill_received",
-        splitId: a.refId,
+        splitId: a.refType === "bill" ? a.refId : undefined,
         amount: a.amount,
         token: a.token,
         counterparty: a.counterparty?.name ?? null,
+        counterpartyAddress: a.counterparty?.address ?? null,
         pfp: a.counterparty?.pfp ?? null, // ✅ payer avatar
-        description: `Received ${a.amount} ${a.token}`,
+        executionMode: a.executionMode ?? null,
+        agentId: a.agentId ?? null,
+        description,
         timestamp: a.timestamp,
       };
+      }
 
     /* ---------------- Rooms ---------------- */
 

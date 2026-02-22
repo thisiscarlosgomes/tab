@@ -16,12 +16,15 @@ export interface ActivityInput {
     | "jackpot_deposit"
     | "earn_deposit";
 
-  refType: "bill" | "room" | "drop" | "jackpot" | "earn";
+  refType: "bill" | "room" | "drop" | "jackpot" | "earn" | "transfer";
   refId: string;
 
   amount?: number;
   token?: string;
   txHash?: string;
+  executionMode?: "user_session" | "service_agent";
+  agentId?: string | null;
+  recipientResolutionSource?: "address" | "ens" | "tab" | "farcaster" | null;
 
   counterparty?: {
     address: string;

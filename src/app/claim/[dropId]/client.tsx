@@ -2,8 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useParams, useSearchParams } from "next/navigation";
-import { useAccount, useConnect } from "wagmi";
-import { farcasterFrame } from "@farcaster/frame-wagmi-connector";
+import { usePrivy } from "@privy-io/react-auth";
 import { Button } from "@/components/ui/button";
 import sdk from "@farcaster/frame-sdk";
 import { useFrameSplash } from "@/providers/FrameSplashProvider";
@@ -11,6 +10,7 @@ import confetti from "canvas-confetti"; // ✅ import confetti
 import { getShareUrl } from "@/lib/share";
 import { toast } from "sonner";
 import { shortAddress } from "@/lib/shortAddress";
+import { useTabIdentity } from "@/lib/useTabIdentity";
 
 type Drop = {
   dropId: string;
@@ -50,28 +50,15 @@ export default function ClaimPage() {
   //   }
   // }, [claimToken, dropId]);
 
-  const { address, isConnected } = useAccount();
-  const { connect } = useConnect();
+  const { address, isConnected, fid } = useTabIdentity();
+  const { login } = usePrivy();
   const [resolvedClaimUsername, setResolvedClaimUsername] = useState<
     string | null
   >(null);
 
-  const [fid, setFid] = useState<number | null>(null);
-
   useEffect(() => {
     dismiss();
   }, [dismiss]);
-
-  useEffect(() => {
-    sdk.context.then((ctx) => {
-      if (!ctx) {
-        const currentUrl = window.location.href;
-        window.location.href = `https://warpcast.com/?launchFrameUrl=${encodeURIComponent(currentUrl)}`;
-      } else {
-        setFid(ctx?.user?.fid ?? null);
-      }
-    });
-  }, []);
 
   useEffect(() => {
     const resolveUsername = async () => {
@@ -147,10 +134,25 @@ export default function ClaimPage() {
   };
 
   const handleShare = async () => {
-    await sdk.actions.composeCast({
-      text: `Thanks @${drop?.creator?.name || "someone"} for the ${drop?.amount} ${drop?.token}!`,
-      embeds: [],
-    });
+    const text = `Thanks @${drop?.creator?.name || "someone"} for the ${drop?.amount} ${drop?.token}!`;
+    try {
+      await sdk.actions.composeCast({
+        text,
+        embeds: [],
+      });
+      return;
+    } catch {}
+
+    try {
+      if (navigator.share) {
+        await navigator.share({ text, url: window.location.href });
+        return;
+      }
+      await navigator.clipboard.writeText(`${text} ${window.location.href}`);
+      toast.success("Share text copied");
+    } catch {
+      toast.error("Unable to share");
+    }
   };
 
   return (
@@ -193,7 +195,7 @@ export default function ClaimPage() {
               variant="ghost"
               className="w-full mb-2 text-primary"
               onClick={() =>
-                sdk.actions.openUrl(`https://basescan.org/tx/${drop.txHash}`)
+                window.open(`https://basescan.org/tx/${drop.txHash}`, "_blank")
               }
             >
               Claimed by{" "}
@@ -209,10 +211,10 @@ export default function ClaimPage() {
             </p>
           ) : !isConnected ? (
             <Button
-              onClick={() => connect({ connector: farcasterFrame() })}
+              onClick={() => login()}
               className="w-full"
             >
-              Connect Wallet
+              Continue with email
             </Button>
           ) : (
             <Button
@@ -263,9 +265,7 @@ export default function ClaimPage() {
 
           <Button
             variant="ghost"
-            onClick={() =>
-              sdk.actions.openUrl(`https://basescan.org/tx/${txHash}`)
-            }
+            onClick={() => window.open(`https://basescan.org/tx/${txHash}`, "_blank")}
           >
             View on BaseScan
           </Button>

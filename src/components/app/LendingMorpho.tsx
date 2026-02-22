@@ -1,10 +1,14 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Drawer } from "vaul";
 import { NumericFormat } from "react-number-format";
 import sdk from "@farcaster/frame-sdk";
 import { Button } from "../ui/button";
+import {
+  ResponsiveDialog,
+  ResponsiveDialogContent,
+  ResponsiveDialogTitle,
+} from "@/components/ui/responsive-dialog";
 import {
   useAccount,
   useConnect,
@@ -253,8 +257,15 @@ export function MorphoDepositDrawer({
       // ✅ WAIT until the deposit is mined
       await client.waitForTransactionReceipt({ hash: tx });
 
-      // 🔔 Notify the app that balances changed
-      window.dispatchEvent(new Event("tab:balance-updated"));
+      // 🔔 Notify the homepage to update wallet + earn pills immediately.
+      window.dispatchEvent(
+        new CustomEvent("tab:balance-updated", {
+          detail: {
+            deltaUsdc: -parsedAmount,
+            earnDeltaUsd: parsedAmount,
+          },
+        })
+      );
 
       // ✅ NOW refetch vault balance
       await refetchVaultBalance();
@@ -302,8 +313,15 @@ export function MorphoDepositDrawer({
       // ✅ wait for confirmation
       await client.waitForTransactionReceipt({ hash: tx });
 
-      // 🔔 🔔 🔔 IMPORTANT: notify homepage
-      window.dispatchEvent(new Event("tab:balance-updated"));
+      // 🔔 Notify the homepage to update wallet + earn pills immediately.
+      window.dispatchEvent(
+        new CustomEvent("tab:balance-updated", {
+          detail: {
+            deltaUsdc: vaultBalance,
+            earnDeltaUsd: -vaultBalance,
+          },
+        })
+      );
 
       setTxHash(tx);
       setSuccess(true);
@@ -325,12 +343,10 @@ export function MorphoDepositDrawer({
   };
 
   return (
-    <Drawer.Root open={isOpen} onOpenChange={onOpenChange}>
-      <Drawer.Portal>
-        <Drawer.Overlay className="fixed inset-0 bg-[#4E4C52]/60 backdrop-blur-sm z-20" />
-        <Drawer.Content className="z-40 fixed inset-0 top-[80px] bg-background p-4 rounded-t-3xl flex flex-col max-h-[calc(100vh-80px)] pb-8">
-          <div className="mx-auto w-12 h-1.5 rounded-full bg-white/10 mb-4" />
-          <Drawer.Title className="text-lg text-center font-medium shrink-0">
+    <ResponsiveDialog open={isOpen} onOpenChange={onOpenChange}>
+      <ResponsiveDialogContent className="top-[110px] md:top-1/2 p-4 md:w-full md:max-w-md max-h-[calc(100dvh-110px)] md:max-h-[85vh] overflow-hidden">
+        <div className="bg-background rounded-t-3xl md:rounded-2xl flex flex-col h-full max-h-[calc(100dvh-110px)] md:max-h-[85vh] pb-8">
+          <ResponsiveDialogTitle className="text-lg text-center font-medium shrink-0">
             <div className="flex flex-col items-center">
               <div className="hidden mt-4 text-2xl mb-6 relative w-10 h-10 rounded-full flex items-center justify-center">
                 <img
@@ -347,9 +363,9 @@ export function MorphoDepositDrawer({
               </span>{" "}
               on your USDC
             </p>
-          </Drawer.Title>
+          </ResponsiveDialogTitle>
 
-          <div className="overflow-y-auto flex-1 min-h-0 mt-4 space-y-2 pr-1">
+          <div className="overflow-y-auto flex-1 min-h-0 mt-4 space-y-2 pr-1 px-0">
             <div className="flex flex-col text-center">
               <div className="flex justify-center gap-2 mb-4">
                 {[50, 100, 500].map((val) => (
@@ -555,8 +571,8 @@ export function MorphoDepositDrawer({
               extraNote={rewardMessage ?? undefined}
             />
           </div>
-        </Drawer.Content>
-      </Drawer.Portal>
-    </Drawer.Root>
+        </div>
+      </ResponsiveDialogContent>
+    </ResponsiveDialog>
   );
 }

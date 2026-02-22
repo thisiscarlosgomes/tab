@@ -8,40 +8,126 @@ const uri = process.env.MONGODB_URI;
 const options = {};
 
 let client;
-let clientPromise: Promise<MongoClient>;
+let clientPromise: Promise<MongoClient> | undefined;
 
-if (process.env.NODE_ENV === "development") {
-  let globalWithMongo = global as typeof globalThis & {
-    _mongoClientPromise?: Promise<MongoClient>;
-  };
+async function ensureIndexes(mongoClient: MongoClient) {
+  const db = mongoClient.db();
 
-  if (!globalWithMongo._mongoClientPromise) {
-    client = new MongoClient(uri, options);
-    globalWithMongo._mongoClientPromise = client.connect().then(async (client) => {
-      // Create index once on dev server start
-      const db = client.db();
-      const collection = db.collection("a-split-game");
-      await collection.createIndex(
-        { gameId: 1 },
-        { unique: true, collation: { locale: "en", strength: 2 } } // 👈 makes gameId case-insensitive
-      );
-      return client;
-    });
-  }
-
-  clientPromise = globalWithMongo._mongoClientPromise;
-} else {
-  client = new MongoClient(uri, options);
-  clientPromise = client.connect().then(async (client) => {
-    // Create index once on prod cold start
-    const db = client.db();
-    const collection = db.collection("a-split-game");
-    await collection.createIndex(
+  await Promise.all([
+    db.collection("a-split-game").createIndex(
       { gameId: 1 },
       { unique: true, collation: { locale: "en", strength: 2 } }
-    );
-    return client;
-  });
+    ),
+    db
+      .collection("a-split-game")
+      .createIndex({ "participants.address": 1, createdAt: -1 }),
+    db.collection("a-split-game").createIndex({ admin: 1, createdAt: -1 }),
+
+    db
+      .collection("a-split-bill")
+      .createIndex({ "creator.address": 1, createdAt: -1 }),
+    db
+      .collection("a-split-bill")
+      .createIndex({ "participants.address": 1, createdAt: -1 }),
+    db
+      .collection("a-split-bill")
+      .createIndex({ "invited.address": 1, createdAt: -1 }),
+
+    db.collection("a-activity").createIndex({ address: 1, timestamp: -1 }),
+
+    db.collection("a-agent-access").createIndex({ address: 1 }, { unique: true }),
+    db.collection("a-agent-access").createIndex({ userId: 1 }),
+    db.collection("a-agent-access").createIndex({ status: 1, updatedAt: -1 }),
+
+    db
+      .collection("a-agent-settlement")
+      .createIndex({ userId: 1, day: 1, createdAt: -1 }),
+    db
+      .collection("a-agent-settlement")
+      .createIndex({ splitId: 1, payerAddress: 1, createdAt: -1 }),
+
+    db
+      .collection("a-agent-transfer")
+      .createIndex({ userId: 1, day: 1, createdAt: -1 }),
+    db
+      .collection("a-agent-transfer")
+      .createIndex({ userId: 1, requestId: 1 }, { unique: true }),
+    db
+      .collection("a-agent-transfer")
+      .createIndex({ status: 1, sourceWalletAddress: 1, createdAt: -1 }),
+    db
+      .collection("a-agent-transfer")
+      .createIndex({ status: 1, recipientAddress: 1, createdAt: -1 }),
+
+    db
+      .collection("a-agent-links")
+      .createIndex({ userId: 1, agentId: 1 }, { unique: true }),
+    db
+      .collection("a-agent-links")
+      .createIndex({ userId: 1, status: 1, updatedAt: -1 }),
+    db
+      .collection("a-agent-links")
+      .createIndex({ agentId: 1, status: 1, updatedAt: -1 }),
+
+    db
+      .collection("a-agent-link-claims")
+      .createIndex({ tokenHash: 1 }, { unique: true }),
+    db
+      .collection("a-agent-link-claims")
+      .createIndex({ status: 1, expiresAt: 1 }),
+
+    db.collection("a-user-profile").createIndex({ userId: 1 }, { unique: true }),
+    db.collection("a-user-profile").createIndex({ fid: 1 }, { unique: true, sparse: true }),
+    db.collection("a-user-profile").createIndex(
+      { usernameLower: 1 },
+      { unique: true, sparse: true }
+    ),
+    db.collection("a-user-profile").createIndex({ primaryAddress: 1 }, { sparse: true }),
+  ]);
 }
 
-export default clientPromise;
+function getClientPromise(): Promise<MongoClient> {
+  if (clientPromise) return clientPromise;
+
+  if (process.env.NODE_ENV === "development") {
+    const globalWithMongo = global as typeof globalThis & {
+      _mongoClientPromise?: Promise<MongoClient>;
+    };
+
+    if (!globalWithMongo._mongoClientPromise) {
+      client = new MongoClient(uri, options);
+      globalWithMongo._mongoClientPromise = client
+        .connect()
+        .then(async (connectedClient) => {
+          await ensureIndexes(connectedClient);
+          return connectedClient;
+        });
+    }
+
+    clientPromise = globalWithMongo._mongoClientPromise;
+    return clientPromise;
+  }
+
+  client = new MongoClient(uri, options);
+  clientPromise = client.connect().then(async (connectedClient) => {
+    await ensureIndexes(connectedClient);
+    return connectedClient;
+  });
+
+  return clientPromise;
+}
+
+const lazyClientPromise = {
+  then<TResult1 = MongoClient, TResult2 = never>(
+    onfulfilled?:
+      | ((value: MongoClient) => TResult1 | PromiseLike<TResult1>)
+      | null,
+    onrejected?:
+      | ((reason: unknown) => TResult2 | PromiseLike<TResult2>)
+      | null
+  ) {
+    return getClientPromise().then(onfulfilled, onrejected);
+  },
+} as Promise<MongoClient>;
+
+export default lazyClientPromise;

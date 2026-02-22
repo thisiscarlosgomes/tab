@@ -17,21 +17,5 @@ export const getTokenPrices = async (): Promise<Record<string, number>> => {
     console.error("CoinGecko price fetch failed:", err);
   }
 
-  // 2. TAB: Fetch from GeckoTerminal
-  try {
-    const network = "base";
-    const tokenAddress = "0x154af0cc4df0c1744edc0b4b916f6aa028d009b0";
-    const res = await fetch(
-      `https://api.geckoterminal.com/api/v2/networks/${network}/tokens/${tokenAddress}`
-    );
-    const data = await res.json();
-    const priceUsd = data?.data?.attributes?.price_usd;
-    if (priceUsd) {
-      prices["TAB"] = parseFloat(priceUsd);
-    }
-  } catch (err) {
-    console.warn("GeckoTerminal fetch failed for TAB:", err);
-  }
-
   return prices;
 };

@@ -514,7 +514,7 @@ export default function DropCreatePage() {
       <Drawer.Root open={tokenDrawerOpen} onOpenChange={setTokenDrawerOpen}>
         <Drawer.Portal>
           <Drawer.Overlay className="fixed inset-0 bg-[#4E4C52]/60 backdrop-blur-sm z-20" />
-          <Drawer.Content className="fixed top-[80px] left-0 right-0 bottom-0 bg-background rounded-t-3xl z-50">
+          <Drawer.Content className="fixed top-[110px] left-0 right-0 bottom-0 bg-background rounded-t-3xl z-50">
             <div className="mx-auto w-12 h-1.5 rounded-full bg-white/10 my-4" />
             <div className="px-4">
               <Drawer.Title className="text-lg text-center font-medium">

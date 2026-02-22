@@ -1,10 +1,13 @@
 "use client";
 
 import { useEffect, useState, useCallback } from "react";
-import { useAccount } from "wagmi";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
-import sdk from "@farcaster/frame-sdk";
-import { Loader } from "lucide-react";
+import { useIdentityToken, useToken } from "@privy-io/react-auth";
+import { useTabIdentity } from "@/lib/useTabIdentity";
+import { UserAvatar } from "@/components/ui/user-avatar";
+import { Skeleton } from "@/components/ui/skeleton";
+import { shortAddress } from "@/lib/shortAddress";
 
 /* -------------------------------------- */
 /* TYPES                                  */
@@ -36,192 +39,572 @@ interface Room {
   gameId: string;
   members: { name: string; pfp: string }[];
   admin?: string;
-  createdAt: string; // ✅ correct field
+  createdAt: string;
   name: string | null;
 }
 
-const getTokenSuffix = (token: string) => {
-  switch (token) {
-    case "USDC":
-      return "$";
-    case "EURC":
-      return "€";
-    case "ETH":
-    case "WETH":
-      return "Ξ";
-    default:
-      return "$";
-  }
+type ProfileTab = "splits" | "spins";
+
+type FarcasterHeroState = {
+  displayName: string | null;
+  username: string | null;
+  pfpUrl: string | null;
+  bio: string | null;
+  followerCount: number | null;
+  joinedAt: string | null;
+  followerPreviewPfps: string[];
 };
 
+const PROFILE_HERO_CACHE_TTL_MS = 5 * 60 * 1000;
+const profileHeroCache = new Map<
+  string,
+  { hero: FarcasterHeroState; ts: number }
+>();
+
 export default function ProfilePage() {
-  const { address, isConnected } = useAccount();
+  const {
+    address,
+    isProfileLoading,
+    username,
+    displayName,
+    pfp,
+    fid,
+  } = useTabIdentity();
+  const { identityToken } = useIdentityToken();
+  const { getAccessToken } = useToken();
   const router = useRouter();
+  const [activeTab, setActiveTab] = useState<ProfileTab>("splits");
 
   const [userRooms, setUserRooms] = useState<Room[]>([]);
+  const [roomsLoaded, setRoomsLoaded] = useState(false);
+  const [roomsLoading, setRoomsLoading] = useState(false);
   const [bills, setBills] = useState<SplitBill[]>([]);
-  const [summary, setSummary] = useState<any>({
-    billsCreated: 0,
-    billsJoined: 0,
-    billsPaid: 0,
-    roomsCreated: 0,
-    roomsJoined: 0,
-    roomsPaid: 0,
-  });
+  const [billsLoaded, setBillsLoaded] = useState(false);
+  const [billsLoading, setBillsLoading] = useState(false);
+  const [agentAuthToken, setAgentAuthToken] = useState<string | null>(null);
+  const [farcasterHero, setFarcasterHero] = useState<FarcasterHeroState | null>(null);
+  const [farcasterHeroLoading, setFarcasterHeroLoading] = useState(false);
 
-  const [isLoading, setIsLoading] = useState(true);
-  const [username, setUsername] = useState<string | null>(null);
+  const formatCompactNumber = (value: number | null | undefined) => {
+    if (typeof value !== "number" || !Number.isFinite(value)) return null;
+    return new Intl.NumberFormat("en-US", {
+      notation: "compact",
+      maximumFractionDigits: value >= 10000 ? 0 : 1,
+    }).format(value);
+  };
 
-  /* -------------------------------------- */
-  /* API FETCHES                            */
-  /* -------------------------------------- */
+  useEffect(() => {
+    let cancelled = false;
+    const resolveAuthToken = async () => {
+      if (identityToken) {
+        if (!cancelled) {
+          setAgentAuthToken(identityToken);
+        }
+        return;
+      }
 
-  const fetchUserRooms = useCallback(async () => {
-    if (!address) return;
-    const res = await fetch(`/api/user-rooms?address=${address}`);
-    const data = await res.json();
-    setUserRooms(data.rooms || []);
-  }, [address]);
+      const accessToken = await getAccessToken().catch(() => null);
+      if (!cancelled) {
+        setAgentAuthToken(accessToken);
+      }
+    };
+
+    void resolveAuthToken();
+    return () => {
+      cancelled = true;
+    };
+  }, [identityToken, getAccessToken]);
+
+  useEffect(() => {
+    if (!address) {
+      setFarcasterHero(null);
+      setFarcasterHeroLoading(false);
+      return;
+    }
+
+    let cancelled = false;
+    const controller = new AbortController();
+    const cacheKey = address.toLowerCase();
+    const cachedHero = profileHeroCache.get(cacheKey);
+
+    const readString = (value: unknown) =>
+      typeof value === "string" && value.trim() ? value.trim() : null;
+    const readNumber = (value: unknown) => {
+      const n = Number(value);
+      return Number.isFinite(n) ? n : null;
+    };
+    const readDate = (value: unknown) => {
+      if (typeof value === "number" && Number.isFinite(value)) {
+        const ms = value > 10_000_000_000 ? value : value * 1000;
+        const d = new Date(ms);
+        return Number.isNaN(d.getTime()) ? null : d.toISOString();
+      }
+      if (typeof value === "string" && value.trim()) {
+        const d = new Date(value);
+        return Number.isNaN(d.getTime()) ? null : d.toISOString();
+      }
+      return null;
+    };
+
+    const parseHeroFromUser = (user: any): FarcasterHeroState => {
+      const nestedPfp =
+        readString(user?.pfp_url) ??
+        readString(user?.pfp?.url) ??
+        readString(user?.pfpUrl) ??
+        pfp ??
+        null;
+      const nestedDisplayName =
+        readString(user?.display_name) ??
+        readString(user?.displayName) ??
+        displayName ??
+        null;
+      const nestedUsername = readString(user?.username) ?? username ?? null;
+      const bioText =
+        readString(user?.profile?.bio?.text) ??
+        readString(user?.bio?.text) ??
+        readString(user?.profile?.bio) ??
+        null;
+      const followerCount =
+        readNumber(user?.follower_count) ??
+        readNumber(user?.followerCount) ??
+        null;
+      const joinedAt =
+        readDate(user?.created_at) ??
+        readDate(user?.createdAt) ??
+        readDate(user?.registered_at) ??
+        readDate(user?.registeredAt) ??
+        readDate(user?.custody_registered_at) ??
+        null;
+
+      return {
+        displayName: nestedDisplayName,
+        username: nestedUsername,
+        pfpUrl: nestedPfp,
+        bio: bioText,
+        followerCount,
+        joinedAt,
+        followerPreviewPfps: [],
+      };
+    };
+
+    const loadFarcasterHero = async () => {
+      if (cachedHero) {
+        setFarcasterHero(cachedHero.hero);
+        if (Date.now() - cachedHero.ts < PROFILE_HERO_CACHE_TTL_MS) {
+          setFarcasterHeroLoading(false);
+          return;
+        }
+      } else {
+        setFarcasterHeroLoading(true);
+      }
+      let canonicalUsername: string | null = username ?? null;
+      let canonicalFid: number | null = fid ?? null;
+
+      let hero: FarcasterHeroState = {
+        displayName: displayName ?? null,
+        username: username ?? null,
+        pfpUrl: pfp ?? null,
+        bio: null,
+        followerCount: null,
+        joinedAt: null,
+        followerPreviewPfps: [],
+      };
+
+      try {
+        const shouldFetchMe =
+          Boolean(agentAuthToken) &&
+          (!canonicalUsername || !canonicalFid || !hero.displayName || !hero.pfpUrl);
+
+        if (shouldFetchMe && agentAuthToken) {
+          const meRes = await fetch("/api/user/me", {
+            headers: {
+              Authorization: `Bearer ${agentAuthToken}`,
+            },
+            signal: controller.signal,
+          });
+          if (meRes.ok) {
+            const me = await meRes.json();
+            const meUsername = readString(me?.username);
+            const meDisplayName = readString(me?.displayName);
+            const mePfpUrl = readString(me?.pfpUrl);
+            const meFid = readNumber(me?.fid);
+
+            canonicalUsername = meUsername ?? canonicalUsername;
+            canonicalFid = meFid ?? canonicalFid;
+            hero = {
+              ...hero,
+              username: meUsername ?? hero.username,
+              displayName: meDisplayName ?? hero.displayName,
+              pfpUrl: mePfpUrl ?? hero.pfpUrl,
+            };
+          }
+        }
+
+        if (canonicalUsername) {
+          const res = await fetch(
+            `/api/neynar/user/by-username?username=${encodeURIComponent(canonicalUsername)}`,
+            { signal: controller.signal }
+          );
+          if (res.ok) {
+            const user = await res.json();
+            if (user && typeof user === "object") {
+              hero = parseHeroFromUser(user);
+            }
+          }
+        }
+
+        const qs = new URLSearchParams();
+        if (canonicalFid) qs.set("fid", String(canonicalFid));
+        else if (canonicalUsername) qs.set("username", canonicalUsername);
+        else if (address) qs.set("address", address);
+
+        if (qs.toString()) {
+          const followingRes = await fetch(`/api/neynar/user/following?${qs.toString()}`, {
+            signal: controller.signal,
+          });
+          if (followingRes.ok) {
+            const raw = await followingRes.json();
+            const list = Array.isArray(raw) ? raw : [];
+            const preview = list
+              .map((entry: any) => (entry?.user && typeof entry.user === "object" ? entry.user : entry))
+              .map(
+                (u: any) =>
+                  readString(u?.pfp_url) ?? readString(u?.pfp?.url) ?? readString(u?.pfpUrl)
+              )
+              .filter((v: string | null): v is string => Boolean(v))
+              .slice(0, 3);
+            hero = { ...hero, followerPreviewPfps: preview };
+          }
+        }
+      } catch {
+        // keep base identity fallback
+      } finally {
+        if (!cancelled) {
+          profileHeroCache.set(cacheKey, { hero, ts: Date.now() });
+          setFarcasterHero(hero);
+          setFarcasterHeroLoading(false);
+        }
+      }
+    };
+
+    void loadFarcasterHero();
+
+    return () => {
+      cancelled = true;
+      controller.abort();
+    };
+  }, [address, username, displayName, pfp, fid, agentAuthToken]);
 
   const fetchUserBills = useCallback(async () => {
-    if (!address) return;
-    const res = await fetch(`/api/user-bills?address=${address}`);
-    const data = await res.json();
-    setBills(data.bills || []);
+    if (!address) {
+      setBillsLoading(false);
+      return;
+    }
+
+    setBillsLoading(true);
+    const controller = new AbortController();
+    const timeoutId = window.setTimeout(() => controller.abort(), 10000);
+    try {
+      const res = await fetch(`/api/user-bills?address=${address}`, {
+        cache: "no-store",
+        signal: controller.signal,
+      });
+      if (!res.ok) {
+        return;
+      }
+      const data = await res.json();
+      if (Array.isArray(data.bills)) {
+        setBills(data.bills);
+      }
+    } catch {
+      // Keep last successful bills list on transient failure.
+    } finally {
+      clearTimeout(timeoutId);
+      setBillsLoading(false);
+      setBillsLoaded(true);
+    }
   }, [address]);
 
-  /* LOAD EVERYTHING */
-  useEffect(() => {
-    if (!isConnected) return;
-
-    (async () => {
-      setIsLoading(true);
-      await Promise.all([fetchUserRooms(), fetchUserBills()]);
-      setIsLoading(false);
-    })();
-  }, [isConnected, fetchUserRooms, fetchUserBills]);
-
-  /* LOAD USERNAME FROM FRAME CONTEXT */
-  useEffect(() => {
-    if (!username) {
-      sdk.context.then((ctx) => setUsername(ctx.user?.username ?? null));
+  const fetchUserRooms = useCallback(async () => {
+    if (!address) {
+      setRoomsLoading(false);
+      return;
     }
-  }, [username]);
 
-  /* REFETCH WHEN TAB BECOMES VISIBLE */
-  useEffect(() => {
-    const onVisible = () => {
-      if (document.visibilityState === "visible" && isConnected) {
-        fetchUserRooms();
-        fetchUserBills();
+    setRoomsLoading(true);
+    const controller = new AbortController();
+    const timeoutId = window.setTimeout(() => controller.abort(), 6000);
+    try {
+      const res = await fetch(`/api/user-rooms?address=${address}`, {
+        cache: "no-store",
+        signal: controller.signal,
+      });
+      if (!res.ok) {
+        return;
       }
+      const data = await res.json();
+      if (Array.isArray(data.rooms)) {
+        setUserRooms(data.rooms);
+      }
+    } catch {
+      // Keep last successful rooms list on transient failure.
+    } finally {
+      clearTimeout(timeoutId);
+      setRoomsLoading(false);
+      setRoomsLoaded(true);
+    }
+  }, [address]);
+
+  useEffect(() => {
+    if (!address) {
+      if (isProfileLoading) return;
+      setBills([]);
+      setUserRooms([]);
+      setBillsLoaded(false);
+      setRoomsLoaded(false);
+      return;
+    }
+
+    let cancelled = false;
+
+    const bootstrapProfileData = async () => {
+      const followups: Promise<unknown>[] = [];
+      if (!billsLoaded && !billsLoading) {
+        followups.push(fetchUserBills());
+      }
+      if (!roomsLoaded && !roomsLoading) {
+        followups.push(fetchUserRooms());
+      }
+      if (followups.length) {
+        await Promise.allSettled(followups);
+      }
+    };
+
+    void bootstrapProfileData();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    address,
+    isProfileLoading,
+    billsLoaded,
+    billsLoading,
+    roomsLoaded,
+    roomsLoading,
+    fetchUserBills,
+    fetchUserRooms,
+  ]);
+
+  useEffect(() => {
+    if (!address) return;
+    const onVisible = () => {
+      if (document.visibilityState !== "visible") return;
+      if (activeTab === "splits") void fetchUserBills();
+      if (activeTab === "spins") void fetchUserRooms();
     };
     document.addEventListener("visibilitychange", onVisible);
     return () => document.removeEventListener("visibilitychange", onVisible);
-  }, [isConnected, fetchUserRooms, fetchUserBills]);
-
-  /* -------------------------------------- */
-  /* COMPUTED VALUES (FIXED)                */
-  /* -------------------------------------- */
-
-  // ✅ Correct unpaid logic (no creator, not paid)
-  const unpaidCount = bills.filter(
-    (b) => b.userStatus !== "creator" && b.hasPaid === false
-  ).length;
-
-  const paidCount = bills.filter(
-    (b) => b.userStatus !== "creator" && b.hasPaid === true
-  ).length;
-
-  /* -------------------------------------- */
-  /* CLIENT-SIDE SUMMARY (NEW)              */
-  /* -------------------------------------- */
+  }, [address, activeTab, fetchUserBills, fetchUserRooms]);
 
   useEffect(() => {
     if (!address) return;
+    if (activeTab === "splits") void fetchUserBills();
+    if (activeTab === "spins") void fetchUserRooms();
+  }, [address, activeTab, fetchUserBills, fetchUserRooms]);
 
-    const nextSummary = {
-      billsCreated: bills.filter((b) => b.userStatus === "creator").length,
-
-      billsJoined: bills.filter((b) => b.userStatus === "participant").length,
-
-      billsPaid: bills.filter((b) => b.hasPaid === true).length,
-
-      roomsCreated: userRooms.filter(
-        (r) => r.admin?.toLowerCase() === address.toLowerCase()
-      ).length,
-
-      roomsJoined: userRooms.length,
-
-      roomsPaid: userRooms.reduce(
-        (acc, r) => acc + (r.members?.length ? 1 : 0),
-        0
-      ),
-    };
-
-    setSummary(nextSummary);
-  }, [address, bills, userRooms]);
+  useEffect(() => {
+    if (!bills.length) return;
+    bills.slice(0, 8).forEach((bill) => {
+      if (bill.splitId) {
+        router.prefetch(`/split/${bill.splitId}`);
+      }
+    });
+  }, [bills, router]);
 
   /* -------------------------------------- */
   /* RENDER                                 */
   /* -------------------------------------- */
 
-  if (isLoading) {
-    return (
-      <div className="min-h-screen w-full flex items-center justify-center">
-        <Loader className="w-8 h-8 animate-spin text-white/40" />
-      </div>
-    );
-  }
-
-  const statClass = (value: number) =>
-    `bg-white/5 p-4 rounded-xl ${value === 0 ? "opacity-30" : ""}`;
-
-  return (
+  const isInitialProfileLoading = isProfileLoading && !address;
+  const unpaidSplitsCount = bills.filter((bill) => {
+    if (bill.userStatus === "creator") {
+      const debtors = Number(bill.debtors ?? 0);
+      const paidCount = Number(bill.paidCount ?? 0);
+      return debtors > 0 && paidCount < debtors;
+    }
+    if (bill.userStatus === "participant" || bill.userStatus === "invited") {
+      return bill.hasPaid !== true && bill.isSettled !== true;
+    }
+    return false;
+  }).length;
+  const renderProfileSkeleton = () => (
     <div className="min-h-screen w-full flex flex-col items-center p-4 pt-16 pb-40 overflow-y-auto scrollbar-hide">
       <div className="w-full max-w-md">
-        {/* -------------------------------------- */}
-        {/* SUMMARY GRID                            */}
-        {/* -------------------------------------- */}
-        <div className="grid grid-cols-2 gap-3 mb-10 mt-4">
-          <div
-            className={`${statClass(unpaidCount)} flex items-center justify-between`}
-          >
-            <p className="text-md text-white">Splits Pending</p>
-            <p className="text-xl font-semibold">{unpaidCount}</p>
+        <div className="pt-3 pb-5">
+          <div className="flex items-start justify-between gap-4">
+            <div className="min-w-0 flex-1 space-y-2">
+              <Skeleton className="h-9 w-40 rounded-md" />
+              <Skeleton className="h-4 w-24 rounded-md" />
+            </div>
+            <Skeleton className="w-16 h-16 rounded-full shrink-0" />
           </div>
 
-          <div
-            className={`${statClass(paidCount)} flex items-center justify-between`}
-          >
-            <p className="text-md text-white">Splits Paid</p>
-            <p className="text-xl font-semibold">{paidCount}</p>
+        </div>
+
+
+        <div className="space-y-3">
+          <Skeleton className="h-20 rounded-xl" />
+          <Skeleton className="h-20 rounded-xl" />
+        </div>
+      </div>
+    </div>
+  );
+
+  if (isInitialProfileLoading) {
+    return renderProfileSkeleton();
+  }
+
+  const renderProfileHero = () => {
+    if (!address) {
+      return (
+        <div className="text-center text-white/40 py-10">
+          Connect an account to view your profile.
+        </div>
+      );
+    }
+
+    const hero = farcasterHero;
+    const effectiveUsername = hero?.username ?? username ?? null;
+    const effectiveName =
+      effectiveUsername ? `@${effectiveUsername}` : hero?.displayName ?? displayName ?? "Profile";
+    const effectivePfp = hero?.pfpUrl ?? pfp ?? null;
+    const followerCountLabel = formatCompactNumber(hero?.followerCount);
+    const joinedLabel = hero?.joinedAt
+      ? `Joined ${new Date(hero.joinedAt).toLocaleDateString(undefined, {
+        month: "short",
+        year: "numeric",
+      })}`
+      : null;
+
+    if (farcasterHeroLoading && !hero) {
+      return (
+        <div className="pt-3 pb-5">
+          <div className="flex items-start justify-between gap-4">
+            <div className="min-w-0 flex-1 space-y-3">
+              <Skeleton className="h-12 w-40 rounded-md" />
+              <Skeleton className="h-6 w-28 rounded-md" />
+            </div>
+            <Skeleton className="w-24 h-24 rounded-full" />
+          </div>
+         
+        </div>
+      );
+    }
+
+    return (
+      <div className="pt-3 pb-5">
+        <div className="flex items-start justify-between gap-4">
+          <div className="min-w-0 flex-1">
+            <h1 className="text-2xl sm:text-3xl font-semibold tracking-tight text-white truncate">
+              {effectiveName}
+            </h1>
+            {!effectiveUsername && (
+              <div className="mt-2 text-white/50 text-base truncate">
+                No Farcaster handle
+              </div>
+            )}
+            <div className="mt-2 text-white/35 text-sm truncate">
+              {shortAddress(address)}
+            </div>
+            {joinedLabel ? (
+              <p className="mt-1 text-sm text-white/35 truncate">{joinedLabel}</p>
+            ) : null}
           </div>
 
-          <div
-            className={`${statClass(summary.roomsCreated)} flex items-center justify-between`}
-          >
-            <p className="text-md text-white">Spin Created</p>
-            <p className="text-xl font-semibold">{summary.roomsCreated}</p>
-          </div>
-
-          <div
-            className={`${statClass(summary.roomsPaid)} flex items-center justify-between`}
-          >
-            <p className="text-md text-white">Spin Paid</p>
-            <p className="text-xl font-semibold">{summary.roomsPaid}</p>
+          <div className="shrink-0">
+            <UserAvatar
+              src={effectivePfp}
+              seed={effectiveName}
+              alt={effectiveName}
+              width={80}
+              className="w-20 h-20 rounded-full object-cover border border-white/10 bg-white/5"
+            />
           </div>
         </div>
 
-        {/* -------------------------------------- */}
-        {/* SPLIT BILLS                             */}
-        {/* -------------------------------------- */}
-        <p className="text-lg font-medium mb-4">Split Bills ({bills.length})</p>
+        <div className="mt-4 space-y-3">
+          {hero?.bio ? (
+            <p className="text-md leading-snug text-white/90">
+              {hero.bio}
+            </p>
+          ) : (
+            <p className="text-md leading-snug text-white/40">
+              Add a Farcaster bio to personalize your profile.
+            </p>
+          )}
 
+          {(followerCountLabel || (hero?.followerPreviewPfps?.length ?? 0) > 0) && (
+            <div className="flex items-center gap-1">
+              {hero?.followerPreviewPfps?.length ? (
+                <div className="flex -space-x-2">
+                  {hero.followerPreviewPfps.map((pfpUrl, idx) => (
+                    <UserAvatar
+                      key={`${pfpUrl}-${idx}`}
+                      src={pfpUrl}
+                      seed={`${effectiveUsername ?? effectiveName}-${idx}`}
+                      width={32}
+                      alt=""
+                      className="w-8 h-8 rounded-full object-cover border-2 border-background bg-white/5"
+                    />
+                  ))}
+                </div>
+              ) : null}
+              {followerCountLabel ? (
+                <p className="text-md text-white/50">
+                  {followerCountLabel} followers
+                </p>
+              ) : null}
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  };
+
+  const renderListLoadingSkeleton = (rows = 3) => (
+    <div className="space-y-3">
+      {Array.from({ length: rows }).map((_, idx) => (
+        <div
+          key={idx}
+          className="p-4 rounded-xl border border-white/10 bg-white/[0.02]"
+        >
+          <div className="flex items-center justify-between gap-4">
+            <div className="flex-1 min-w-0 space-y-2">
+              <Skeleton className="h-4 w-40 rounded-md" />
+              <Skeleton className="h-3 w-24 rounded-md" />
+            </div>
+            <div className="space-y-2 text-right shrink-0">
+              <Skeleton className="h-4 w-16 rounded-md" />
+              <Skeleton className="h-3 w-14 rounded-md" />
+            </div>
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+
+  const renderSplitsTab = () => {
+    if (billsLoading && !billsLoaded) {
+      return renderListLoadingSkeleton(3);
+    }
+
+    return (
+      <div>
         {bills.length === 0 ? (
           <div className="flex flex-col items-center text-center text-white/30 py-10">
-            <img src="/vpeople.png" className="w-12 h-12 mb-1" />
-            <p>No split bills yet…</p>
+            <img src="/vpeople.png" alt="" className="w-12 h-12 mb-1" />
+            <p>No split bills yet...</p>
           </div>
         ) : (
           <ul className="space-y-3">
@@ -231,122 +614,110 @@ export default function ProfilePage() {
               const hasPaid = bill.hasPaid === true;
 
               return (
-                <li
-                  key={bill.splitId}
-                  onClick={() => router.push(`/split/${bill.splitId}`)}
-                  className="p-4 rounded-xl border border-white/10 hover:bg-white/5 active:scale-[0.98] transition cursor-pointer"
-                >
-                  <div className="flex justify-between">
-                    {/* LEFT SIDE */}
-                    <div className="space-y-1">
-                      <div className="flex items-center justify-between gap-1 w-full">
-                        {/* LEFT SIDE: avatars + description */}
-                        <div className="flex items-center gap-1 min-w-0">
-                          {/* Description */}
-                          <p className="text-md font-medium text-white/90 truncate max-w-[30vw] sm:max-w-[100px]">
-                            {bill.description || "No description"}
-                          </p>
+                <li key={bill.splitId}>
+                  <Link
+                    href={`/split/${bill.splitId}`}
+                    prefetch
+                    className="block p-4 rounded-xl border border-white/10 hover:bg-white/5 active:scale-[0.98] transition cursor-pointer"
+                  >
+                    <div className="flex justify-between">
+                      <div className="space-y-1">
+                        <div className="flex items-center justify-between gap-1 w-full">
+                          <div className="flex items-center gap-1 min-w-0">
+                            <p className="text-md font-medium text-white/90 truncate max-w-[30vw] sm:max-w-[100px]">
+                              {bill.description || "No description"}
+                            </p>
+                            <div className="flex -space-x-2 shrink-0">
+                              {bill.participants.slice(0, 3).map((p, idx) => (
+                                <UserAvatar
+                                  key={idx}
+                                  src={p.pfp}
+                                  seed={p.name}
+                                  width={24}
+                                  alt={p.name || "Participant"}
+                                  className="w-6 h-6 rounded-full border-2 border-background object-cover"
+                                />
+                              ))}
 
-                          {/* Avatars */}
-                          <div className="flex -space-x-2 shrink-0">
-                            {bill.participants.slice(0, 3).map((p, idx) => (
-                              <img
-                                key={idx}
-                                src={
-                                  p.pfp ||
-                                  `https://api.dicebear.com/9.x/glass/svg?seed=${encodeURIComponent(
-                                    p.name
-                                  )}`
-                                }
-                                className="w-6 h-6 rounded-full border-2 border-background object-cover"
-                              />
-                            ))}
+                              {bill.participants.length > 3 && (
+                                <div className="w-6 h-6 flex items-center justify-center rounded-full bg-white/5 text-xs text-white/40 border-2 border-background">
+                                  +{bill.participants.length - 3}
+                                </div>
+                              )}
+                            </div>
+                          </div>
 
-                            {bill.participants.length > 3 && (
-                              <div className="w-6 h-6 flex items-center justify-center rounded-full bg-white/5 text-xs text-white/40 border-2 border-background">
-                                +{bill.participants.length - 3}
-                              </div>
+                          <div className="shrink-0">
+                            {isCreator ? (
+                              <span className="px-1.5 py-0.5 text-xs rounded-[6px] bg-yellow-600/20 text-yellow-300 border border-yellow-500/30">
+                                Owner
+                              </span>
+                            ) : isInvited && !hasPaid ? (
+                              <span className="px-1.5 py-0.5 text-xs rounded-[6px] bg-white/10 text-white/40 border border-white/20">
+                                Invited
+                              </span>
+                            ) : hasPaid ? (
+                              <span className="px-1.5 py-0.5 text-xs rounded-[6px] bg-green-500/20 text-green-300 border border-green-500/30">
+                                Paid
+                              </span>
+                            ) : (
+                              <span className="px-1.5 py-0.5 text-xs rounded-[6px] bg-orange-900/20 text-orange-400 border border-orange-400/30">
+                                Unpaid
+                              </span>
                             )}
                           </div>
                         </div>
 
-                        {/* RIGHT SIDE: status */}
-                        <div className="shrink-0">
-                          {isCreator ? (
-                            <span className="px-1.5 py-0.5 text-xs rounded-[6px] bg-yellow-600/20 text-yellow-300 border border-yellow-500/30">
-                              Owner
-                            </span>
-                          ) : isInvited && !hasPaid ? (
-                            <span className="px-1.5 py-0.5 text-xs rounded-[6px] bg-white/10 text-white/40 border border-white/20">
-                              Invited
-                            </span>
-                          ) : hasPaid ? (
-                            <span className="px-1.5 py-0.5 text-xs rounded-[6px] bg-green-500/20 text-green-300 border border-green-500/30">
-                              Paid
-                            </span>
-                          ) : (
-                            <span className="px-1.5 py-0.5 text-xs rounded-[6px] bg-orange-900/20 text-orange-400 border border-orange-400/30">
-                              Unpaid
-                            </span>
-                          )}
-                        </div>
-                      </div>
-
-                      <p className="text-xs text-white/30">
-                        {new Date(bill.createdAt).toLocaleDateString(
-                          undefined,
-                          {
+                        <p className="text-xs text-white/30">
+                          {new Date(bill.createdAt).toLocaleDateString(undefined, {
                             month: "short",
                             day: "numeric",
                             year: "numeric",
-                          }
-                        )}
-                      </p>
-                    </div>
+                          })}
+                        </p>
+                      </div>
 
-                    {/* RIGHT SIDE */}
-                    <div className="text-right space-y-1">
-                      <p className="text-lg font-semibold">
-                        {getTokenSuffix(bill.token || "ETH")}
-                        {bill.totalAmount}
-                      </p>
-
-                      <p
-                        className={`text-xs ${
-                          bill.debtors === 0
+                      <div className="text-right space-y-1">
+                        <p className="text-lg font-semibold">${bill.totalAmount}</p>
+                        <p
+                          className={`text-xs ${bill.debtors === 0
                             ? "text-white/40"
                             : bill.paidCount >= bill.debtors
                               ? "text-green-400"
                               : bill.paidCount > 0
                                 ? "text-yellow-400"
                                 : "text-red-400"
-                        }`}
-                      >
-                        {bill.debtors === 0
-                          ? "No payments"
-                          : bill.paidCount >= bill.debtors
-                            ? "Settled"
-                            : `${bill.paidCount} / ${bill.debtors} paid`}
-                      </p>
+                            }`}
+                        >
+                          {bill.debtors === 0
+                            ? "No payments"
+                            : bill.paidCount >= bill.debtors
+                              ? "Settled"
+                              : `${bill.paidCount} / ${bill.debtors} paid`}
+                        </p>
+                      </div>
                     </div>
-                  </div>
+                  </Link>
                 </li>
               );
             })}
           </ul>
         )}
+      </div>
+    );
+  };
 
-        {/* -------------------------------------- */}
-        {/* GROUPS (UNCHANGED)                     */}
-        {/* -------------------------------------- */}
-        <p className="text-lg font-medium mt-8 mb-4">
-          Spins ({userRooms.length})
-        </p>
+  const renderSpinsTab = () => {
+    if (roomsLoading && !roomsLoaded) {
+      return renderListLoadingSkeleton(3);
+    }
 
+    return (
+      <div>
         {userRooms.length === 0 ? (
           <div className="flex flex-col items-center text-center text-white/30 py-10">
-            <img src="/vpush.png" className="w-12 h-12 mb-1" />
-            <p>No pay spins yet…</p>
+            <img src="/vpush.png" alt="" className="w-12 h-12 mb-1" />
+            <p>No pay spins yet...</p>
           </div>
         ) : (
           <ul className="space-y-3">
@@ -384,13 +755,13 @@ export default function ProfilePage() {
 
                   <div className="flex -space-x-2">
                     {room.members.slice(0, 5).map((m, i) => (
-                      <img
+                      <UserAvatar
                         key={i}
-                        src={
-                          m.pfp ||
-                          `https://api.dicebear.com/9.x/glass/svg?seed=${m.name}`
-                        }
-                        className="w-6 h-6 rounded-full"
+                        src={m.pfp}
+                        seed={m.name}
+                        width={24}
+                        alt={m.name || "Member"}
+                        className="w-6 h-6 rounded-full object-cover"
                       />
                     ))}
                     {room.members.length > 5 && (
@@ -404,6 +775,46 @@ export default function ProfilePage() {
             })}
           </ul>
         )}
+      </div>
+    );
+  };
+
+  return (
+    <div className="min-h-screen w-full flex flex-col items-center p-4 pt-16 pb-40 overflow-y-auto scrollbar-hide">
+      <div className="w-full max-w-md">
+        <div className="mb-2 mt-4">{renderProfileHero()}</div>
+
+        <div className="mb-4 mt-3 flex border-b border-white/10">
+          <button
+            onClick={() => {
+              setActiveTab("splits");
+              void fetchUserBills();
+            }}
+            className={`w-1/2 pb-3 text-lg font-medium transition relative ${activeTab === "splits" ? "text-white" : "text-white/50"
+              }`}
+          >
+            {`Splits (${unpaidSplitsCount})`}
+            {activeTab === "splits" && (
+              <span className="absolute left-0 right-0 -bottom-[1px] h-1 bg-primary rounded-full" />
+            )}
+          </button>
+          <button
+            onClick={() => {
+              setActiveTab("spins");
+              void fetchUserRooms();
+            }}
+            className={`w-1/2 pb-3 text-lg font-medium transition relative ${activeTab === "spins" ? "text-white" : "text-white/50"
+              }`}
+          >
+            Spins
+            {activeTab === "spins" && (
+              <span className="absolute left-0 right-0 -bottom-[1px] h-1 bg-primary rounded-full" />
+            )}
+          </button>
+        </div>
+
+        {activeTab === "splits" && renderSplitsTab()}
+        {activeTab === "spins" && renderSpinsTab()}
       </div>
     </div>
   );

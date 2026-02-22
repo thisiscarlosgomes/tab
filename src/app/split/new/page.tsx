@@ -704,12 +704,12 @@ export default function SplitNewPage() {
         <Drawer.Portal>
           <Drawer.Overlay className="fixed inset-0 bg-[#4E4C52]/60 backdrop-blur-sm z-20" />
 
-          <Drawer.Content className=" pb-32 fixed top-[100px] left-0 right-0 bottom-0 bg-background p-0 rounded-t-3xl flex flex-col z-50">
+          <Drawer.Content className="fixed top-[100px] left-0 right-0 bottom-0 bg-background p-0 rounded-t-3xl flex flex-col z-50 max-h-[calc(100dvh-100px)] overflow-hidden">
             {/* Handle */}
-            <div className="mx-auto w-12 h-1.5 rounded-full bg-white/10 my-4" />
+            <div className="mx-auto w-12 h-1.5 rounded-full bg-white/10 my-4 shrink-0" />
 
             {/* Sticky header */}
-            <div className="px-4 sticky top-[80px] bg-background z-10">
+            <div className="px-4 sticky top-0 bg-background z-10 shrink-0">
               <Drawer.Title className="text-lg text-center font-medium">
                 Choose friends
               </Drawer.Title>
@@ -751,7 +751,7 @@ export default function SplitNewPage() {
 
             {/* Selected chips */}
             {selectedFollowers.length > 0 && (
-              <div className="px-4 mb-2">
+              <div className="px-4 mb-2 shrink-0">
                 <div className="bg-white/5 py-4 px-6 rounded-lg">
                   <div className="flex flex-wrap gap-3">
                     {selectedFollowers.map((f) => (
@@ -784,7 +784,7 @@ export default function SplitNewPage() {
             )}
 
             {/* Followers list */}
-            <div className="flex-1 overflow-y-auto px-4 pb-20 space-y-2">
+            <div className="flex-1 min-h-0 overflow-y-auto px-4 pb-4 space-y-2 overscroll-contain">
               {filteredFollowers.map((f) => {
                 const isSelected = selectedFollowers.some(
                   (x) => x.fid === f.fid
@@ -806,7 +806,7 @@ export default function SplitNewPage() {
                       <img
                         src={
                           f.pfp_url ||
-                          `https://api.dicebear.com/9.x/glass/svg?seed=${f.fid}`
+                          `https://api.dicebear.com/9.x/fun-emoji/svg?seed=${f.fid}`
                         }
                         className="w-8 h-8 rounded-full mr-4 object-cover"
                         alt={f.username}
@@ -829,7 +829,7 @@ export default function SplitNewPage() {
             </div>
 
             {/* Bottom CTA */}
-            <div className="fixed bottom-0 left-0 right-0 px-4 pb-6 bg-background z-50">
+            <div className="shrink-0 px-4 pb-6 pt-3 bg-background border-t border-white/5">
               <Button
                 onClick={() => setFollowerDrawerOpen(false)}
                 className="w-full bg-primary"

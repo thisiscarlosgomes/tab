@@ -2,16 +2,15 @@
 
 import { useEffect, useState } from "react";
 import { useParams, useSearchParams } from "next/navigation";
-import { useAccount, useConnect } from "wagmi";
-import { farcasterFrame } from "@farcaster/frame-wagmi-connector";
+import { usePrivy } from "@privy-io/react-auth";
 import { Button } from "@/components/ui/button";
-import sdk from "@farcaster/frame-sdk";
 import { useFrameSplash } from "@/providers/FrameSplashProvider";
 import confetti from "canvas-confetti";
 import { toast } from "sonner";
 import { shortAddress } from "@/lib/shortAddress";
 
 import { SuccessShareDrawer } from "@/components/app/SuccessShareDrawer";
+import { useTabIdentity } from "@/lib/useTabIdentity";
 
 export default function GroupClaimPage() {
   const { groupId } = useParams();
@@ -19,8 +18,8 @@ export default function GroupClaimPage() {
   const searchParams = useSearchParams();
   const claimToken = searchParams.get("claimToken");
 
-  const { address, isConnected } = useAccount();
-  const { connect } = useConnect();
+  const { address, isConnected, fid } = useTabIdentity();
+  const { login } = usePrivy();
 
   const [drops, setDrops] = useState<any[]>([]);
   const [resolvedClaimUsername, setResolvedClaimUsername] = useState<
@@ -29,7 +28,6 @@ export default function GroupClaimPage() {
   const [status, setStatus] = useState<
     "idle" | "loading" | "claimed" | "error"
   >("idle");
-  const [fid, setFid] = useState<number | null>(null);
 
   const [hasAlreadyClaimed, setHasAlreadyClaimed] = useState(false);
 
@@ -40,25 +38,18 @@ export default function GroupClaimPage() {
   }, [dismiss]);
 
   useEffect(() => {
-    sdk.context.then((ctx) => {
-      if (!ctx) {
-        const currentUrl = window.location.href;
-        window.location.href = `https://warpcast.com/?launchFrameUrl=${encodeURIComponent(currentUrl)}`;
-      } else {
-        setFid(ctx?.user?.fid ?? null);
-      }
-    });
-  }, []);
-
-  useEffect(() => {
     const fetchGroupDrops = async () => {
       const res = await fetch(`/api/drop/group/${groupId}`);
       const data = await res.json();
       setDrops(data.drops || []);
 
-      if (fid) {
+      if (fid || address) {
         const claimedByUser = data.drops.some(
-          (d: any) => d.claimed && d.claimedByFid === fid
+          (d: any) =>
+            d.claimed &&
+            ((fid != null && d.claimedByFid === fid) ||
+              (address &&
+                d.claimedBy?.toLowerCase?.() === address.toLowerCase()))
         );
         setHasAlreadyClaimed(claimedByUser);
       }
@@ -118,7 +109,7 @@ export default function GroupClaimPage() {
         <div className="max-w-sm w-full mx-auto space-y-3">
           <h1 className="text-white text-xl font-semibold mb-4">
             {!isConnected ? (
-              <>Connect wallet to claim</>
+              <>Continue with email to claim</>
             ) : address?.toLowerCase() ===
               unclaimedDrop.creator?.address?.toLowerCase() ? (
               <>
@@ -173,10 +164,10 @@ export default function GroupClaimPage() {
             </p>
           ) : !isConnected ? (
             <Button
-              onClick={() => connect({ connector: farcasterFrame() })}
+              onClick={() => login()}
               className="w-full"
             >
-              Connect Wallet
+              Continue with email
             </Button>
           ) : (
             <Button

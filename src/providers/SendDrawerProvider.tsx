@@ -91,6 +91,7 @@ export function SendDrawerProvider({ children }: { children: React.ReactNode }) 
 
   const close = () => {
     setIsOpen(false);
+    setQuery("");
     setScannedUsername(null);
     setSharedCast(null);
 

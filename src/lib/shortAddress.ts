@@ -1,5 +1,7 @@
 export function shortAddress(address: string): string {
-    if (!address || address.length !== 42) return address; // Ensure address is valid
-    return `${address.slice(0, 3)}...${address.slice(-3)}`; // Shorten to `0x123...234`
-  }
+  if (!address) return address;
+  const normalized = address.trim();
+  if (!/^0x[a-fA-F0-9]{40}$/.test(normalized)) return normalized;
+  return `0x${normalized.slice(2, 5)}...${normalized.slice(-3)}`;
+}
   

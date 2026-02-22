@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { farcasterFrame } from "@farcaster/frame-wagmi-connector";
 import {
   useAccount,
   useConnect,
@@ -23,7 +22,8 @@ interface SplitPayButtonProps {
   payer: {
     address: string;
     name: string;
-    fid: number; // ✅ REQUIRED
+    fid?: number | null;
+    userKey?: string;
   };
   onSuccess: (data: {
     amount: number;
@@ -48,7 +48,7 @@ export function SplitPayButton({
   description,
 }: SplitPayButtonProps) {
   const { isConnected, address } = useAccount();
-  const { connect } = useConnect();
+  const { connect, connectors } = useConnect();
   const { sendTransactionAsync } = useSendTransaction();
   const { writeContractAsync } = useWriteContract();
 
@@ -74,6 +74,17 @@ export function SplitPayButton({
       recipientUsername: payer.name,
       txHash,
     });
+    if (typeof window !== "undefined") {
+      if (token === "USDC") {
+        window.dispatchEvent(
+          new CustomEvent("tab:balance-updated", {
+            detail: { deltaUsdc: -amount },
+          })
+        );
+      } else {
+        window.dispatchEvent(new Event("tab:balance-updated"));
+      }
+    }
 
     // 2. Fire-and-forget side effects
     void handlePostPayment();
@@ -91,6 +102,9 @@ export function SplitPayButton({
         body: JSON.stringify({
           payment: {
             fid: payer.fid,
+            userKey:
+              payer.userKey ??
+              (address ? `wallet:${address.toLowerCase()}` : undefined),
             address,
             name: payer.name,
             txHash,
@@ -148,17 +162,17 @@ export function SplitPayButton({
     // Prevent double taps
     if (isProcessing || txHash) return;
 
-    // Must have FID
-    if (!payer?.fid) {
-      toast.error("Missing Farcaster identity");
-      return;
-    }
-
     // Connect wallet if needed
     if (!isConnected || !address) {
       setIsProcessing(true);
       try {
-        await connect({ connector: farcasterFrame() });
+        const preferred =
+          connectors.find((c) => c.id === "injected") ?? connectors[0];
+        if (!preferred) {
+          toast.error("No wallet connector available");
+          return;
+        }
+        await connect({ connector: preferred });
       } finally {
         setIsProcessing(false);
       }
@@ -169,8 +183,18 @@ export function SplitPayButton({
     try {
       const res = await fetch(`/api/split/${splitId}`);
       const bill = await res.json();
+      const currentKey =
+        payer.userKey ?? (address ? `wallet:${address.toLowerCase()}` : null);
 
-      if (bill?.paid?.some((p: any) => Number(p.fid) === payer.fid)) {
+      if (
+        bill?.paid?.some(
+          (p: any) =>
+            (currentKey && p.userKey === currentKey) ||
+            (p.address &&
+              address &&
+              p.address.toLowerCase() === address.toLowerCase())
+        )
+      ) {
         toast.error("You already paid for this split.");
         return;
       }

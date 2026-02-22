@@ -9,17 +9,23 @@ import { Analytics } from "@vercel/analytics/react";
 import { AppShell } from "@/components/AppShell";
 import "react-loading-skeleton/dist/skeleton.css";
 
+const SITE_ORIGIN =
+  process.env.NEXT_PUBLIC_SITE_URL?.replace(/\/$/, "") ?? "https://usetab.app";
+const SITE_NAME = "Tab";
+const DEFAULT_TITLE = "Tab";
+const DEFAULT_DESCRIPTION = "Split bills, send crypto, and get paid in seconds on Base.";
+
 const frame = {
   version: "next",
-  imageUrl: `https://usetab.app/cover.png`,
+  imageUrl: `${SITE_ORIGIN}/cover.png`,
   button: {
     title: "launch tab",
     action: {
       type: "launch_frame",
-      name: "tab",
-      url: "https://usetab.app",
-      iconImageUrl: "https://usetab.app/app.png",
-      splashImageUrl: "https://usetab.app/app.png",
+      name: "Tab",
+      url: SITE_ORIGIN,
+      iconImageUrl: `${SITE_ORIGIN}/app.png`,
+      splashImageUrl: `${SITE_ORIGIN}/app.png`,
       splashBackgroundColor: "#201E23",
     },
   },
@@ -27,16 +33,83 @@ const frame = {
 
 export async function generateMetadata(): Promise<Metadata> {
   return {
-    metadataBase: new URL("https://usetab.app"),
-    title: "tab",
+    metadataBase: new URL(SITE_ORIGIN),
+    title: {
+      default: DEFAULT_TITLE,
+      template: "%s | Tab",
+    },
+    description: DEFAULT_DESCRIPTION,
+    applicationName: SITE_NAME,
+    keywords: [
+      "split bills",
+      "crypto payments",
+      "base app",
+      "group payments",
+      "send USDC",
+      "tab app",
+    ],
+    category: "finance",
     openGraph: {
-      title: "tab",
-      description: "Social payments on Base and Farcaster",
-      images: "https://usetab.app/cover.png",
+      title: DEFAULT_TITLE,
+      description: DEFAULT_DESCRIPTION,
+      url: SITE_ORIGIN,
+      siteName: SITE_NAME,
+      locale: "en_US",
+      type: "website",
+      images: [
+        {
+          url: `${SITE_ORIGIN}/cover.png`,
+          width: 1200,
+          height: 630,
+          alt: "Tab app preview",
+        },
+      ],
+    },
+    twitter: {
+      card: "summary_large_image",
+      title: DEFAULT_TITLE,
+      description: DEFAULT_DESCRIPTION,
+      images: [`${SITE_ORIGIN}/cover.png`],
+    },
+    robots: {
+      index: true,
+      follow: true,
+      googleBot: {
+        index: true,
+        follow: true,
+        "max-image-preview": "large",
+        "max-snippet": -1,
+      },
     },
     manifest: "/manifest.json",
-    icons: "/app.png",
+    icons: {
+      icon: [
+        { url: "/app.png" },
+        { url: "/icons/icon-192.png", sizes: "192x192", type: "image/png" },
+        { url: "/icons/icon-512.png", sizes: "512x512", type: "image/png" },
+      ],
+      apple: [
+        {
+          url: "/icons/apple-touch-icon.png",
+          sizes: "180x180",
+          type: "image/png",
+        },
+      ],
+      shortcut: ["/app.png"],
+    },
+    appleWebApp: {
+      capable: true,
+      title: "Tab",
+      statusBarStyle: "black-translucent",
+    },
+    formatDetection: {
+      email: false,
+      address: false,
+      telephone: false,
+    },
     other: {
+      "mobile-web-app-capable": "yes",
+      "apple-mobile-web-app-capable": "yes",
       "fc:frame": JSON.stringify(frame),
     },
   };
@@ -44,8 +117,9 @@ export async function generateMetadata(): Promise<Metadata> {
 
 export const viewport: Viewport = {
   initialScale: 1,
-  maximumScale: 1,
   width: "device-width",
+  viewportFit: "cover",
+  themeColor: "#0A0A14",
 };
 
 // eslint-disable-next-line import/no-default-export
@@ -54,19 +128,47 @@ export default function RootLayout({
 }: Readonly<{
   children: React.ReactNode;
 }>) {
+  const structuredData = [
+    {
+      "@context": "https://schema.org",
+      "@type": "WebSite",
+      name: SITE_NAME,
+      url: SITE_ORIGIN,
+      potentialAction: {
+        "@type": "SearchAction",
+        target: `${SITE_ORIGIN}/receive/{username}`,
+        "query-input": "required name=username",
+      },
+    },
+    {
+      "@context": "https://schema.org",
+      "@type": "SoftwareApplication",
+      name: SITE_NAME,
+      applicationCategory: "FinanceApplication",
+      operatingSystem: "iOS, Android, Web",
+      offers: {
+        "@type": "Offer",
+        price: "0",
+        priceCurrency: "USD",
+      },
+      description: DEFAULT_DESCRIPTION,
+      url: SITE_ORIGIN,
+    },
+  ];
+
   return (
     <html lang="en" className="dark">
       <head>
         <link rel="preconnect" href="https://fonts.googleapis.com" />
         <link rel="preconnect" href="https://fonts.gstatic.com" />
         <link
-          href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=block"
+          href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap"
           rel="stylesheet"
         />
         <meta name="base:app_id" content="68ed7bcce4ceccbd41c31b09" />
-        <meta
-          name="viewport"
-          content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no"
+        <script
+          type="application/ld+json"
+          dangerouslySetInnerHTML={{ __html: JSON.stringify(structuredData) }}
         />
       </head>
       <body className="select-none antialiased Text/Faint bg-background text-foreground scrollbar-vert">

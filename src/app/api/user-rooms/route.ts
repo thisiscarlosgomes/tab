@@ -1,4 +1,5 @@
 import { NextRequest } from "next/server";
+import { Collection } from "mongodb";
 import clientPromise from "@/lib/mongodb";
 
 /* =========================
@@ -33,6 +34,21 @@ interface GameRoom {
 }
 
 const DEFAULT_LIMIT = 50;
+let ensureRoomIndexesPromise: Promise<void> | null = null;
+
+function ensureRoomIndexes(collection: Collection<GameRoom>) {
+  if (!ensureRoomIndexesPromise) {
+    ensureRoomIndexesPromise = (async () => {
+      await collection.createIndexes([
+        { key: { "participants.address": 1, createdAt: -1 } },
+        { key: { admin: 1, createdAt: -1 } },
+      ]);
+    })().catch(() => {
+      ensureRoomIndexesPromise = null;
+    });
+  }
+  return ensureRoomIndexesPromise;
+}
 
 /* =========================
    GET user rooms
@@ -51,8 +67,12 @@ export async function GET(req: NextRequest) {
   const client = await clientPromise;
   const db = client.db();
   const roomsCol = db.collection<GameRoom>("a-split-game");
+  await ensureRoomIndexes(roomsCol);
 
-  const query: any = {
+  const query: {
+    $or: Array<Record<string, string>>;
+    createdAt?: { $lt: Date };
+  } = {
     $or: [{ "participants.address": address }, { admin: address }],
   };
 
@@ -98,13 +118,13 @@ export async function GET(req: NextRequest) {
     chosen: room.chosen ?? null,
     paid: room.paid ?? [],
 
-    members: room.participants.map((p: any) => ({
+    members: room.participants.map((p: Participant) => ({
       address: p.address,
       name: p.name ?? null,
       fid: p.fid ?? null,
       pfp:
         p.pfp ??
-        `https://api.dicebear.com/9.x/glass/svg?seed=${encodeURIComponent(
+        `https://api.dicebear.com/9.x/fun-emoji/svg?seed=${encodeURIComponent(
           p.name || p.address.slice(0, 6)
         )}`,
     })),

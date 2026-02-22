@@ -24,7 +24,7 @@ export function Countdown({ seconds: initialSeconds }: { seconds: number }) {
 
   return (
     <NumberFlowGroup>
-      <div
+      <span
         className="flex items-baseline justify-center text-white text-base"
         style={{
           fontVariantNumeric: "tabular-nums",
@@ -33,7 +33,7 @@ export function Countdown({ seconds: initialSeconds }: { seconds: number }) {
         <NumberFlow value={hh} trend={-1} format={{ minimumIntegerDigits: 2 }} />
         <NumberFlow value={mm} trend={-1} prefix=":" format={{ minimumIntegerDigits: 2 }} />
         <NumberFlow value={ss} trend={-1} prefix=":" format={{ minimumIntegerDigits: 2 }} />
-      </div>
+      </span>
     </NumberFlowGroup>
   );
 }

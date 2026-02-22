@@ -3,6 +3,8 @@
 import { useEffect, useState, useCallback } from "react";
 import { useAccount } from "wagmi";
 import { useRouter } from "next/navigation";
+import { Skeleton } from "@/components/ui/skeleton";
+import { UserAvatar } from "@/components/ui/user-avatar";
 
 export default function RoomsPage() {
   const { address, isConnected } = useAccount();
@@ -54,7 +56,22 @@ export default function RoomsPage() {
       <h1 className="text-2xl font-bold mb-2">Spin Groups</h1>
 
       {isLoading ? (
-        <p className="text-white/30">Loading groups...</p>
+        <ul className="w-full max-w-md space-y-4 mt-4">
+          {Array.from({ length: 4 }).map((_, idx) => (
+            <li
+              key={idx}
+              className="w-full p-3 border rounded-lg border-white/10 flex flex-col items-center"
+            >
+              <Skeleton className="h-5 w-40 mb-3" />
+              <div className="flex -space-x-2 mt-1 mb-2">
+                {Array.from({ length: 4 }).map((__, avatarIdx) => (
+                  <Skeleton key={avatarIdx} className="w-8 h-8 rounded-full" />
+                ))}
+              </div>
+              <Skeleton className="h-4 w-24" />
+            </li>
+          ))}
+        </ul>
       ) : userRooms.length === 0 ? (
         <p className="text-white/30">No groups found. Join or create one!</p>
       ) : (
@@ -78,12 +95,11 @@ export default function RoomsPage() {
 
               <div className="flex -space-x-2 mt-2 mb-1">
                 {members.slice(0, 5).map((member, index) => (
-                  <img
+                  <UserAvatar
                     key={index}
-                    src={
-                      member.pfp ||
-                      `https://api.dicebear.com/9.x/glass/svg?seed=${member.name}`
-                    }
+                    src={member.pfp}
+                    seed={member.name}
+                    width={32}
                     alt={member.name}
                     className="w-8 h-8 rounded-full border-2 border-white object-cover"
                   />

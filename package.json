@@ -4,7 +4,9 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
+    "dev:clean": "rm -rf .next && next dev",
     "build": "next build",
+    "prestart": "next build",
     "start": "next start",
     "lint": "next lint"
   },
@@ -19,7 +21,9 @@
     "@neynar/nodejs-sdk": "^2.23.0",
     "@nuintun/qrcode": "^5.0.2",
     "@number-flow/react": "^0.5.9",
-    "@privy-io/react-auth": "^2.6.4",
+    "@privy-io/node": "^0.9.0",
+    "@privy-io/react-auth": "^3.14.1",
+    "@privy-io/wagmi": "^4.0.2",
     "@radix-ui/react-avatar": "^1.1.1",
     "@radix-ui/react-dialog": "^1.1.2",
     "@radix-ui/react-slot": "^1.1.0",
@@ -27,7 +31,6 @@
     "@types/json2csv": "^5.0.7",
     "@vercel/analytics": "^1.5.0",
     "@vercel/og": "^0.6.4",
-    "@xmtp/agent-sdk": "^1.2.0",
     "canvas-confetti": "^1.9.3",
     "class-variance-authority": "^0.7.1",
     "classnames": "^2.5.1",
@@ -41,7 +44,7 @@
     "lucide-react": "^0.468.0",
     "mongodb": "^6.15.0",
     "nanoid": "^5.1.5",
-    "next": "15.0.5",
+    "next": "^15.5.12",
     "node-fetch": "^3.3.2",
     "openai": "^6.15.0",
     "qrcode": "^1.5.4",
@@ -60,8 +63,8 @@
     "tailwind-scrollbar-hide": "^2.0.0",
     "tailwindcss-animate": "^1.0.7",
     "vaul": "^1.1.2",
-    "viem": "^2.23.14",
-    "wagmi": "^2.14.3"
+    "viem": "^2.46.2",
+    "wagmi": "^2.19.5"
   },
   "devDependencies": {
     "@types/canvas-confetti": "^1.9.0",
@@ -69,7 +72,7 @@
     "@types/react": "^18",
     "@types/react-dom": "^18",
     "eslint": "^8",
-    "eslint-config-next": "15.0.4",
+    "eslint-config-next": "^15.5.12",
     "eslint-config-prettier": "^9.1.0",
     "eslint-plugin-ban": "^1.6.0",
     "eslint-plugin-import": "^2.31.0",

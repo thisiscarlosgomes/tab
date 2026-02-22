@@ -67,8 +67,8 @@ export default function TabGuideAnimation() {
               animate={{ opacity: 1, y: 0 }}
             >
               {[
-                { name: "rita", pfp: "https://api.dicebear.com/7.x/fun-emoji/svg?seed=rita" },
-                { name: "maria", pfp: "https://api.dicebear.com/7.x/fun-emoji/svg?seed=maria" },
+                { name: "rita", pfp: "https://api.dicebear.com/9.x/fun-emoji/svg?seed=rita" },
+                { name: "maria", pfp: "https://api.dicebear.com/9.x/fun-emoji/svg?seed=maria" },
               ].map((u, i) => (
                 <motion.div
                   key={i}
@@ -119,7 +119,7 @@ export default function TabGuideAnimation() {
                     style={{ zIndex: 4 - i }}
                   >
                     <img
-                      src={`https://api.dicebear.com/7.x/fun-emoji/svg?seed=${name}`}
+                      src={`https://api.dicebear.com/9.x/fun-emoji/svg?seed=${name}`}
                       className="w-full h-full object-cover"
                     />
                   </div>
@@ -147,7 +147,7 @@ export default function TabGuideAnimation() {
                       style={{ zIndex: 6 - i }}
                     >
                       <img
-                        src={`https://api.dicebear.com/7.x/fun-emoji/svg?seed=${name}`}
+                        src={`https://api.dicebear.com/9.x/fun-emoji/svg?seed=${name}`}
                         className="w-full h-full object-cover"
                       />
                     </div>
