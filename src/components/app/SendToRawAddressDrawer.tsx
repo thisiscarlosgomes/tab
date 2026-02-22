@@ -3,7 +3,6 @@
 import { Drawer } from "vaul";
 import { useEffect, useState, useMemo } from "react";
 import { useAccount, useConnect, useSendTransaction } from "wagmi";
-import { farcasterFrame } from "@farcaster/frame-wagmi-connector";
 import { shortAddress } from "@/lib/shortAddress";
 import { Button } from "../ui/button";
 import { PaymentSuccessDrawer } from "./PaymentSuccessDrawer";
@@ -57,7 +56,7 @@ export function SendToRawAddressDrawer({
   address: `0x${string}`;
 }) {
   const { isConnected, address: userAddress } = useAccount();
-  const { connect } = useConnect();
+  const { connect, connectors } = useConnect();
   const { sendTransactionAsync } = useSendTransaction();
   const { writeContractAsync } = useWriteContract();
 
@@ -101,8 +100,12 @@ export function SendToRawAddressDrawer({
 
   useEffect(() => {
     const checkFrame = async () => {
-      const context = await sdk.context;
-      setInsideFrame(!!context);
+      try {
+        const context = await sdk.context;
+        setInsideFrame(!!context);
+      } catch {
+        setInsideFrame(false);
+      }
     };
 
     checkFrame();
@@ -180,8 +183,13 @@ export function SendToRawAddressDrawer({
 
   const handleSend = async () => {
     if (!address || parsedAmount <= 0 || isNaN(parsedAmount)) return;
-    const context = await sdk.context;
-    const sender = context?.user?.username;
+    let sender: string | null = null;
+    try {
+      const context = await sdk.context;
+      sender = context?.user?.username ?? null;
+    } catch {
+      sender = null;
+    }
     // const privyProvider = await wallets[0]?.getEthereumProvider?.();
 
     const privyProvider = await wallets[0]?.getEthereumProvider?.();
@@ -245,13 +253,33 @@ export function SendToRawAddressDrawer({
           });
         }
       } else {
-        await connect({ connector: farcasterFrame() });
+        const connector = connectors[0];
+        if (!connector) return;
+        await connect({ connector });
         return;
       }
 
       setLastTxHash(txHash);
       setShowSuccess(true);
       setSuccessMessage(`Sent ${parsedAmount} ${selectedToken}`);
+
+      if (walletAddress) {
+        void fetch("/api/activity/client-transfer", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            senderAddress: walletAddress,
+            recipientAddress: address,
+            amount: parsedAmount,
+            token: selectedToken,
+            txHash,
+            recipientUsername: selectedUser?.username ?? null,
+            recipientPfp: selectedUser?.pfp_url ?? null,
+            senderUsername: sender,
+            recipientResolutionSource: selectedUser ? "farcaster" : "address",
+          }),
+        }).catch(() => {});
+      }
 
       if (selectedUser?.fid) {
         await fetch("/api/send-notif", {

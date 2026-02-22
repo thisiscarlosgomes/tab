@@ -4,7 +4,6 @@ import { useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { PaymentSuccessDrawer } from "@/components/app/PaymentSuccessDrawer";
 import { useAccount, useConnect, useSendTransaction } from "wagmi";
-import { farcasterFrame } from "@farcaster/frame-wagmi-connector";
 import {
   ResponsiveDialog,
   ResponsiveDialogContent,
@@ -25,7 +24,7 @@ type FarcasterUser = {
 
 export default function SendPage() {
   const { isConnected } = useAccount();
-  const { connect } = useConnect();
+  const { connect, connectors } = useConnect();
   const { sendTransactionAsync } = useSendTransaction();
 
   const [query, setQuery] = useState("");
@@ -67,7 +66,11 @@ export default function SendPage() {
   const handleSend = async () => {
     const ethAddress = selectedUser?.verified_addresses?.primary?.eth_address;
 
-    if (!isConnected) await connect({ connector: farcasterFrame() });
+    if (!isConnected) {
+      const connector = connectors[0];
+      if (!connector) return;
+      await connect({ connector });
+    }
     if (!ethAddress || !ethAddress.startsWith("0x")) return;
 
     setIsSending(true);

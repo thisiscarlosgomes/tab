@@ -3,7 +3,6 @@
 import { useParams } from "next/navigation";
 import { useEffect, useState } from "react";
 import { useAccount, useConnect } from "wagmi";
-import { farcasterFrame } from "@farcaster/frame-wagmi-connector";
 import sdk from "@farcaster/frame-sdk";
 import { QRCode } from "react-qrcode-logo";
 import NumberFlow from "@number-flow/react";
@@ -26,6 +25,7 @@ import { useFrameSplash } from "@/providers/FrameSplashProvider";
 import { toast } from "sonner";
 import { Drawer } from "vaul";
 import { shortAddress } from "@/lib/shortAddress";
+import { useTabIdentity } from "@/lib/useTabIdentity";
 
 interface Participant {
   address: string;
@@ -76,7 +76,12 @@ export default function SplitPage() {
   const { splitId } = useParams();
   const safeSplitId = Array.isArray(splitId) ? splitId[0] : (splitId ?? "");
   const { address, isConnected } = useAccount();
-  const { connect } = useConnect();
+  const { connect, connectors } = useConnect();
+  const {
+    fid: identityFid,
+    username: identityUsername,
+    pfp: identityPfp,
+  } = useTabIdentity();
 
   const [bill, setBill] = useState<SplitBill | null>(null);
   const [isJoining, setIsJoining] = useState(false);
@@ -113,17 +118,27 @@ export default function SplitPage() {
   useEffect(() => {
     let mounted = true;
 
-    sdk.context.then((ctx) => {
-      if (!mounted) return;
-      if (ctx?.user?.fid) {
-        setUserFid(ctx.user.fid);
-      }
-    });
+    sdk.context
+      .then((ctx) => {
+        if (!mounted) return;
+        if (ctx?.user?.fid) {
+          setUserFid(ctx.user.fid);
+        }
+      })
+      .catch(() => {
+        // no frame context in web mode
+      });
 
     return () => {
       mounted = false;
     };
   }, []);
+
+  useEffect(() => {
+    if (!userFid && identityFid) {
+      setUserFid(identityFid);
+    }
+  }, [identityFid, userFid]);
 
   const [paymentSuccess, setPaymentSuccess] = useState<{
     amount: number;
@@ -300,7 +315,12 @@ const paidCount = bill?.paid?.length ?? 0;
   );
 
   const handleJoin = async () => {
-    const ctx = await sdk.context;
+    let ctx: Awaited<typeof sdk.context> | null = null;
+    try {
+      ctx = await sdk.context;
+    } catch {
+      ctx = null;
+    }
 
     if (
       bill?.invitedOnly &&
@@ -310,14 +330,19 @@ const paidCount = bill?.paid?.length ?? 0;
       return;
     }
 
-    if (!isConnected) await connect({ connector: farcasterFrame() });
+    if (!isConnected) {
+      const connector = connectors[0];
+      if (!connector) return;
+      await connect({ connector });
+    }
     if (!address) return;
 
+    const participantFid = ctx?.user?.fid ?? identityFid ?? undefined;
     const participant: Participant = {
       address,
-      name: ctx.user?.username ?? address.slice(0, 6),
-      pfp: ctx.user?.pfpUrl ?? "",
-      fid: ctx.user?.fid!, // ✅ number
+      name: ctx?.user?.username ?? identityUsername ?? address.slice(0, 6),
+      pfp: ctx?.user?.pfpUrl ?? identityPfp ?? "",
+      fid: participantFid,
     };
 
     setIsJoining(true);

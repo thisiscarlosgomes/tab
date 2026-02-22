@@ -136,12 +136,11 @@ export default function ActivityPage() {
       if (cached && Date.now() - cached.ts < ACTIVITY_CACHE_TTL_MS) {
         setActivity(cached.activity);
         setLoading(false);
-        return;
       }
 
       if (!cached) {
         setLoading(true);
-      } else {
+      } else if (!(cached && Date.now() - cached.ts < ACTIVITY_CACHE_TTL_MS)) {
         // Show stale cached activity while refreshing in the background.
         setActivity(cached.activity);
         setLoading(false);

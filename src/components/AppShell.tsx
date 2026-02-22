@@ -25,11 +25,12 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     pathname.startsWith("/receive/") ||
     pathname.startsWith("/join-split") ||
     pathname.startsWith("/agent/claim/");
+  const isSplitNewRoute = /^\/split\/new\/?$/.test(pathname);
   const hideHeaderOnRoute =
-    pathname.startsWith("/split") ||
-    pathname.startsWith("/game") ||
+    (pathname.startsWith("/split") && !isSplitNewRoute) ||
     pathname === "/table" ||
     pathname === "/rooms";
+  const showDesktopHeaderOnly = pathname.startsWith("/game");
   const hasLinkedFarcaster = useMemo(
     () =>
       Boolean(
@@ -124,6 +125,11 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   return (
     <div className="bg-background min-h-screen w-full overflow-x-hidden overflow-y-auto scrollbar-hide">
       {isAuthed && !hideHeaderOnRoute ? <Header /> : null}
+      {isAuthed && hideHeaderOnRoute && showDesktopHeaderOnly ? (
+        <div className="hidden md:block">
+          <Header />
+        </div>
+      ) : null}
       {children}
       <InstallQrCard />
       {isAuthed ? <div className="md:hidden"><FooterNav /></div> : null}

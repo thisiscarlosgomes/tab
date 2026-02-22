@@ -3,7 +3,6 @@
 import { Drawer } from "vaul";
 import { useEffect, useState } from "react";
 import { useAccount, useConnect, useSendTransaction } from "wagmi";
-import { farcasterFrame } from "@farcaster/frame-wagmi-connector";
 import { shortAddress } from "@/lib/shortAddress";
 import { Button } from "../ui/button";
 import { PaymentSuccessDrawer } from "./PaymentSuccessDrawer";
@@ -19,6 +18,7 @@ import { useWallets } from "@privy-io/react-auth";
 import { base } from "viem/chains";
 
 import { toast } from "sonner";
+import { useTabIdentity } from "@/lib/useTabIdentity";
 
 type FarcasterUser = {
   fid: number;
@@ -70,9 +70,15 @@ export function SendToAddressDrawer({
   token?: string; // ✅ add this
 }) {
   const { isConnected } = useAccount();
-  const { connect } = useConnect();
+  const { connect, connectors } = useConnect();
   const { sendTransactionAsync } = useSendTransaction();
   const { wallets } = useWallets();
+  const {
+    fid: identityFid,
+    username: identityUsername,
+    pfp: identityPfp,
+    address: identityAddress,
+  } = useTabIdentity();
 
   const [sending, setSending] = useState(false);
   const [showSuccess, setShowSuccess] = useState(false);
@@ -111,8 +117,12 @@ export function SendToAddressDrawer({
 
   useEffect(() => {
     const checkFrame = async () => {
-      const context = await sdk.context;
-      setInsideFrame(!!context);
+      try {
+        const context = await sdk.context;
+        setInsideFrame(!!context);
+      } catch {
+        setInsideFrame(false);
+      }
     };
 
     checkFrame();
@@ -165,8 +175,15 @@ export function SendToAddressDrawer({
 
   useEffect(() => {
     const resolveAddress = async () => {
-      const context = await sdk.context;
-      const username = context?.user?.username;
+      let username = identityUsername;
+      if (!username) {
+        try {
+          const context = await sdk.context;
+          username = context?.user?.username ?? null;
+        } catch {
+          username = null;
+        }
+      }
 
       if (username) {
         const res = await fetch(
@@ -180,11 +197,17 @@ export function SendToAddressDrawer({
           setUserAddress(verified.toLowerCase());
         }
         setVerifiedEthAddresses(allEth.map((a: string) => a.toLowerCase()));
+        return;
+      }
+
+      if (identityAddress) {
+        setUserAddress(identityAddress.toLowerCase());
+        setVerifiedEthAddresses([identityAddress.toLowerCase()]);
       }
     };
 
     resolveAddress();
-  }, []);
+  }, [identityAddress, identityUsername]);
 
   useEffect(() => {
     if (!invitedOnly || verifiedEthAddresses.length === 0) {
@@ -221,14 +244,15 @@ export function SendToAddressDrawer({
   const handleSend = async () => {
     if (!address || !amount || amount <= 0) return;
 
-    const context = await sdk.context;
-    const fid = context?.user?.fid;
-    const username = context?.user?.username;
-
-    if (!fid) {
-      toast.error("Could not identify Farcaster user");
-      return;
+    let context: Awaited<typeof sdk.context> | null = null;
+    try {
+      context = await sdk.context;
+    } catch {
+      context = null;
     }
+    const fid = context?.user?.fid ?? identityFid ?? undefined;
+    const username = context?.user?.username ?? identityUsername ?? null;
+    const senderPfp = context?.user?.pfpUrl ?? identityPfp ?? "";
 
     const privyProvider = await wallets[0]?.getEthereumProvider?.();
 
@@ -294,7 +318,12 @@ export function SendToAddressDrawer({
           });
         }
       } else {
-        await connect({ connector: farcasterFrame() });
+        const connector = connectors[0];
+        if (!connector) {
+          setSending(false);
+          return;
+        }
+        await connect({ connector });
         setSending(false);
         return;
       }
@@ -309,9 +338,37 @@ export function SendToAddressDrawer({
           : `Sent ${amount.toFixed(2)} ${effectiveToken}`
       );
 
+      if (!splitId) {
+        const senderAddress =
+          (userAddress ?? identityAddress ?? wallets[0]?.address ?? null)?.toLowerCase() ?? null;
+        if (senderAddress) {
+          void fetch("/api/activity/client-transfer", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              senderAddress,
+              recipientAddress: address,
+              amount,
+              token: effectiveToken,
+              txHash,
+              recipientUsername: farcasterUsername ?? null,
+              recipientPfp: farcasterPfp ?? null,
+              senderUsername: username ?? null,
+              senderPfp: senderPfp || null,
+              recipientResolutionSource: farcasterUsername ? "farcaster" : "address",
+            }),
+          }).catch(() => {});
+        }
+      }
+
       // --- UPDATE SPLIT (CRITICAL FIX) ---
       if (splitId) {
-        let senderAddress = address.toLowerCase();
+        let senderAddress = (
+          userAddress ??
+          identityAddress ??
+          wallets[0]?.address ??
+          address
+        ).toLowerCase();
 
         // Resolve verified address (authoritative)
         if (username) {
@@ -329,7 +386,7 @@ export function SendToAddressDrawer({
           fid, // ✅ CANONICAL
           address: senderAddress,
           name: username ?? senderAddress.slice(0, 6),
-          pfp: context.user?.pfpUrl ?? "",
+          pfp: senderPfp,
         };
 
         // 🔥 ALWAYS PATCH — backend handles dedupe
@@ -345,6 +402,7 @@ export function SendToAddressDrawer({
               txHash,
               token: effectiveToken,
               amount, // ✅ REQUIRED
+              pfp: senderPfp,
             },
           }),
         });

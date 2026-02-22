@@ -3,7 +3,6 @@
 import { Drawer } from "vaul";
 import { useEffect, useState } from "react";
 import { useAccount, useConnect, useSendTransaction } from "wagmi";
-import { farcasterFrame } from "@farcaster/frame-wagmi-connector";
 import { shortAddress } from "@/lib/shortAddress";
 import { Button } from "../ui/button";
 import { PaymentSuccessDrawer } from "@/components/app/PaymentSuccessDrawer";
@@ -40,7 +39,7 @@ export function SendToUserDrawer({
   onOpenChange: (v: boolean) => void;
 }) {
   const { isConnected, address: userAddress } = useAccount(); // Get the connected user's address
-  const { connect } = useConnect();
+  const { connect, connectors } = useConnect();
   const { sendTransactionAsync } = useSendTransaction();
 
   const [amount, setAmount] = useState("0");
@@ -111,7 +110,11 @@ export function SendToUserDrawer({
     const parsedAmount = parseFloat(amount);
     if (!user?.verified_addresses?.primary?.eth_address) return;
     if (isNaN(parsedAmount) || parsedAmount <= 0) return;
-    if (!isConnected) await connect({ connector: farcasterFrame() });
+    if (!isConnected) {
+      const connector = connectors[0];
+      if (!connector) return;
+      await connect({ connector });
+    }
 
     setSendStatus("confirming");
     setSending(true);
@@ -150,9 +153,31 @@ export function SendToUserDrawer({
       setLastRecipientUsername(user.username);
       setShowSuccess(true);
 
+      if (userAddress) {
+        void fetch("/api/activity/client-transfer", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            senderAddress: userAddress,
+            recipientAddress: recipient,
+            amount: parsedAmount,
+            token: selectedToken,
+            txHash,
+            recipientUsername: user.username ?? null,
+            recipientPfp: user.pfp_url ?? null,
+            recipientResolutionSource: "farcaster",
+          }),
+        }).catch(() => {});
+      }
+
       // Send notification to recipient
-      const context = await sdk.context;
-      const senderUsername = context.user?.username;
+      let senderUsername: string | null = null;
+      try {
+        const context = await sdk.context;
+        senderUsername = context?.user?.username ?? null;
+      } catch {
+        senderUsername = null;
+      }
       await fetch("/api/send-notif", {
         method: "POST",
         headers: { "Content-Type": "application/json" },

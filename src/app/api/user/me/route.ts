@@ -11,6 +11,7 @@ export async function GET(req: NextRequest) {
     bucket: "user-me-get",
     limit: 120,
     windowMs: 60_000,
+    allowBearerAuthorization: true,
   });
   if (denied) return denied;
 

@@ -10,6 +10,7 @@ export async function POST(req: NextRequest) {
     bucket: "user-sync-post",
     limit: 80,
     windowMs: 60_000,
+    allowBearerAuthorization: true,
   });
   if (denied) return denied;
 

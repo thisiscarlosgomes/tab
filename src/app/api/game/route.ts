@@ -111,17 +111,15 @@ export async function POST(req: NextRequest) {
   }
 
   /* ---------- activity (non-blocking) ---------- */
-  try {
-    await writeActivity({
-      address,
-      type: "room_created",
-      refType: "room",
-      refId: gameId,
-      timestamp: createdAt,
-    });
-  } catch (err) {
+  void writeActivity({
+    address,
+    type: "room_created",
+    refType: "room",
+    refId: gameId,
+    timestamp: createdAt,
+  }).catch((err) => {
     console.error("⚠️ Activity write failed", err);
-  }
+  });
 
   console.log("🎉 Room created:", gameId);
 

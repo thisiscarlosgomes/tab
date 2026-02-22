@@ -41,6 +41,8 @@ interface Room {
   admin?: string;
   createdAt: string;
   name: string | null;
+  chosen?: { address?: string | null } | null;
+  paid?: { address: string }[];
 }
 
 type ProfileTab = "splits" | "spins";
@@ -438,6 +440,14 @@ export default function ProfilePage() {
     }
     return false;
   }).length;
+  const unpaidSpinsCount = userRooms.filter((room) => {
+    const chosenAddress = room.chosen?.address?.toLowerCase();
+    if (!chosenAddress) return true;
+
+    return !(room.paid ?? []).some(
+      (payment) => payment.address?.toLowerCase() === chosenAddress
+    );
+  }).length;
   const renderProfileSkeleton = () => (
     <div className="min-h-screen w-full flex flex-col items-center p-4 pt-16 pb-40 overflow-y-auto scrollbar-hide">
       <div className="w-full max-w-md">
@@ -806,7 +816,7 @@ export default function ProfilePage() {
             className={`w-1/2 pb-3 text-lg font-medium transition relative ${activeTab === "spins" ? "text-white" : "text-white/50"
               }`}
           >
-            Spins
+            {unpaidSpinsCount > 0 ? `Spins (${unpaidSpinsCount})` : "Spins"}
             {activeTab === "spins" && (
               <span className="absolute left-0 right-0 -bottom-[1px] h-1 bg-primary rounded-full" />
             )}

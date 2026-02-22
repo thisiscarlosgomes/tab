@@ -3,9 +3,9 @@
 import { useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useAccount, useConnect } from "wagmi";
-import { farcasterFrame } from "@farcaster/frame-wagmi-connector";
 import sdk from "@farcaster/frame-sdk";
 import { SendToAddressDrawer } from "@/components/app/SendToAddressDrawer";
+import { useTabIdentity } from "@/lib/useTabIdentity";
 
 interface Participant {
   address: string;
@@ -27,7 +27,9 @@ export default function JoinSplitPage() {
   const amount = searchParams.get("amount");
 
   const { address, isConnected } = useAccount();
-  const { connect } = useConnect();
+  const { connect, connectors } = useConnect();
+  const { fid: identityFid, username: identityUsername, pfp: identityPfp } =
+    useTabIdentity();
   const [status, setStatus] = useState("Connecting...");
   const [showPay, setShowPay] = useState(false);
   const [billName, setBillName] = useState<string>("");
@@ -51,18 +53,30 @@ export default function JoinSplitPage() {
         setBillName(bill.description);
 
         if (!isConnected) {
-          await connect({ connector: farcasterFrame() });
+          const connector = connectors[0];
+          if (!connector) return;
+          await connect({ connector });
         }
         if (!address) return;
 
         setStatus("Joining tab...");
 
-        const context = await sdk.context;
+        let context: Awaited<typeof sdk.context> | null = null;
+        try {
+          context = await sdk.context;
+        } catch {
+          context = null;
+        }
         const participant: Participant = {
           address,
-          name: context.user?.username ?? address.slice(0, 6),
-          pfp: context.user?.pfpUrl ?? "",
-          fid: context.user?.fid?.toString() ?? "",
+          name: context?.user?.username ?? identityUsername ?? address.slice(0, 6),
+          pfp: context?.user?.pfpUrl ?? identityPfp ?? "",
+          fid:
+            context?.user?.fid != null
+              ? String(context.user.fid)
+              : identityFid != null
+                ? String(identityFid)
+                : "",
         };
 
         await fetch(`/api/split/${splitId}`, {
@@ -85,7 +99,7 @@ export default function JoinSplitPage() {
     };
 
     joinSplit();
-  }, [splitId, isConnected, address, connect, router, payTo, amount]);
+  }, [splitId, isConnected, address, connect, connectors, router, payTo, amount]);
 
   return (
     <>

@@ -87,7 +87,7 @@ export async function GET(req: NextRequest) {
     const syntheticFromMoralis = shouldFetchMoralis
       ? (await fetchMoralisTransferActivity(address, {
           limit: Math.min(limit, 30),
-          direction: "received",
+          direction: "all",
         }))
           .filter((doc) => {
             if (!beforeDate) return true;

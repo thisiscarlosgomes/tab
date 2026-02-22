@@ -11,6 +11,7 @@ type GuardOptions = {
   limit: number;
   windowMs: number;
   requireInternalSecret?: boolean;
+  allowBearerAuthorization?: boolean;
 };
 
 const RATE_LIMIT_STORE_KEY = "__tab_rate_limit_store__";
@@ -48,17 +49,45 @@ function parseOrigin(raw: string | null): string | null {
   }
 }
 
+function addOriginWithCommonVariants(origins: Set<string>, origin: string) {
+  origins.add(origin);
+
+  try {
+    const parsed = new URL(origin);
+    const hostname = parsed.hostname.toLowerCase();
+
+    // Trust both apex and www forms for the same configured domain.
+    if (hostname.startsWith("www.")) {
+      const apex = hostname.slice(4);
+      if (apex) {
+        const apexUrl = new URL(origin);
+        apexUrl.hostname = apex;
+        origins.add(apexUrl.origin);
+      }
+      return;
+    }
+
+    if (hostname.includes(".") && hostname !== "localhost" && hostname !== "127.0.0.1") {
+      const wwwUrl = new URL(origin);
+      wwwUrl.hostname = `www.${hostname}`;
+      origins.add(wwwUrl.origin);
+    }
+  } catch {
+    // ignore invalid origins
+  }
+}
+
 function getAllowedOrigins(): Set<string> {
   const origins = new Set<string>();
   const candidates = [process.env.PUBLIC_URL, process.env.NEXT_PUBLIC_URL];
 
   for (const candidate of candidates) {
     const parsed = parseOrigin(candidate ?? null);
-    if (parsed) origins.add(parsed);
+    if (parsed) addOriginWithCommonVariants(origins, parsed);
   }
 
   if (process.env.VERCEL_URL) {
-    origins.add(`https://${process.env.VERCEL_URL}`);
+    addOriginWithCommonVariants(origins, `https://${process.env.VERCEL_URL}`);
   }
 
   if (process.env.NODE_ENV !== "production") {
@@ -158,12 +187,15 @@ export function requireTrustedRequest(
 ): Response | null {
   const isInternal = hasValidInternalSecret(req);
   const trustedOrigin = isTrustedOrigin(req);
+  const hasBearerAuthorization =
+    options.allowBearerAuthorization === true &&
+    /^bearer\s+\S+/i.test(req.headers.get("authorization") ?? "");
 
   if (options.requireInternalSecret) {
     if (!isInternal) {
       return Response.json({ error: "Unauthorized" }, { status: 401 });
     }
-  } else if (!isInternal && !trustedOrigin) {
+  } else if (!isInternal && !trustedOrigin && !hasBearerAuthorization) {
     return Response.json({ error: "Forbidden origin" }, { status: 403 });
   }
 

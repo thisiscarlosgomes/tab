@@ -3,7 +3,6 @@
 import { useEffect, useRef, useState, useMemo } from "react";
 import { useSendDrawer } from "@/providers/SendDrawerProvider";
 import { useAccount, useConnect, useSendTransaction } from "wagmi";
-import { farcasterFrame } from "@farcaster/frame-wagmi-connector";
 
 import { Button } from "../ui/button";
 import { shortAddress } from "@/lib/shortAddress";
@@ -92,9 +91,10 @@ export function GlobalSendDrawer() {
   const {
     fid: identityFid,
     username: identityUsername,
+    pfp: identityPfp,
     address: identityAddress,
   } = useTabIdentity();
-  const { connect } = useConnect();
+  const { connect, connectors } = useConnect();
   const { sendTransactionAsync } = useSendTransaction();
 
   const inputRef = useRef<HTMLInputElement>(null);
@@ -142,7 +142,12 @@ export function GlobalSendDrawer() {
 
   useEffect(() => {
     const detectShareContext = async () => {
-      const context = await sdk.context;
+      let context: Awaited<typeof sdk.context> | null = null;
+      try {
+        context = await sdk.context;
+      } catch {
+        return;
+      }
 
       if (context?.location?.type === "cast_share") {
         const cast = context.location.cast as unknown as EnrichedCast;
@@ -392,7 +397,11 @@ export function GlobalSendDrawer() {
   const handleSend = async () => {
     const parsedAmount = parseFloat(amount);
     if (!selectedUser?.verified_addresses?.primary?.eth_address) return;
-    if (!isConnected) await connect({ connector: farcasterFrame() });
+    if (!isConnected) {
+      const connector = connectors[0];
+      if (!connector) return;
+      await connect({ connector });
+    }
     if (isNaN(parsedAmount) || parsedAmount <= 0) return;
 
     // ✅ Add this check here
@@ -452,6 +461,25 @@ export function GlobalSendDrawer() {
       setSendDrawerOpen(false);
       setShowSuccess(true);
       close();
+
+      if (walletAddress) {
+        void fetch("/api/activity/client-transfer", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            senderAddress: walletAddress,
+            recipientAddress: recipient,
+            amount: parsedAmount,
+            token: selectedToken,
+            txHash,
+            recipientUsername: selectedUser?.username ?? null,
+            recipientPfp: selectedUser?.pfp_url ?? null,
+            senderUsername: identityUsername ?? null,
+            senderPfp: identityPfp ?? null,
+            recipientResolutionSource: "farcaster",
+          }),
+        }).catch(() => {});
+      }
 
       await fetch("/api/send-notif", {
         method: "POST",

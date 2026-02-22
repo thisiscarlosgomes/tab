@@ -1,9 +1,8 @@
 "use client";
 
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useAccount, useConnect } from "wagmi";
-import { farcasterFrame } from "@farcaster/frame-wagmi-connector";
 import sdk from "@farcaster/frame-sdk";
 import { nanoid } from "nanoid";
 import { Drawer } from "vaul";
@@ -16,6 +15,7 @@ import { LoaderCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { tokenList } from "@/lib/tokens";
 import { getTokenPrices } from "@/lib/getTokenPrices";
+import { useTabIdentity } from "@/lib/useTabIdentity";
 
 type FarcasterUser = {
   fid: number;
@@ -127,7 +127,13 @@ function ReceiptUploader({ onParsed }: { onParsed: (data: any) => void }) {
 export default function SplitNewPage() {
   const router = useRouter();
   const { address, isConnected } = useAccount();
-  const { connect } = useConnect();
+  const { connect, connectors } = useConnect();
+  const {
+    fid: identityFid,
+    username: identityUsername,
+    pfp: identityPfp,
+    address: identityAddress,
+  } = useTabIdentity();
 
   // ----------------------------
   // DEFAULT TOKEN = USDC
@@ -162,6 +168,7 @@ export default function SplitNewPage() {
   const invitedCount = selectedFollowers.length;
 
   const [query, setQuery] = useState("");
+  const followerSearchRequestRef = useRef(0);
 
   const [debtorCount, setDebtorCount] = useState<number | string>("");
 
@@ -220,24 +227,57 @@ export default function SplitNewPage() {
   // --------------------------
   useEffect(() => {
     const delay = setTimeout(async () => {
-      if (!query.trim()) {
+      const trimmedQuery = query.trim();
+      if (!trimmedQuery) {
         setFilteredFollowers(followers);
         return;
       }
 
-      const res = await fetch(
-        `/api/neynar/user/search?q=${encodeURIComponent(query)}`
-      );
-      const data = await res.json();
+      const q = trimmedQuery.toLowerCase().replace(/^@/, "");
+      const localMatches = followers.filter((u) => {
+        const username = (u.username ?? "").toLowerCase();
+        const displayName = (u.display_name ?? "").toLowerCase();
+        return username.includes(q) || displayName.includes(q);
+      });
 
-      setFilteredFollowers(
-        (data.users || [])
-          .filter(
-            (u: FarcasterUser) => u.verified_addresses?.primary?.eth_address
-          )
-          .slice(0, 20)
-      );
-    }, 250);
+      // Render local results immediately so typing feels instant.
+      setFilteredFollowers(localMatches.slice(0, 50));
+
+      // Avoid remote search for very short queries; local filtering is enough.
+      if (q.length < 2) return;
+
+      const requestId = ++followerSearchRequestRef.current;
+
+      try {
+        const res = await fetch(
+          `/api/neynar/user/search?q=${encodeURIComponent(trimmedQuery)}`
+        );
+        const data = await res.json().catch(() => null);
+        const remoteUsers = Array.isArray(data)
+          ? data
+          : Array.isArray(data?.users)
+            ? data.users
+            : [];
+
+        if (requestId !== followerSearchRequestRef.current) return;
+
+        const remoteMatches = remoteUsers.filter(
+          (u: FarcasterUser) => u.verified_addresses?.primary?.eth_address
+        );
+
+        const seen = new Set<number>();
+        const merged = [...localMatches, ...remoteMatches].filter((u) => {
+          if (!u || typeof u.fid !== "number") return false;
+          if (seen.has(u.fid)) return false;
+          seen.add(u.fid);
+          return true;
+        });
+
+        setFilteredFollowers(merged.slice(0, 50));
+      } catch {
+        // Keep local matches if remote search fails.
+      }
+    }, 150);
 
     return () => clearTimeout(delay);
   }, [query, followers]);
@@ -247,28 +287,46 @@ export default function SplitNewPage() {
   // --------------------------
   useEffect(() => {
     (async () => {
-      const context = await sdk.context;
-      const username = context.user?.username;
-      if (!username) return;
+      let fid = identityFid;
+      let username = identityUsername;
+      let address = identityAddress;
 
-      const res = await fetch(
-        `/api/neynar/user/following?username=${username}`
-      );
-      const data = await res.json();
+      if (!fid && !username && !address) {
+        try {
+          const context = await sdk.context;
+          fid = context?.user?.fid ?? null;
+          username = context?.user?.username ?? null;
+        } catch {
+          fid = null;
+          username = null;
+        }
+      }
+      const followingQuery = fid
+        ? `fid=${encodeURIComponent(String(fid))}`
+        : username
+          ? `username=${encodeURIComponent(username)}`
+          : address
+            ? `address=${encodeURIComponent(address)}`
+            : null;
+
+      if (!followingQuery) return;
+
+      const res = await fetch(`/api/neynar/user/following?${followingQuery}`);
+      const data = await res.json().catch(() => []);
 
       if (Array.isArray(data)) {
         const top = data
-          .slice(0, 50)
-          .map((e) => e.user)
+          .map((e) => e?.user ?? e)
           .filter(
             (u: FarcasterUser) => u.verified_addresses?.primary?.eth_address
-          );
+          )
+          .slice(0, 50);
 
         setFollowers(top);
         setFilteredFollowers(top);
       }
     })();
-  }, []);
+  }, [identityFid, identityUsername, identityAddress]);
 
   // --------------------------
   // Create split
@@ -280,12 +338,19 @@ export default function SplitNewPage() {
 
     try {
       if (!isConnected) {
-        await connect({ connector: farcasterFrame() });
+        const connector = connectors[0];
+        if (!connector) throw new Error("No wallet connector available");
+        await connect({ connector });
       }
       if (!address) throw new Error("No wallet address");
 
-      const context = await sdk.context;
-      if (!context.user?.fid) throw new Error("Missing FID");
+      let frameUser: Awaited<typeof sdk.context>["user"] | undefined;
+      try {
+        const context = await sdk.context;
+        frameUser = context?.user;
+      } catch {
+        frameUser = undefined;
+      }
 
       const splitId = nanoid();
       const finalTotalAmount = parseFloat(totalAmount);
@@ -295,10 +360,10 @@ export default function SplitNewPage() {
       }
 
       const creator = {
-        fid: context.user.fid, // ✅ number
+        fid: frameUser?.fid ?? identityFid ?? null,
         address,
-        name: context.user.username ?? address.slice(0, 6),
-        pfp: context.user.pfpUrl ?? "",
+        name: frameUser?.username ?? identityUsername ?? address.slice(0, 6),
+        pfp: frameUser?.pfpUrl ?? identityPfp ?? "",
       };
 
       const recipient =
@@ -355,7 +420,20 @@ export default function SplitNewPage() {
         throw new Error("Failed to create split");
       }
 
-      router.push(`/split/${splitId}`);
+      const targetPath = `/split/${splitId}`;
+
+      // Next router navigation can be flaky in embedded webviews; fall back to a hard navigation.
+      try {
+        router.push(targetPath);
+      } catch {
+        // Ignore and use hard navigation below.
+      }
+
+      setTimeout(() => {
+        if (window.location.pathname !== targetPath) {
+          window.location.assign(targetPath);
+        }
+      }, 75);
     } catch (err) {
       console.error("handleCreate error:", err);
     } finally {

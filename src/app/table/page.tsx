@@ -27,12 +27,21 @@ export default function SplitPage() {
   const [showHowItWorks, setShowHowItWorks] = useState(true);
 
   const buildPlayer = async () => {
-    const context = await sdk.context;
+    let context: Awaited<typeof sdk.context> | null = null;
+
+    try {
+      context = await sdk.context;
+    } catch {
+      context = null;
+    }
+
+    const frameUser = context?.user;
+
     return {
       address: address!.toLowerCase(),
-      name: context.user?.username ?? address?.slice(0, 6),
-      pfp: context.user?.pfpUrl ?? null,
-      fid: context.user?.fid ?? null,
+      name: frameUser?.username ?? address?.slice(0, 6),
+      pfp: frameUser?.pfpUrl ?? null,
+      fid: frameUser?.fid ?? null,
     };
   };
 
@@ -59,8 +68,17 @@ export default function SplitPage() {
 
       const data = await res.json();
       if (!res.ok) throw new Error(data?.error || "Failed to create room");
+      if (!data?.gameId) throw new Error("Room created but no gameId returned");
 
-      router.push(`/game/${data.gameId}`);
+      const nextUrl = `/game/${data.gameId}`;
+      router.push(nextUrl);
+
+      // Fallback for embedded webviews where Next client navigation can be flaky.
+      setTimeout(() => {
+        if (typeof window !== "undefined" && window.location.pathname !== nextUrl) {
+          window.location.assign(nextUrl);
+        }
+      }, 150);
     } catch (err: any) {
       setError(err.message ?? "Something went wrong");
     } finally {
