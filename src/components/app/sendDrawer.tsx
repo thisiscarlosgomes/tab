@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useRef, useState, useMemo } from "react";
-import { Drawer } from "vaul";
 import { useSendDrawer } from "@/providers/SendDrawerProvider";
 import { useAccount, useConnect, useSendTransaction } from "wagmi";
 import { farcasterFrame } from "@farcaster/frame-wagmi-connector";
@@ -15,13 +14,23 @@ import { getTokenBalance } from "@/lib/getTokenBalance";
 import { tokenList } from "@/lib/tokens"; // or define inline
 import { getTokenPrices } from "@/lib/getTokenPrices"; // or define inline
 import { useWriteContract } from "wagmi";
-import { erc20Abi, parseUnits } from "viem";
-import { useWallets } from "@privy-io/react-auth";
+import { createPublicClient, erc20Abi, http, parseUnits } from "viem";
+import { mainnet } from "viem/chains";
+import { normalize } from "viem/ens";
+import { usePrivy, useWallets } from "@privy-io/react-auth";
 
 import { LoaderCircle } from "lucide-react";
 // import { useAddPoints } from "@/lib/useAddPoints";
 
 import { getTokenBalances } from "@/hooks/getTokenBalances";
+import { useTabIdentity } from "@/lib/useTabIdentity";
+import { UserAvatar } from "@/components/ui/user-avatar";
+import { Skeleton } from "@/components/ui/skeleton";
+import {
+  ResponsiveDialog,
+  ResponsiveDialogContent,
+  ResponsiveDialogTitle,
+} from "@/components/ui/responsive-dialog";
 
 type FarcasterUser = {
   fid: number;
@@ -79,12 +88,19 @@ export function GlobalSendDrawer() {
   } = useSendDrawer();
 
   const { isConnected, address } = useAccount();
+  const { user } = usePrivy();
+  const {
+    fid: identityFid,
+    username: identityUsername,
+    address: identityAddress,
+  } = useTabIdentity();
   const { connect } = useConnect();
   const { sendTransactionAsync } = useSendTransaction();
 
   const inputRef = useRef<HTMLInputElement>(null);
 
   const [results, setResults] = useState<FarcasterUser[]>([]);
+  const [isSearching, setIsSearching] = useState(false);
   // const [selectedUser, setSelectedUser] = useState<FarcasterUser | null>(null);
   const [amount, setAmount] = useState("0");
   const [sendDrawerOpen, setSendDrawerOpen] = useState(false);
@@ -92,7 +108,6 @@ export function GlobalSendDrawer() {
   const [lastSentAmount, setLastSentAmount] = useState(0.01);
   const [customMessage, setCustomMessage] = useState("💸");
   const [lastMessage, setLastMessage] = useState("");
-  const [username, setUsername] = useState<string | null>(null);
 
   const [lastTxHash, setLastTxHash] = useState<string | null>(null);
   // const [tokenType, setTokenType] = useState(tokenList[2]?.name ?? "ETH");
@@ -106,6 +121,8 @@ export function GlobalSendDrawer() {
   const [successRecipient, setSuccessRecipient] = useState<string | null>(null);
 
   const { wallets } = useWallets();
+  const linkedFarcasterFid = user?.farcaster?.fid ?? null;
+  const linkedFarcasterUsername = user?.farcaster?.username ?? null;
   const walletAddress = useMemo(() => {
     return isConnected && address ? address : (wallets[0]?.address ?? null);
   }, [isConnected, address, wallets]);
@@ -154,10 +171,7 @@ export function GlobalSendDrawer() {
     (async () => {
       const balances = await getTokenBalances({
         address: walletAddress as `0x${string}`,
-        tokens: tokenList.filter(
-          (t): t is typeof t & { address: string } =>
-            typeof t.address === "string"
-        ),
+        tokens: tokenList,
       });
       setTokenBalances(balances);
     })();
@@ -196,11 +210,100 @@ export function GlobalSendDrawer() {
   }, [selectedUser, walletAddress, tokenBalances]);
 
   useEffect(() => {
-    if (!isOpen || !address || mode !== "search") return;
+    if (!isOpen || mode !== "search" || query.trim() !== "") return;
+
+    const cacheKey =
+      (linkedFarcasterFid ? `fid:${linkedFarcasterFid}` : null) ??
+      linkedFarcasterUsername ??
+      identityUsername ??
+      identityAddress;
+
+    if (!cacheKey) return;
+
+    try {
+      const cached = localStorage.getItem(`tab_friends_${cacheKey}`);
+      if (!cached) return;
+      const parsed = JSON.parse(cached);
+      if (Array.isArray(parsed) && parsed.length > 0) {
+        setResults(parsed);
+      }
+    } catch {
+      // ignore bad cache payloads
+    }
+  }, [
+    isOpen,
+    mode,
+    query,
+    linkedFarcasterFid,
+    linkedFarcasterUsername,
+    identityUsername,
+    identityAddress,
+  ]);
+
+  useEffect(() => {
+    if (!isOpen || mode !== "search") return;
 
     const delay = setTimeout(async () => {
       try {
         if (query.trim()) {
+          setIsSearching(true);
+          const trimmedQuery = query.trim();
+          const normalizedQuery = trimmedQuery.replace(/^@/, "");
+
+          if (normalizedQuery.toLowerCase().endsWith(".eth")) {
+            try {
+              const ensClient = createPublicClient({
+                chain: mainnet,
+                transport: http(),
+              });
+              const ensAddress = await ensClient.getEnsAddress({
+                name: normalize(normalizedQuery.toLowerCase()),
+              });
+
+              if (!ensAddress) {
+                setResults([]);
+                return;
+              }
+
+              const profileRes = await fetch(
+                `/api/neynar/user/by-address/${ensAddress}`
+              );
+              const profile = await profileRes.json().catch(() => null);
+
+              const ensResult: FarcasterUser = {
+                fid:
+                  typeof profile?.fid === "number" && Number.isFinite(profile.fid)
+                    ? profile.fid
+                    : 0,
+                username:
+                  typeof profile?.username === "string" && profile.username
+                    ? profile.username
+                    : normalizedQuery,
+                display_name:
+                  typeof profile?.display_name === "string" &&
+                  profile.display_name
+                    ? profile.display_name
+                    : normalizedQuery,
+                pfp_url:
+                  typeof profile?.pfp_url === "string" ? profile.pfp_url : "",
+                verified_addresses:
+                  profile?.verified_addresses && typeof profile.verified_addresses === "object"
+                    ? profile.verified_addresses
+                    : {
+                        primary: {
+                          eth_address: ensAddress,
+                        },
+                      },
+              };
+
+              setResults([ensResult]);
+              return;
+            } catch {
+              setResults([]);
+              return;
+            }
+          }
+
           const res = await fetch(
             `/api/neynar/user/search?q=${encodeURIComponent(query)}`
           );
@@ -208,27 +311,63 @@ export function GlobalSendDrawer() {
           const searchResults = data.users?.slice(0, 10) || [];
           setResults(searchResults);
         } else {
-          const context = await sdk.context;
-          setUsername(context.user?.username ?? null);
-          const res = await fetch(
-            `/api/neynar/user/following?username=${username}`
-          );
+          const followingQuery = linkedFarcasterFid
+            ? `fid=${encodeURIComponent(String(linkedFarcasterFid))}`
+            : linkedFarcasterUsername
+              ? `username=${encodeURIComponent(linkedFarcasterUsername)}`
+              : identityFid
+                ? `fid=${encodeURIComponent(String(identityFid))}`
+            : identityUsername
+              ? `username=${encodeURIComponent(identityUsername)}`
+                : identityAddress
+                ? `address=${encodeURIComponent(identityAddress)}`
+                : null;
+
+          if (!followingQuery) {
+            setResults([]);
+            return;
+          }
+
+          const res = await fetch(`/api/neynar/user/following?${followingQuery}`);
           const data = await res.json();
 
           if (Array.isArray(data)) {
-            const top10Users = data.slice(0, 20).map((entry) => entry.user);
-            setResults(top10Users);
+            const next = data
+              .slice(0, 20)
+              .map((entry) => entry?.user ?? entry)
+              .filter(Boolean);
+            setResults(next);
+
+            const cacheKey =
+              (linkedFarcasterFid ? `fid:${linkedFarcasterFid}` : null) ??
+              linkedFarcasterUsername ??
+              identityUsername ??
+              identityAddress;
+            if (cacheKey) {
+              localStorage.setItem(`tab_friends_${cacheKey}`, JSON.stringify(next));
+            }
           } else {
             setResults([]);
           }
         }
       } catch {
         setResults([]);
+      } finally {
+        setIsSearching(false);
       }
     }, 300);
 
     return () => clearTimeout(delay);
-  }, [query, isOpen, address, mode]);
+  }, [
+    query,
+    isOpen,
+    mode,
+    linkedFarcasterFid,
+    linkedFarcasterUsername,
+    identityFid,
+    identityUsername,
+    identityAddress,
+  ]);
 
   useEffect(() => {
     const fetchPrices = async () => {
@@ -321,7 +460,7 @@ export function GlobalSendDrawer() {
           fid: selectedUser.fid,
           amount: parsedAmount,
           token: selectedToken, // <-- added
-          senderUsername: username,
+          senderUsername: identityUsername,
           message: customMessage,
         }),
       });
@@ -336,7 +475,14 @@ export function GlobalSendDrawer() {
     const num = parseFloat(value);
     if (isNaN(num)) return "0";
 
-    // Limit to 3 decimals but remove trailing zeroes
+    // Preserve small balances (e.g. 0.001 ETH) instead of rounding to 0.
+    if (num > 0 && num < 0.01) {
+      return num.toLocaleString("en-US", {
+        minimumFractionDigits: 0,
+        maximumFractionDigits: 4,
+      });
+    }
+
     return num.toLocaleString("en-US", {
       minimumFractionDigits: 0,
       maximumFractionDigits: 2,
@@ -359,29 +505,21 @@ export function GlobalSendDrawer() {
 
   return (
     <>
-      <Drawer.Root
+      <ResponsiveDialog
         open={isOpen}
         onOpenChange={(v) => {
           if (!v) close();
         }}
-        repositionInputs={false}
       >
-        <Drawer.Portal>
-          <Drawer.Overlay className="fixed inset-0 bg-[#4E4C52]/60 backdrop-blur-sm z-20" />
-          <Drawer.Content className="scroll-smooth z-50 fixed top-[80px] left-0 right-0 bottom-0 bg-background p-0 rounded-t-3xl flex flex-col">
-            {/* drag handle */}
-            <div
-              aria-hidden
-              className="mx-auto w-12 h-1.5 rounded-full bg-white/10 my-4"
-            />
+        <ResponsiveDialogContent className="scroll-smooth top-[80px] bottom-0 p-4 flex flex-col md:top-1/2 md:bottom-auto md:w-full md:max-w-md md:max-h-[85vh] md:overflow-hidden">
 
-            {!scannedUsername && (
+            {!scannedUsername && !sendDrawerOpen && (
               <>
                 {/* Fixed top section */}
-                <div className="px-4 sticky top-[80px] bg-background z-10">
-                  <Drawer.Title className="text-lg text-center font-medium">
+                <div className="pt-2 sticky top-0 bg-background z-10">
+                  <ResponsiveDialogTitle className="text-lg text-center font-medium">
                     Send
-                  </Drawer.Title>
+                  </ResponsiveDialogTitle>
                   <div className="relative w-full mt-4">
                     <span className="absolute left-4 top-1/2 -translate-y-1/2 text-white/30">
                       To:
@@ -389,7 +527,7 @@ export function GlobalSendDrawer() {
                     <input
                       ref={inputRef}
                       type="text"
-                      placeholder="username or name"
+                      placeholder="farcaster username, ens, or 0x..."
                       value={query}
                       onFocus={() => {
                         if (mode === "token") {
@@ -426,8 +564,23 @@ export function GlobalSendDrawer() {
                   </div>
                   <div className="h-4" /> {/* spacer */}
                 </div>
-                <div className="flex-1 overflow-y-auto px-4 pb-16 space-y-2">
+                <div className="flex-1 min-h-0 overflow-y-auto pb-16 space-y-2">
+                  {mode === "search" && query.trim() !== "" && isSearching &&
+                    Array.from({ length: 4 }).map((_, idx) => (
+                      <div
+                        key={`send-search-skeleton-${idx}`}
+                        className="flex items-center p-3 rounded-lg bg-white/5 w-full"
+                      >
+                        <Skeleton className="w-8 h-8 rounded-full mr-3 shrink-0 border-0 bg-white/10" />
+                        <div className="flex-1 min-w-0">
+                          <Skeleton className="h-4 w-28 rounded-md border-0 bg-white/10" />
+                          <Skeleton className="h-3 w-24 rounded-md border-0 bg-white/10 mt-2" />
+                        </div>
+                      </div>
+                    ))}
+
                   {mode === "search" &&
+                    !(query.trim() !== "" && isSearching) &&
                     results.map((user) => (
                       <button
                         key={user.fid}
@@ -439,9 +592,11 @@ export function GlobalSendDrawer() {
                         }}
                         className="flex items-center p-3 rounded-lg bg-white/5 hover:bg-white/10 w-full"
                       >
-                        <img
+                        <UserAvatar
                           src={user.pfp_url}
-                          className="w-8 h-8 rounded-full mr-3"
+                          seed={user.username ?? user.fid}
+                          width={32}
+                          className="w-8 h-8 rounded-full object-cover mr-3 shrink-0"
                         />
                         <div className="text-left">
                           <p className="text-primary font-medium">
@@ -457,6 +612,15 @@ export function GlobalSendDrawer() {
                         </div>
                       </button>
                     ))}
+
+                  {mode === "search" &&
+                    query.trim() !== "" &&
+                    !isSearching &&
+                    results.length === 0 && (
+                      <div className="py-8 text-center text-white/40 text-sm">
+                        No results
+                      </div>
+                    )}
 
                   {/* {mode === "token" && (
                     <div className="space-y-3">
@@ -508,7 +672,7 @@ export function GlobalSendDrawer() {
               </>
             )}
 
-            <Drawer.NestedRoot
+            <ResponsiveDialog
               open={sendDrawerOpen}
               onOpenChange={(v) => {
                 if (!v) {
@@ -519,32 +683,23 @@ export function GlobalSendDrawer() {
                   setCustomMessage("");
                   setSendStatus("idle");
 
-                  // DO NOT reset:
-                  // - selectedUser
-                  // - tokenBalances
-                  // - tokenPrices
-                  // - selectedToken
-                  // - mode
+                  // Close the parent search dialog too, so it doesn't reappear
+                  // when the send details dialog is dismissed.
+                  close();
+
+                  // Provider state (selected user/query/etc.) is reset by close().
                 }
               }}
-              repositionInputs={false}
             >
-              <Drawer.Portal>
-                <Drawer.Overlay className="fixed inset-0 bg-[#4E4C52]/60 backdrop-blur-sm z-50" />
-                <Drawer.Content className="z-50 fixed top-[80px] left-0 right-0 bottom-0 bg-background p-4 space-y-2 rounded-t-3xl h-[100dvh]">
-                  <div
-                    aria-hidden
-                    className="mx-auto w-12 h-1.5 rounded-full bg-white/10 mb-1"
-                  />
-                  <Drawer.Title className="text-lg text-center font-medium">
-                    <div className="flex flex-col items-center space-y-1">
+              <ResponsiveDialogContent className="top-[80px] bottom-0 bg-background p-4 space-y-2 rounded-t-3xl h-[100dvh] md:top-1/2 md:bottom-auto md:w-full md:max-w-md md:h-auto md:max-h-[85vh] md:rounded-2xl">
+                  <ResponsiveDialogTitle className="text-lg text-center font-medium">
+                    <div className="p-4 flex flex-col items-center space-y-1">
                       <div className="relative w-16 h-16 rounded-full bg-purple-100 text-purple-800 flex items-center justify-center">
-                        <img
-                          src={
-                            selectedUser?.pfp_url ||
-                            `https://api.dicebear.com/9.x/glass/svg?seed=${selectedUser?.username}`
-                          }
-                          alt={selectedUser?.username}
+                        <UserAvatar
+                          src={selectedUser?.pfp_url}
+                          seed={selectedUser?.username ?? selectedUser?.fid}
+                          width={64}
+                          alt={selectedUser?.username ?? "Recipient"}
                           className="w-16 h-16 rounded-full object-cover"
                         />
                         <img
@@ -553,16 +708,16 @@ export function GlobalSendDrawer() {
                               ?.icon!
                           }
                           alt={selectedToken!}
-                          className="absolute bottom-0 -right-2 w-6 h-6 rounded-full border-2 border-card"
+                          className="absolute bottom-0 -right-2 w-6 h-6 rounded-full border-2 border-card mb-2"
                         />
                       </div>
 
-                      <Drawer.Title className="text-lg font-medium text-center mt-4">
+                      <ResponsiveDialogTitle className="text-lg font-medium text-center mt-4 pt-4">
                         You're sending {""}
                         <span className="text-primary mt-2">
                           @{selectedUser?.username}
                         </span>
-                      </Drawer.Title>
+                      </ResponsiveDialogTitle>
 
                       <p className="text-white/30 break-all text-center">
                         {!selectedUser?.verified_addresses?.primary
@@ -573,7 +728,7 @@ export function GlobalSendDrawer() {
                         )}
                       </p>
                     </div>
-                  </Drawer.Title>
+                  </ResponsiveDialogTitle>
                   <div className="w-full text-center text-primary bg-transparent outline-none flex justify-center items-baseline">
                     <div className="flex flex-col">
                       <NumericFormat
@@ -594,7 +749,7 @@ export function GlobalSendDrawer() {
                         decimalScale={4}
                         // suffix={` ${selectedToken || ""}`}
                         prefix={getTokenSuffix(tokenType)}
-                        placeholder="$0"
+                        placeholder={`${getTokenSuffix(tokenType)}0`}
                         className={`leading-none text-5xl bg-transparent text-center font-medium outline-none w-full placeholder-white/20 ${
                           amount === "" || amount === "0"
                             ? "text-white/20"
@@ -612,7 +767,9 @@ export function GlobalSendDrawer() {
                             </span>
                             <span
                               className="ml-1 text-primary"
-                              onClick={() => setTokenDrawerOpen(true)}
+                              onClick={() => {
+                                setTokenDrawerOpen(true);
+                              }}
                             >
                               Change
                             </span>
@@ -688,24 +845,19 @@ export function GlobalSendDrawer() {
                       </p>
                     )} */}
                   </div>
-                </Drawer.Content>
-              </Drawer.Portal>
-            </Drawer.NestedRoot>
-          </Drawer.Content>
-        </Drawer.Portal>
-      </Drawer.Root>
+                </ResponsiveDialogContent>
+            </ResponsiveDialog>
+        </ResponsiveDialogContent>
+      </ResponsiveDialog>
 
-      <Drawer.Root open={tokenDrawerOpen} onOpenChange={setTokenDrawerOpen}>
-        <Drawer.Portal>
-          <Drawer.Overlay className="fixed inset-0 bg-[#4E4C52]/60 backdrop-blur-sm z-50" />
-          <Drawer.Content className="scroll-smooth z-50 fixed top-[200px] left-0 right-0 bottom-0 bg-background p-0 rounded-t-3xl flex flex-col">
-            <div className="mx-auto w-12 h-1.5 rounded-full bg-white/10 my-4" />
-            <div className="px-4">
-              <Drawer.Title className="text-md text-center font-medium mb-4">
+      <ResponsiveDialog open={tokenDrawerOpen} onOpenChange={setTokenDrawerOpen}>
+        <ResponsiveDialogContent className="scroll-smooth top-[200px] bottom-0 bg-background p-4 rounded-t-3xl flex flex-col md:top-1/2 md:bottom-auto md:w-full md:max-w-md md:max-h-[85vh] md:rounded-2xl">
+            <div className="px-0 pt-2">
+              <ResponsiveDialogTitle className="text-md text-center font-medium mb-3">
                 Select payment token
-              </Drawer.Title>
+              </ResponsiveDialogTitle>
 
-              <div className="space-y-2">
+              <div className="space-y-3">
                 {/* {tokenList.map((token) => (
                   <button
                     key={token.name}
@@ -733,16 +885,22 @@ export function GlobalSendDrawer() {
                     balance === undefined
                       ? "..."
                       : `${parseFloat(balance).toFixed(3)} ${token.name}`;
+                  const numericBalance = Number.parseFloat(balance ?? "0");
+                  const canSelectToken = Number.isFinite(numericBalance) && numericBalance > 0;
 
                   return (
                     <button
                       key={token.name}
                       onClick={() => {
+                        if (!canSelectToken) return;
                         setSelectedToken(token.name as "ETH" | "USDC" | "TAB");
                         setTokenType(token.name);
                         setTokenDrawerOpen(false);
                       }}
-                      className="w-full flex items-center justify-between p-3 rounded-lg bg-white/5 hover:bg-white/10"
+                      disabled={!canSelectToken}
+                      className={`w-full flex items-center justify-between p-4 rounded-xl bg-white/5 ${
+                        canSelectToken ? "hover:bg-white/10" : "opacity-50 cursor-not-allowed"
+                      }`}
                     >
                       <div className="flex items-center gap-3">
                         <img
@@ -760,9 +918,8 @@ export function GlobalSendDrawer() {
                 })}
               </div>
             </div>
-          </Drawer.Content>
-        </Drawer.Portal>
-      </Drawer.Root>
+          </ResponsiveDialogContent>
+      </ResponsiveDialog>
 
       <PaymentSuccessDrawer
         isOpen={showSuccess}

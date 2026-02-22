@@ -654,12 +654,13 @@ export default function Home() {
     }
   };
 
-  const emailDomainSuggestions = ["@gmail.com", "@icloud.com"];
+  const emailDomainSuggestions = ["@gmail.com", "@icloud.com", "@proton.me"];
   const emailValueTrimmed = authEmail.trim();
+  const isAuthEmailValid = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(emailValueTrimmed);
   const emailLocalPart = emailValueTrimmed.split("@")[0] ?? "";
   const showInvalidEmailError = authError === "Enter a valid email.";
   const showEmailDomainSuggestions =
-    authStep === "email" && emailLocalPart.length > 0 && !emailValueTrimmed.includes("@");
+    authStep === "email" && emailLocalPart.length > 0;
 
   const applyEmailDomainSuggestion = (domain: string) => {
     const local = authEmail.trim().split("@")[0]?.replace(/\s/g, "") ?? "";
@@ -757,9 +758,9 @@ export default function Home() {
 
                     <div>
                       <p className="text-white/80 text-sm">Enter the code we emailed to</p>
-                      <p className="mt-1 text-white font-semibold text-lg break-all">
-                        {authEmail.trim()}
-                      </p>
+                        <p className="mt-1 text-white font-semibold text-lg break-all">
+                          {authEmail.trim()}
+                        </p>
                     </div>
                   </div>
 
@@ -835,12 +836,9 @@ export default function Home() {
                 </>
               ) : (
                 <>
-                  <div className="text-left">
-                    <h2 className="text-2xl font-semibold tracking-tight">Log in / Sign up</h2>
-                    <p className="mt-2 text-white/50 text-sm">
-                      Enter your email to continue.
-                    </p>
-                  </div>
+                  <p className="text-white/50 text-sm text-left">
+                    Enter your email to continue.
+                  </p>
 
                   <div className="w-full space-y-3">
                     <input
@@ -876,10 +874,10 @@ export default function Home() {
                           ? "border-red-400/80"
                           : "border-transparent"
                       )}
-                      disabled={!ready || authBusy !== null}
+                      disabled={!ready || authBusy !== null || !isAuthEmailValid}
                       onClick={() => void startEmailLogin()}
                     >
-                      {authBusy === "send" ? "Sending code..." : "Next"}
+                      {authBusy === "send" ? "Sending code..." : "Continue"}
                     </Button>
 
                     {showEmailDomainSuggestions && (
@@ -914,46 +912,56 @@ export default function Home() {
 
   if (shouldShowFarcasterLinkStep) {
     return (
-      <main className="bg-background min-h-screen w-full flex flex-col items-center justify-center p-6 text-center">
-        <div className="w-full max-w-md">
-          <img src="/app.png" alt="Tab App Icon" className="w-16 h-16 mb-4 mx-auto" />
+      <main className="relative min-h-screen w-full overflow-hidden bg-black text-center text-white">
+        <div className="absolute inset-0 bg-background" />
 
-          <h1 className="text-2xl font-semibold leading-tight">
-            Link your Farcaster
-          </h1>
-
-          <p className="text-white/50 mb-8 text-md max-w-sm mx-auto">
-            Farcaster is required to use Tab. Link your account to continue.
-          </p>
-
-          {farcasterLinkError && (
-            <p className="text-red-300/90 text-md mb-4 max-w-sm mx-auto">
-              {farcasterLinkError}
-            </p>
-          )}
+        <div className="relative z-10 min-h-screen px-6 mx-auto w-full max-w-md flex flex-col items-center justify-center">
+          <AuthBrandLockup />
         </div>
 
-        <div className="fixed bottom-0 inset-x-0 p-5 pb-8">
-          <div className="mx-auto w-full max-w-md">
-            <p className="text-xs text-white/20 mb-4">2025 © tab tech</p>
-            <Button
-              className="w-full bg-primary text-black font-semibold"
-              onClick={async () => {
-                setFarcasterLinkError(null);
-                try {
-                  await Promise.resolve(linkFarcaster());
-                } catch (err) {
-                  console.error("Failed to initialize Farcaster linking", err);
-                  setFarcasterLinkError(
-                    "Farcaster linking is not enabled for this app yet. Enable Farcaster in Privy Dashboard and try again."
-                  );
-                }
-              }}
-            >
-              Link Farcaster
-            </Button>
-          </div>
-        </div>
+        <ResponsiveDialog open onOpenChange={() => {}}>
+          <ResponsiveDialogContent className="p-4 md:w-full md:max-w-md max-h-[calc(100dvh-110px)] md:max-h-[85vh] overflow-hidden [&>svg]:hidden">
+            <div className="rounded-t-3xl md:rounded-2xl bg-background p-4 md:p-5 flex flex-col gap-5 max-h-[calc(100dvh-140px)] md:max-h-[calc(85vh-2rem)] overflow-y-auto">
+              <ResponsiveDialogTitle className="sr-only">
+                Link your Farcaster
+              </ResponsiveDialogTitle>
+
+              <div className="text-left">
+                <h2 className="text-lg font-semibold leading-tight">
+                  Link your Farcaster
+                </h2>
+                <p className="mt-2 text-white/50 text-sm">
+                  Farcaster is required to use Tab. Link your account to continue.
+                </p>
+              </div>
+
+              {farcasterLinkError && (
+                <p className="text-red-300/90 text-sm text-left">
+                  {farcasterLinkError}
+                </p>
+              )}
+
+              <Button
+                className="w-full bg-primary text-black font-semibold"
+                onClick={async () => {
+                  setFarcasterLinkError(null);
+                  try {
+                    await Promise.resolve(linkFarcaster());
+                  } catch (err) {
+                    console.error("Failed to initialize Farcaster linking", err);
+                    setFarcasterLinkError(
+                      "Farcaster linking is not enabled for this app yet. Enable Farcaster in Privy Dashboard and try again."
+                    );
+                  }
+                }}
+              >
+                Link Farcaster
+              </Button>
+
+              <p className="text-xs text-white/20 text-center">2025 © tab tech</p>
+            </div>
+          </ResponsiveDialogContent>
+        </ResponsiveDialog>
       </main>
     );
   }

@@ -1,11 +1,15 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { Drawer } from "vaul";
 import { Button } from "@/components/ui/button";
 import { PaymentSuccessDrawer } from "@/components/app/PaymentSuccessDrawer";
 import { useAccount, useConnect, useSendTransaction } from "wagmi";
 import { farcasterFrame } from "@farcaster/frame-wagmi-connector";
+import {
+  ResponsiveDialog,
+  ResponsiveDialogContent,
+  ResponsiveDialogTitle,
+} from "@/components/ui/responsive-dialog";
 
 type FarcasterUser = {
   fid: number;
@@ -100,13 +104,11 @@ export default function SendPage() {
         </Button>
 
         {/* 🔍 Fullscreen Search Drawer */}
-        <Drawer.Root open={drawerOpen} onOpenChange={setDrawerOpen}>
-          <Drawer.Portal>
-            <Drawer.Overlay className="fixed inset-0 bg-[#4E4C52]/60 backdrop-blur-sm z-20" />
-            <Drawer.Content className="z-30 fixed inset-0 bg-background p-6 space-y-6 overflow-y-auto">
-              <Drawer.Title className="text-lg text-center font-medium">
+        <ResponsiveDialog open={drawerOpen} onOpenChange={setDrawerOpen}>
+            <ResponsiveDialogContent className="top-[80px] bottom-0 rounded-t-3xl bg-background p-6 space-y-6 overflow-y-auto md:top-1/2 md:bottom-auto md:w-full md:max-w-md md:rounded-2xl">
+              <ResponsiveDialogTitle className="text-lg text-center font-medium">
                 Send ETH
-              </Drawer.Title>
+              </ResponsiveDialogTitle>
               <div className="relative w-full">
                 <span className="absolute left-4 top-1/2 -translate-y-1/2 text-white/30">
                   user:
@@ -165,19 +167,16 @@ export default function SendPage() {
                   </button>
                 ))}
               </div>
-            </Drawer.Content>
-          </Drawer.Portal>
-        </Drawer.Root>
+            </ResponsiveDialogContent>
+        </ResponsiveDialog>
 
         {/* ✉️ Fullscreen Send Drawer */}
-        <Drawer.Root open={sendDrawerOpen} onOpenChange={setSendDrawerOpen}>
-          <Drawer.Portal>
-            <Drawer.Overlay className="fixed inset-0 bg-[#4E4C52]/60 backdrop-blur-sm z-20" />
-            <Drawer.Content className="z-30 fixed inset-0 bg-[#121212] p-6 pt-24 space-y-6 overflow-y-auto">
-              <Drawer.Title className="text-lg text-center font-medium">
+        <ResponsiveDialog open={sendDrawerOpen} onOpenChange={setSendDrawerOpen}>
+            <ResponsiveDialogContent className="top-[80px] bottom-0 rounded-t-3xl bg-[#121212] p-6 pt-24 space-y-6 overflow-y-auto md:top-1/2 md:bottom-auto md:w-full md:max-w-md md:rounded-2xl">
+              <ResponsiveDialogTitle className="text-lg text-center font-medium">
                 Pay ETH to{" "}
                 <span className="text-primary">@{selectedUser?.username}</span>
-              </Drawer.Title>
+              </ResponsiveDialogTitle>
               <p className="text-sm text-center text-muted break-all">
                 {selectedUser?.verified_addresses?.primary?.eth_address}
               </p>
@@ -199,9 +198,8 @@ export default function SendPage() {
               >
                 {isSending ? "Sending..." : `Send ${ethAmount} ETH`}
               </Button>
-            </Drawer.Content>
-          </Drawer.Portal>
-        </Drawer.Root>
+            </ResponsiveDialogContent>
+        </ResponsiveDialog>
 
         <PaymentSuccessDrawer
           isOpen={showSuccess}

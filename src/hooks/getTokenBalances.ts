@@ -21,7 +21,15 @@ export async function getTokenBalances({
   const balances: Record<string, string> = {};
   for (const token of tokens) {
     const key = token.name.trim().toUpperCase();
-    balances[token.name] = balancesBySymbol[key] ?? "0";
+    let value = balancesBySymbol[key];
+
+    // Moralis/Base portfolios often expose wrapped native balance as WETH.
+    // Let the send UI show an ETH balance using WETH as a fallback.
+    if ((value === undefined || value === null) && key === "ETH") {
+      value = balancesBySymbol.WETH;
+    }
+
+    balances[token.name] = value ?? "0";
   }
 
   return balances;
