@@ -101,7 +101,7 @@ export default function SplitPage() {
   };
 
   return (
-    <div className="min-h-screen w-full flex flex-col items-center p-4 pt-20 pb-28 overflow-y-auto scrollbar-hide">
+    <div className="min-h-screen w-full flex flex-col items-center p-4 pt-[calc(5rem+env(safe-area-inset-top))] pb-[calc(7rem+env(safe-area-inset-bottom))] overflow-y-auto scrollbar-hide">
       <div className="w-full max-w-md flex flex-col space-y-5">
         {/* Intro */}
 

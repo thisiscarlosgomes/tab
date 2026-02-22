@@ -396,7 +396,7 @@ export default function AgentAccessPage() {
 
   if (!user) {
     return (
-      <div className="min-h-screen p-4 pt-20">
+      <div className="min-h-screen p-4 pt-[calc(5rem+env(safe-area-inset-top))]">
         <div className="max-w-md mx-auto text-white/70">
           Sign in to manage Agent Access.
         </div>
@@ -408,7 +408,7 @@ export default function AgentAccessPage() {
 
   if (statusPending) {
     return (
-      <div className="min-h-screen p-4 pt-20 pb-32">
+      <div className="min-h-screen p-4 pt-[calc(5rem+env(safe-area-inset-top))] pb-[calc(8rem+env(safe-area-inset-bottom))]">
         <div className="max-w-md mx-auto space-y-4">
           <div className="border border-white/10 rounded-xl p-4 space-y-3">
             <Skeleton className="h-6 w-20 border-0 bg-white/10" />
@@ -447,7 +447,7 @@ export default function AgentAccessPage() {
   }
 
   return (
-    <div className="min-h-screen p-4 pt-20 pb-32">
+    <div className="min-h-screen p-4 pt-[calc(5rem+env(safe-area-inset-top))] pb-[calc(8rem+env(safe-area-inset-bottom))]">
       <div className="max-w-md mx-auto space-y-3">
         <button
           type="button"

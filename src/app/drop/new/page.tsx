@@ -288,7 +288,7 @@ export default function DropCreatePage() {
   }
 
   return (
-    <div className="p-4 pb-32 pt-12 mt-16 relative">
+    <div className="p-4 pb-[calc(8rem+env(safe-area-inset-bottom))] pt-12 mt-[calc(4rem+env(safe-area-inset-top))] relative">
       <div className="max-w-sm w-full mx-auto space-y-4">
         <div className="max-w-[80%] mx-auto text-center font-medium text-md mb-4 pb-2">
           Send a cash link.

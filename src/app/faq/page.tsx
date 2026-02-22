@@ -66,7 +66,7 @@ export default function TabAgentFAQPage() {
   };
 
   return (
-    <div className="min-h-screen px-4 pt-20 pb-48 mb-16">
+    <div className="min-h-screen px-4 pt-[calc(5rem+env(safe-area-inset-top))] pb-[calc(12rem+env(safe-area-inset-bottom))] mb-16">
       <div className="max-w-md mx-auto space-y-6">
         {/* TITLE */}
         <div className="mb-6 ml-1">

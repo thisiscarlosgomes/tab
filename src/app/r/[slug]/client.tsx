@@ -129,7 +129,7 @@ export default function ReceivePageClient() {
     : `https://usetab.app/r/?payTo=${address}?token=${token}${amount ? `&amount=${amount}` : ""}`;
 
   return (
-    <div className="min-h-screen w-full flex flex-col items-center justify-start p-4 pt-24 pb-32 overflow-y-auto scrollbar-hide">
+    <div className="min-h-screen w-full flex flex-col items-center justify-start p-4 pt-[calc(6rem+env(safe-area-inset-top))] pb-[calc(8rem+env(safe-area-inset-bottom))] overflow-y-auto scrollbar-hide">
       {valid && address ? (
         <div className="w-full bg-card rounded-3xl p-4 py-8 flex flex-col items-center">
           {amount && (

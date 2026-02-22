@@ -421,7 +421,7 @@ const paidCount = bill?.paid?.length ?? 0;
   const remaining = Math.max(bill.totalAmount - totalPaid, 0);
 
   return (
-    <div className="min-h-screen w-full flex flex-col items-center px-4 pt-20 pb-32 overflow-y-auto scrollbar-hide">
+    <div className="min-h-screen w-full flex flex-col items-center px-4 pt-[calc(5rem+env(safe-area-inset-top))] pb-[calc(8rem+env(safe-area-inset-bottom))] overflow-y-auto scrollbar-hide">
       <Card className="w-full max-w-md p-4 space-y-4">
         {!bill ? (
           <div className="flex flex-1 items-center justify-center min-h-[60vh]">

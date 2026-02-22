@@ -621,7 +621,7 @@ export default function JackpotPage() {
   };
 
   return (
-    <div className="p-4 pb-32 pt-10 mt-12 relative">
+    <div className="p-4 pb-[calc(8rem+env(safe-area-inset-bottom))] pt-10 mt-[calc(3rem+env(safe-area-inset-top))] relative">
       <div className="max-w-sm w-full mx-auto space-y-4">
         <div className="hidden text-center text-md font-medium mb-4 pb-2">
           Buy a lottery ticket for a chance to win big.

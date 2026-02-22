@@ -177,7 +177,7 @@ export default function Page() {
     : "";
 
   return (
-    <div className="p-4 pb-32 pt-12 mt-16 relative">
+    <div className="p-4 pb-[calc(8rem+env(safe-area-inset-bottom))] pt-12 mt-[calc(4rem+env(safe-area-inset-top))] relative">
       <div className="max-w-sm w-full mx-auto space-y-6">
         <div className="text-center text-md mb-4 pb-2 mx-4 px-4">
           Generate a unique Payment Link or QR to receive payments

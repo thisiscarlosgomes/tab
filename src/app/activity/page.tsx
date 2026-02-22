@@ -277,7 +277,7 @@ export default function ActivityPage() {
 
   /* ---------- RENDER ---------- */
   return (
-    <div className="min-h-screen p-4 pt-16 pb-32">
+    <div className="min-h-screen p-4 pt-[calc(4rem+env(safe-area-inset-top))] pb-[calc(8rem+env(safe-area-inset-bottom))]">
       <div className="max-w-md mx-auto">
         {/* TAG FILTERS */}
         <div className="flex gap-2 mb-4 mt-6">

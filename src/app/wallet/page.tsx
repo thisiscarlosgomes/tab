@@ -420,7 +420,7 @@ export default function WalletPage() {
   }, []);
 
   const renderProfileSkeleton = () => (
-    <div className="min-h-screen w-full flex flex-col items-center p-4 pt-16 pb-40 overflow-y-auto scrollbar-hide">
+    <div className="min-h-screen w-full flex flex-col items-center p-4 pt-[calc(4rem+env(safe-area-inset-top))] pb-[calc(10rem+env(safe-area-inset-bottom))] overflow-y-auto scrollbar-hide">
       <div className="w-full max-w-md animate-pulse">
         <div className="mt-2 mb-4">
           <div className="h-16 w-52 mx-auto rounded-xl bg-white/10" />
@@ -796,7 +796,7 @@ export default function WalletPage() {
   return (
     <ReceiveDrawerController>
       {({ openReceiveDrawer }) => (
-        <div className="min-h-screen w-full flex flex-col items-center p-4 pt-16 pb-40 overflow-y-auto scrollbar-hide">
+        <div className="min-h-screen w-full flex flex-col items-center p-4 pt-[calc(4rem+env(safe-area-inset-top))] pb-[calc(10rem+env(safe-area-inset-bottom))] overflow-y-auto scrollbar-hide">
           <div className="w-full max-w-md">
             <div className="mb-2 mt-2">{renderWalletHeader(openReceiveDrawer)}</div>
 

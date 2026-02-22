@@ -52,7 +52,7 @@ export default function LeaderboardPage() {
   }
 
   return (
-    <div className="min-h-screen w-full flex flex-col items-center justify-start p-4 pt-20 pb-32 overflow-y-auto scrollbar-hide">
+    <div className="min-h-screen w-full flex flex-col items-center justify-start p-4 pt-[calc(5rem+env(safe-area-inset-top))] pb-[calc(8rem+env(safe-area-inset-bottom))] overflow-y-auto scrollbar-hide">
       <div className="w-full max-w-md">
         <h1 className="text-lg font-semibold mb-4">Top Spenders</h1>
         {isLoading ? (

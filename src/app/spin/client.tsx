@@ -183,7 +183,7 @@ export default function DailySpin() {
   }, []);
 
   return (
-    <div className="pt-20 pb-32 overflow-y-auto scrollbar-hide">
+    <div className="pt-[calc(5rem+env(safe-area-inset-top))] pb-[calc(8rem+env(safe-area-inset-bottom))] overflow-y-auto scrollbar-hide">
       {/* <div className="px-4 pb-12 space-y-3">
         <SpinGameGrid
           fid={fid}

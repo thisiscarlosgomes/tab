@@ -171,7 +171,7 @@ export default function ActivityPage() {
   );
 
   return (
-    <div className="min-h-screen w-full flex flex-col items-center justify-start p-4 pt-16 pb-32 overflow-y-auto scrollbar-hide">
+    <div className="min-h-screen w-full flex flex-col items-center justify-start p-4 pt-[calc(4rem+env(safe-area-inset-top))] pb-[calc(8rem+env(safe-area-inset-bottom))] overflow-y-auto scrollbar-hide">
       <div className="mt-4 w-full max-w-md">
         <h1 className="text-xl font-bold mb-4 text-center hidden">Activity</h1>
         <div className="mb-4">

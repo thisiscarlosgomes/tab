@@ -241,7 +241,7 @@ export default function RoomPage() {
   const state = !chosen ? "waiting" : hasChosenPaid ? "settled" : "result";
 
   return (
-    <div className="min-h-screen w-full flex flex-col items-center px-4 pt-20 pb-48 overflow-y-auto">
+    <div className="min-h-screen w-full flex flex-col items-center px-4 pt-[calc(5rem+env(safe-area-inset-top))] pb-[calc(12rem+env(safe-area-inset-bottom))] overflow-y-auto">
       <Card className="w-full max-w-md p-4 space-y-3">
         {/* HEADER */}
         <div className="flex flex-col items-center">

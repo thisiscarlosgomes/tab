@@ -115,7 +115,7 @@ export default function AgentClaimPage() {
   const agentLabel = claim?.agentName || claim?.agentId || "this agent";
 
   return (
-    <div className="min-h-screen p-4 pt-20 pb-24">
+    <div className="min-h-screen p-4 pt-[calc(5rem+env(safe-area-inset-top))] pb-[calc(6rem+env(safe-area-inset-bottom))]">
       <div className="max-w-md mx-auto space-y-4">
         <Link href="/" className="text-white/50 text-sm inline-block">
           Back

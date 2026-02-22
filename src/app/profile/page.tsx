@@ -449,7 +449,7 @@ export default function ProfilePage() {
     );
   }).length;
   const renderProfileSkeleton = () => (
-    <div className="min-h-screen w-full flex flex-col items-center p-4 pt-16 pb-40 overflow-y-auto scrollbar-hide">
+    <div className="min-h-screen w-full flex flex-col items-center p-4 pt-[calc(4rem+env(safe-area-inset-top))] pb-[calc(10rem+env(safe-area-inset-bottom))] overflow-y-auto scrollbar-hide">
       <div className="w-full max-w-md">
         <div className="pt-3 pb-5">
           <div className="flex items-start justify-between gap-4">
@@ -790,7 +790,7 @@ export default function ProfilePage() {
   };
 
   return (
-    <div className="min-h-screen w-full flex flex-col items-center p-4 pt-16 pb-40 overflow-y-auto scrollbar-hide">
+    <div className="min-h-screen w-full flex flex-col items-center p-4 pt-[calc(4rem+env(safe-area-inset-top))] pb-[calc(10rem+env(safe-area-inset-bottom))] overflow-y-auto scrollbar-hide">
       <div className="w-full max-w-md">
         <div className="mb-2 mt-4">{renderProfileHero()}</div>
 
