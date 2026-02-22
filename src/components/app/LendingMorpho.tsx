@@ -33,7 +33,6 @@ import { toast } from "sonner";
 
 import clsx from "clsx";
 
-const MORPHO_BLUE_ADDRESS = "0xBBBBBbbBBb9cC5e90e3b3Af64bdAF62C37EEFFCb";
 const USDC_ADDRESS = "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913";
 const USDC_DECIMALS = 6;
 const VAULT_ADDRESS = "0xc1256Ae5FF1cf2719D4937adb3bbCCab2E00A2Ca";
@@ -110,17 +109,6 @@ export function MorphoDepositDrawer({
     ? parseFloat(formatUnits(usdcEquivalent, USDC_DECIMALS))
     : 0;
 
-  const principal = parsedAmount > 0 ? parsedAmount : vaultBalance;
-
-  const yearlyEarnings = typeof netApy === "number" ? principal * netApy : 0;
-
-  const monthlyEarnings = yearlyEarnings / 12;
-  const weeklyEarnings = yearlyEarnings / 52;
-
-  const estimatedYearly = yearlyEarnings;
-  const estimatedMonthly = monthlyEarnings;
-  const estimatedWeekly = weeklyEarnings;
-
   useEffect(() => {
     if (typeof netApy !== "number" || vaultBalance <= 0) {
       setMonthlyEarn(0);
@@ -194,7 +182,7 @@ export function MorphoDepositDrawer({
     address: USDC_ADDRESS,
     abi: erc20Abi,
     functionName: "allowance",
-    args: [address ?? "0x", MORPHO_BLUE_ADDRESS],
+    args: [address ?? "0x", VAULT_ADDRESS],
     query: {
       enabled: !!address && rawAmount > 0n,
     },
@@ -208,9 +196,9 @@ export function MorphoDepositDrawer({
     }
   }, [allowance, rawAmount]);
 
-  const handleApprove = async () => {
+  const handleApprove = async (): Promise<boolean> => {
     if (!isConnected) await connect({ connector: farcasterFrame() });
-    if (!address) return;
+    if (!address) return false;
 
     try {
       setSending(true);
@@ -229,8 +217,10 @@ export function MorphoDepositDrawer({
       setTimeout(() => {
         setIsApproved(true);
       }, 500);
+      return true;
     } catch (e) {
       console.error("Approval failed", e);
+      return false;
     } finally {
       setSending(false);
     }
@@ -293,6 +283,15 @@ export function MorphoDepositDrawer({
     } finally {
       setIsDepositing(false);
     }
+  };
+
+  const handleApproveAndDeposit = async () => {
+    if (!isApproved) {
+      const approved = await handleApprove();
+      if (!approved) return;
+    }
+
+    await handleDeposit();
   };
 
   const handleWithdraw = async () => {
@@ -426,37 +425,27 @@ export function MorphoDepositDrawer({
               />
             </div>
 
-            {!isApproved ? (
-              <Button
-                onClick={handleApprove}
-                disabled={isDisabled || sending}
-                className="w-full bg-primary mt-4 flex items-center justify-center gap-2"
-              >
-                {sending ? (
-                  <>
-                    <LoaderCircle className="animate-spin w-4 h-4" />
-                    Approving...
-                  </>
-                ) : (
-                  <>Approve ${amount}</>
-                )}
-              </Button>
-            ) : (
-              <Button
-                onClick={handleDeposit}
-                disabled={isDisabled}
-                className="w-full bg-primary flex items-center justify-center gap-2"
-              >
-                {isDepositing ? (
-                  <>
-                    <LoaderCircle className="animate-spin w-4 h-4" />
-                    Depositing...
-                  </>
-                ) : (
-                  <>Deposit ${amount}</>
-                )}
-              </Button>
-            )}
+            <Button
+              onClick={handleApproveAndDeposit}
+              disabled={isDisabled || sending}
+              className="w-full bg-primary mt-4 flex items-center justify-center gap-2"
+            >
+              {sending ? (
+                <>
+                  <LoaderCircle className="animate-spin w-4 h-4" />
+                  Approving...
+                </>
+              ) : isDepositing ? (
+                <>
+                  <LoaderCircle className="animate-spin w-4 h-4" />
+                  Depositing...
+                </>
+              ) : !isApproved ? (
+                <>Approve & Deposit ${amount}</>
+              ) : (
+                <>Deposit ${amount}</>
+              )}
+            </Button>
 
             {usdcBalance !== null && (
               <p className="text-white/30 text-center text-sm mb-6 pb-2">
@@ -496,36 +485,6 @@ export function MorphoDepositDrawer({
                   </p>
                 </div>
               )}
-            </div>
-
-            <div className="text-sm border-2 border-white/5 mt-2 rounded-lg py-2">
-              <p className="px-4">Estimated Earnings</p>
-              <div className="text-white/30 w-full flex items-center justify-between px-4 py-0.5">
-                <div>Weekly</div>
-                <p className="text-white/50 text-sm">
-                  {netApy === null
-                    ? "Loading..."
-                    : `$${estimatedWeekly.toFixed(2)}`}
-                </p>
-              </div>
-
-              <div className="text-white/30 w-full flex items-center justify-between px-4 py-0.5">
-                <div>Monthly</div>
-                <p className="text-white/50 text-sm">
-                  {netApy === null
-                    ? "Loading..."
-                    : `$${estimatedMonthly.toFixed(2)}`}
-                </p>
-              </div>
-
-              <div className="text-white/30 w-full flex items-center justify-between px-4 py-0.5">
-                <div>Yearly</div>
-                <p className="text-white/50 text-sm">
-                  {netApy === null
-                    ? "Loading..."
-                    : `$${estimatedYearly.toFixed(2)}`}
-                </p>
-              </div>
             </div>
 
             {vaultBalance > 0 && (

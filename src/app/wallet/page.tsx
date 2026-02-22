@@ -209,7 +209,7 @@ export default function WalletPage() {
     }
 
     if (!agentAuthResolved) {
-      if (!agentAccessLoaded) setAgentAccessLoading(true);
+      if (!agentAccessLoaded) setAgentAccessLoading(false);
       return;
     }
 

@@ -5,7 +5,6 @@ import { useSendDrawer } from "@/providers/SendDrawerProvider";
 import { useAccount, useConnect, useSendTransaction } from "wagmi";
 
 import { Button } from "../ui/button";
-import { shortAddress } from "@/lib/shortAddress";
 import { PaymentSuccessDrawer } from "@/components/app/PaymentSuccessDrawer";
 import sdk from "@farcaster/frame-sdk";
 import { NumericFormat } from "react-number-format";
@@ -629,13 +628,6 @@ export function GlobalSendDrawer() {
                         <div className="text-left">
                           <p className="text-primary font-medium">
                             @{user.username}
-                          </p>
-                          <p className="text-sm text-white/30 break-all">
-                            {user.verified_addresses?.primary?.eth_address
-                              ? shortAddress(
-                                  user.verified_addresses.primary.eth_address
-                                )
-                              : "No address"}
                           </p>
                         </div>
                       </button>

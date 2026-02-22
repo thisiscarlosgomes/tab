@@ -1,9 +1,10 @@
 "use client";
 
-import React, { useEffect, useRef, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useAccount, useConnect } from "wagmi";
 import sdk from "@farcaster/frame-sdk";
+import { usePrivy } from "@privy-io/react-auth";
 import { nanoid } from "nanoid";
 import { Drawer } from "vaul";
 import NumberFlow from "@number-flow/react";
@@ -26,7 +27,18 @@ type FarcasterUser = {
     primary?: {
       eth_address?: string | null;
     };
+    eth_addresses?: string[];
   };
+};
+
+const getUserEthAddress = (user: FarcasterUser | null | undefined) => {
+  const primary = user?.verified_addresses?.primary?.eth_address ?? null;
+  if (primary) return primary;
+
+  const firstVerified = user?.verified_addresses?.eth_addresses?.find(
+    (addr) => typeof addr === "string" && addr.startsWith("0x")
+  );
+  return firstVerified ?? null;
 };
 
 type SplitType = "invited" | "pay_other" | "receipt_open";
@@ -128,12 +140,15 @@ export default function SplitNewPage() {
   const router = useRouter();
   const { address, isConnected } = useAccount();
   const { connect, connectors } = useConnect();
+  const { user } = usePrivy();
   const {
     fid: identityFid,
     username: identityUsername,
     pfp: identityPfp,
     address: identityAddress,
   } = useTabIdentity();
+  const linkedFarcasterFid = user?.farcaster?.fid ?? null;
+  const linkedFarcasterUsername = user?.farcaster?.username ?? null;
 
   // ----------------------------
   // DEFAULT TOKEN = USDC
@@ -262,7 +277,7 @@ export default function SplitNewPage() {
         if (requestId !== followerSearchRequestRef.current) return;
 
         const remoteMatches = remoteUsers.filter(
-          (u: FarcasterUser) => u.verified_addresses?.primary?.eth_address
+          (u: FarcasterUser) => Boolean(u && typeof u.fid === "number")
         );
 
         const seen = new Set<number>();
@@ -286,9 +301,40 @@ export default function SplitNewPage() {
   // Load followers (AUTO POPULATE)
   // --------------------------
   useEffect(() => {
-    (async () => {
-      let fid = identityFid;
-      let username = identityUsername;
+    const friendsCacheKey =
+      (linkedFarcasterFid ? `fid:${linkedFarcasterFid}` : null) ??
+      linkedFarcasterUsername ??
+      identityUsername ??
+      identityAddress;
+    if (!friendsCacheKey) return;
+
+    try {
+      const cached = localStorage.getItem(`tab_friends_${friendsCacheKey}`);
+      if (!cached) return;
+      const parsed = JSON.parse(cached);
+      if (!Array.isArray(parsed) || parsed.length === 0) return;
+      const next = parsed
+        .map((entry) => entry?.user ?? entry)
+        .filter((u) => u && typeof u.fid === "number") as FarcasterUser[];
+      setFollowers(next);
+      if (!query.trim()) {
+        setFilteredFollowers(next);
+      }
+    } catch {
+      // ignore cache parse errors
+    }
+  }, [
+    linkedFarcasterFid,
+    linkedFarcasterUsername,
+    identityUsername,
+    identityAddress,
+    query,
+  ]);
+
+  const loadFollowers = useCallback(async () => {
+    try {
+      let fid = linkedFarcasterFid ?? identityFid;
+      let username = linkedFarcasterUsername ?? identityUsername;
       let address = identityAddress;
 
       if (!fid && !username && !address) {
@@ -317,16 +363,44 @@ export default function SplitNewPage() {
       if (Array.isArray(data)) {
         const top = data
           .map((e) => e?.user ?? e)
-          .filter(
-            (u: FarcasterUser) => u.verified_addresses?.primary?.eth_address
-          )
+          .filter((u) => u && typeof u?.fid === "number")
           .slice(0, 50);
 
         setFollowers(top);
-        setFilteredFollowers(top);
+        if (!query.trim()) {
+          setFilteredFollowers(top);
+        }
+
+        const cacheKey =
+          (linkedFarcasterFid ? `fid:${linkedFarcasterFid}` : null) ??
+          linkedFarcasterUsername ??
+          identityUsername ??
+          identityAddress;
+        if (cacheKey && top.length > 0) {
+          localStorage.setItem(`tab_friends_${cacheKey}`, JSON.stringify(top));
+        }
       }
-    })();
-  }, [identityFid, identityUsername, identityAddress]);
+    } catch {
+      // best-effort
+    }
+  }, [
+    linkedFarcasterFid,
+    linkedFarcasterUsername,
+    identityFid,
+    identityUsername,
+    identityAddress,
+    query,
+  ]);
+
+  useEffect(() => {
+    void loadFollowers();
+  }, [loadFollowers]);
+
+  useEffect(() => {
+    if (!followerDrawerOpen) return;
+    if (followers.length > 0) return;
+    void loadFollowers();
+  }, [followerDrawerOpen, followers.length, loadFollowers]);
 
   // --------------------------
   // Create split
@@ -400,12 +474,18 @@ export default function SplitNewPage() {
       // INVITED SPLITS
       // -----------------------------
       if (splitType !== "receipt_open") {
-        payload.invited = selectedFollowers.map((f) => ({
-          fid: f.fid, // ✅ number
-          address: f.verified_addresses.primary!.eth_address,
-          name: f.username,
-          pfp: f.pfp_url,
-        }));
+        payload.invited = selectedFollowers
+          .map((f) => {
+            const invitedAddress = getUserEthAddress(f);
+            if (!invitedAddress) return null;
+            return {
+              fid: f.fid, // ✅ number
+              address: invitedAddress,
+              name: f.username,
+              pfp: f.pfp_url,
+            };
+          })
+          .filter(Boolean);
       }
 
       const res = await fetch(`/api/split/${splitId}`, {
@@ -864,6 +944,8 @@ export default function SplitNewPage() {
             {/* Followers list */}
             <div className="flex-1 min-h-0 overflow-y-auto px-4 pb-4 space-y-2 overscroll-contain">
               {filteredFollowers.map((f) => {
+                const payableAddress = getUserEthAddress(f);
+                const isPayable = Boolean(payableAddress);
                 const isSelected = selectedFollowers.some(
                   (x) => x.fid === f.fid
                 );
@@ -871,6 +953,7 @@ export default function SplitNewPage() {
                 return (
                   <button
                     key={f.fid}
+                    disabled={!isPayable}
                     onClick={() => {
                       setSelectedFollowers((prev) =>
                         isSelected
@@ -878,7 +961,11 @@ export default function SplitNewPage() {
                           : [...prev, f]
                       );
                     }}
-                    className="w-full flex items-center justify-between p-3 bg-white/5 rounded-lg"
+                    className={`w-full flex items-center justify-between p-3 rounded-lg ${
+                      isPayable
+                        ? "bg-white/5"
+                        : "bg-white/[0.03] opacity-60 cursor-not-allowed"
+                    }`}
                   >
                     <div className="flex items-center">
                       <img
@@ -889,17 +976,26 @@ export default function SplitNewPage() {
                         className="w-8 h-8 rounded-full mr-4 object-cover"
                         alt={f.username}
                       />
-                      <span className="text-white">@{f.username}</span>
+                      <div className="text-left">
+                        <div className="text-white">@{f.username}</div>
+                        {!isPayable && (
+                          <div className="text-xs text-white/40">
+                            No linked wallet
+                          </div>
+                        )}
+                      </div>
                     </div>
 
                     <div
                       className={`w-5 h-5 rounded-full border-2 flex items-center justify-center ${
-                        isSelected
+                        isSelected && isPayable
                           ? "border-primary bg-primary"
                           : "border-white/10"
                       }`}
                     >
-                      {isSelected && <Check className="w-4 h-4 text-black" />}
+                      {isSelected && isPayable && (
+                        <Check className="w-4 h-4 text-black" />
+                      )}
                     </div>
                   </button>
                 );

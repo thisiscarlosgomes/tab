@@ -515,6 +515,7 @@ export default function Home() {
       const detail = (
         event as CustomEvent<{ deltaUsdc?: number; earnDeltaUsd?: number } | undefined>
       ).detail;
+      const hasEarnDelta = !!detail && typeof detail.earnDeltaUsd === "number";
       if (detail && typeof detail.deltaUsdc === "number") {
         applyOptimisticUsdcDelta(detail.deltaUsdc);
       }
@@ -525,7 +526,11 @@ export default function Home() {
       pendingTimeouts.forEach((id) => window.clearTimeout(id));
       pendingTimeouts.clear();
       refetchBalances();
-      refetchEarn();
+      // Morpho indexer/RPC can lag right after a deposit/withdrawal; avoid
+      // clobbering optimistic earn state with a stale immediate fetch.
+      if (!hasEarnDelta) {
+        refetchEarn();
+      }
 
       // Follow-up pulls for pending tx propagation on RPC/indexers.
       const first = window.setTimeout(refetchBalances, 1800);

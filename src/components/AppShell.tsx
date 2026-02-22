@@ -28,7 +28,6 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const isSplitNewRoute = /^\/split\/new\/?$/.test(pathname);
   const hideHeaderOnRoute =
     (pathname.startsWith("/split") && !isSplitNewRoute) ||
-    pathname === "/table" ||
     pathname === "/rooms";
   const showDesktopHeaderOnly = pathname.startsWith("/game");
   const hasLinkedFarcaster = useMemo(

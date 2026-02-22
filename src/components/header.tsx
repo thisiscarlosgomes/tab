@@ -8,6 +8,7 @@ import {
   Flame,
   Info,
   ArrowLeft,
+  RefreshCw,
   Menu,
   LogOut,
 } from "lucide-react";
@@ -29,7 +30,7 @@ import {
 const PAGE_TITLES: Record<string, string> = {
   "/": "",
   "/activity": "",
-  "/wallet": "Wallet",
+  "/wallet": "",
   "/split/new": "",
 };
 
@@ -264,9 +265,18 @@ export function Header() {
 
           {/* Right side — actions */}
           <div className="absolute right-4 top-1/2 -translate-y-1/2 flex items-center gap-4">
+            <button
+              onClick={() => window.location.reload()}
+              aria-label="Refresh"
+              className="text-white hover:text-white transition"
+            >
+              <RefreshCw className="w-5 h-5" />
+            </button>
+
             {/* Info Button */}
             <button
               onClick={() => setAboutOpen(true)}
+              aria-label="Info"
               className="text-white hover:text-white transition"
             >
               <Info className="w-6 h-6" />
