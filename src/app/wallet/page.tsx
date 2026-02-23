@@ -847,7 +847,7 @@ export default function WalletPage() {
 
             <Link
               href="/profile/agent-access"
-              className="block mb-6 py-3 px-4 rounded-xl border border-white/10 bg-white/5 hover:bg-white/10 transition"
+              className="block mb-6 py-3 px-4 rounded-lg border border-white/10 bg-white/5 hover:bg-white/10 transition"
             >
               <div className="flex items-center gap-2">
                 <span className="relative flex h-2.5 w-2.5">

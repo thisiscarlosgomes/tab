@@ -37,21 +37,22 @@ const PAGE_TITLES: Record<string, string> = {
 const ABOUT_STEPS = [
   {
     icon: "👨‍👩‍👧",
-    title: "Pay and Get paid",
-    desc: "Split bills. Send money. Request payments, all in seconds.",
+    title: "Your social wallet",
+    desc: "Move money between people you follow and trust. Split group bills, send payments, and get paid — in seconds",
     accent: "from-lime-400 to-green-500",
   },
-  {
-    icon: "🔘",
-    title: "Sping the tab",
-    desc: "Spin the wheel. One friend pays the whole bill.",
-    accent: "from-cyan-400 to-blue-500",
-  },
+
   {
     icon: "💵",
-    title: "More ways to use Tab",
-    desc: "Earn yield, onchain jackpot, airdrop. Tools that turn your wallet into a supertool.",
+    title: "Put your money to work",
+    desc: "Earn up to 5% APY on your USDC, Play onchain jackpot, airdrop tokens, spin to pay and more",
     accent: "from-emerald-400 to-lime-500",
+  },
+  {
+    icon: "🧠",
+    title: "Tab Agent skill",
+    desc: "Use Tab skill to trigger payments and agent actions from any chat app you already use.",
+    accent: "from-indigo-400 to-blue-500",
   },
 ] as const;
 
@@ -318,7 +319,7 @@ export function Header() {
         <ResponsiveDialogContent className="p-0 md:w-full md:max-w-md overflow-hidden">
           <div className="relative bg-background px-4 pt-4 pb-4 md:px-5 md:pb-5">
             <ResponsiveDialogTitle className="mt-2 text-center text-xl font-semibold tracking-tight">
-              Welcome to tab
+              Say hello to tab
             </ResponsiveDialogTitle>
 
             <div className="mt-8 rounded-2xl border border-white/10 bg-white/[0.03] p-4">

@@ -557,9 +557,9 @@ export default function ProfilePage() {
             <div className="mt-2 text-white/35 text-sm truncate">
               {shortAddress(address)}
             </div>
-            {joinedLabel ? (
+            {/* {joinedLabel ? (
               <p className="mt-1 text-sm text-white/35 truncate">{joinedLabel}</p>
-            ) : null}
+            ) : null} */}
           </div>
 
           <div className="shrink-0">

@@ -881,7 +881,7 @@ export function GlobalSendDrawer() {
                 Select payment token
               </ResponsiveDialogTitle>
 
-              <div className="space-y-3">
+              <div className="space-y-2">
                 {/* {tokenList.map((token) => (
                   <button
                     key={token.name}

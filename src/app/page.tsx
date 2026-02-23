@@ -150,6 +150,7 @@ export default function Home() {
     useSendDrawer();
 
   const [showMorphoDrawer, setShowMorphoDrawer] = useState(false);
+  const [showEarnDetailsDialog, setShowEarnDetailsDialog] = useState(false);
   const [showGiftDrawer, setShowGiftDrawer] = useState(false);
 
   const [friends, setFriends] = useState<FriendUser[]>([]);
@@ -189,6 +190,11 @@ export default function Home() {
     if (value < 0.01) return value.toFixed(6);
     return value.toFixed(2);
   };
+
+  const formattedEarnBalance =
+    typeof earnBalance === "number" ? `$${earnBalance.toFixed(2)}` : "--";
+  const formattedNetApy =
+    typeof netApy === "number" ? `${(netApy * 100).toFixed(2)}%` : "--";
 
   const refetchEarnFromMorpho = useCallback(async () => {
     if (!address) return;
@@ -1088,7 +1094,7 @@ export default function Home() {
                     <button
                       onClick={(e) => {
                         e.stopPropagation();
-                        setShowMorphoDrawer(true);
+                        setShowEarnDetailsDialog(true);
                       }}
                       className="flex-1 bg-white/5 rounded-xl px-4 py-3 text-left active:scale-95 transition"
                     >
@@ -1203,7 +1209,7 @@ export default function Home() {
             <div>
               <p className="text-base font-medium text-white">$1m Jackpot</p>
               <p className="text-md text-white/40 mt-0.5">
-                Enter onchain jackpot and track your tickets
+                Play daily onchain jackpot
               </p>
             </div>
           </button>
@@ -1247,6 +1253,50 @@ export default function Home() {
         </div>
 
           </div>
+
+          <ResponsiveDialog
+            open={showEarnDetailsDialog}
+            onOpenChange={setShowEarnDetailsDialog}
+          >
+            <ResponsiveDialogContent className="p-4 md:w-full md:max-w-md max-h-[calc(100dvh-110px)] md:max-h-[85vh] overflow-hidden">
+              <div className="rounded-t-3xl md:rounded-2xl bg-background p-5 flex flex-col gap-5 max-h-[calc(100dvh-140px)] md:max-h-[calc(85vh-2rem)] overflow-y-auto">
+                <ResponsiveDialogTitle className="text-lg font-semibold text-white text-center">
+                  You&apos;re earning
+                </ResponsiveDialogTitle>
+
+                <div className="pt-0 text-center">
+                  <p className="mt-1 text-5xl sm:text-5xl font-semibold tracking-tight text-white">
+                    {formattedNetApy}
+                  </p>
+                  <p className="mt-2 text-white/45 text-sm">
+                    Annual Percentage Yield
+                  </p>
+                </div>
+
+                <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-4">
+                  <p className="text-white/45 text-sm">Deposited</p>
+                  <p className="mt-1 text-2xl font-semibold text-white">
+                    {formattedEarnBalance}
+                  </p>
+                  {typeof monthlyEarn === "number" && monthlyEarn > 0 && (
+                    <p className="mt-2 text-sm text-green-400">
+                      +${formatMonthlyEarnings(monthlyEarn)}/mo at current rate
+                    </p>
+                  )}
+                </div>
+
+                <Button
+                  className="w-full bg-primary text-black font-semibold"
+                  onClick={() => {
+                    setShowEarnDetailsDialog(false);
+                    setShowMorphoDrawer(true);
+                  }}
+                >
+                  Deposit more
+                </Button>
+              </div>
+            </ResponsiveDialogContent>
+          </ResponsiveDialog>
 
           {/* DRAWERS */}
           <MorphoDepositDrawer
