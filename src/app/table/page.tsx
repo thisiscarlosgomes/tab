@@ -8,11 +8,17 @@ import sdk from "@farcaster/frame-sdk";
 import { Drawer } from "vaul";
 import { NumericFormat } from "react-number-format";
 import { tokenList } from "@/lib/tokens";
+import { useTabIdentity } from "@/lib/useTabIdentity";
 
 import { LoaderCircle } from "lucide-react";
 
 export default function SplitPage() {
   const { address, isConnected } = useAccount();
+  const {
+    username: tabUsername,
+    pfp: tabPfp,
+    fid: tabFid,
+  } = useTabIdentity();
   const router = useRouter();
 
   const [roomName, setRoomName] = useState("");
@@ -39,9 +45,9 @@ export default function SplitPage() {
 
     return {
       address: address!.toLowerCase(),
-      name: frameUser?.username ?? address?.slice(0, 6),
-      pfp: frameUser?.pfpUrl ?? null,
-      fid: frameUser?.fid ?? null,
+      name: frameUser?.username ?? tabUsername ?? address?.slice(0, 6),
+      pfp: frameUser?.pfpUrl ?? tabPfp ?? null,
+      fid: frameUser?.fid ?? tabFid ?? null,
     };
   };
 

@@ -234,6 +234,14 @@ export default function SplitPage() {
   const isRecipient =
     address &&
     bill?.recipient?.address?.toLowerCase?.() === address.toLowerCase();
+  const creatorNameLooksLikeAddress =
+    !!bill?.creator?.name &&
+    (bill.creator.name.startsWith("0x") || bill.creator.name.startsWith("@0x"));
+  const creatorDisplayName =
+    isCreator && creatorNameLooksLikeAddress && identityUsername
+      ? identityUsername
+      : bill?.creator?.name;
+  const creatorHandleLabel = (creatorDisplayName ?? "").replace(/^@+/, "");
 
   const debtorCount =
   bill?.splitType === "receipt_open"
@@ -434,7 +442,7 @@ const paidCount = bill?.paid?.length ?? 0;
               <h1 className="text-lg font-medium text-center mb-1 mt-4">
                 {bill.description}
               </h1>
-              <p className="text-primary">Splits by @{bill.creator.name}</p>
+              <p className="text-primary">Splits by @{creatorHandleLabel}</p>
               <p className=" opacity-50 py-1 text-sm px-3 bg-white/5 text-white mt-1 rounded-[6px]">
                 Recipient: {shortAddress(bill.recipient.address)}
               </p>

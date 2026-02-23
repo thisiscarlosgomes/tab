@@ -5,6 +5,7 @@ import { useSendDrawer } from "@/providers/SendDrawerProvider";
 import { useAccount, useConnect, useSendTransaction } from "wagmi";
 
 import { Button } from "../ui/button";
+import { shortAddress } from "@/lib/shortAddress";
 import { PaymentSuccessDrawer } from "@/components/app/PaymentSuccessDrawer";
 import sdk from "@farcaster/frame-sdk";
 import { NumericFormat } from "react-number-format";
@@ -539,6 +540,7 @@ export function GlobalSendDrawer() {
         }}
       >
         <ResponsiveDialogContent className="scroll-smooth top-[80px] bottom-0 p-4 flex flex-col md:top-1/2 md:bottom-auto md:w-full md:max-w-md md:max-h-[85vh] md:overflow-hidden">
+          <ResponsiveDialogTitle className="sr-only">Send</ResponsiveDialogTitle>
 
             {!scannedUsername && !sendDrawerOpen && (
               <>
@@ -739,9 +741,12 @@ export function GlobalSendDrawer() {
                         </span>
                       </ResponsiveDialogTitle>
 
-                      <p className="text-white/30 break-all text-center">
-                        {!selectedUser?.verified_addresses?.primary
-                          ?.eth_address && (
+                      <p className="text-white/30 text-sm break-all text-center">
+                        {selectedUser?.verified_addresses?.primary?.eth_address ? (
+                          shortAddress(
+                            selectedUser.verified_addresses.primary.eth_address
+                          )
+                        ) : (
                           <span className="text-red-400 text-sm">
                             This user has no connected wallet
                           </span>
