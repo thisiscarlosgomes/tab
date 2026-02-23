@@ -119,7 +119,7 @@ function ActiveCardSkeleton() {
 
 function AuthValidationSplash() {
   return (
-    <main className="bg-background min-h-screen w-full flex flex-col items-center justify-center p-6 text-center">
+    <main className="bg-background h-[100dvh] w-full flex flex-col items-center justify-center p-6 text-center overflow-hidden">
       <img
         src="/app.png"
         alt="Tab"
@@ -894,10 +894,10 @@ export default function Home() {
     const showCodeStep = authStep === "code";
 
     return (
-      <main className="relative min-h-screen w-full overflow-hidden bg-black text-center text-white">
+      <main className="relative h-[100dvh] w-full overflow-hidden bg-black text-center text-white overscroll-none">
         <div className="absolute inset-0 bg-background" />
 
-        <div className="relative z-10 min-h-screen px-6 mx-auto w-full max-w-md flex flex-col">
+        <div className="relative z-10 h-full px-6 mx-auto w-full max-w-md flex flex-col">
           {showWelcomeStep ? (
             <div className="flex-1 min-h-0 pt-[max(6rem,env(safe-area-inset-top))] pb-44 flex flex-col">
               <div
@@ -1229,10 +1229,10 @@ export default function Home() {
 
   if (shouldShowFarcasterLinkStep) {
     return (
-      <main className="relative min-h-screen w-full overflow-hidden bg-black text-center text-white">
+      <main className="relative h-[100dvh] w-full overflow-hidden bg-black text-center text-white overscroll-none">
         <div className="absolute inset-0 bg-background" />
 
-        <div className="relative z-10 min-h-screen px-6 mx-auto w-full max-w-md flex flex-col items-center justify-center">
+        <div className="relative z-10 h-full px-6 mx-auto w-full max-w-md flex flex-col items-center justify-center">
           <AuthBrandLockup />
         </div>
 
