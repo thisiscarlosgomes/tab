@@ -670,7 +670,7 @@ export default function ProfilePage() {
       <div>
         {bills.length === 0 ? (
           <div className="flex flex-col items-center text-center text-white/30 py-10">
-            <img src="/vpeople.png" alt="" className="w-12 h-12 mb-1" />
+     
             <p>No split bills yet...</p>
           </div>
         ) : (
@@ -783,7 +783,7 @@ export default function ProfilePage() {
       <div>
         {userRooms.length === 0 ? (
           <div className="flex flex-col items-center text-center text-white/30 py-10">
-            <img src="/vpush.png" alt="" className="w-12 h-12 mb-1" />
+          
             <p>No pay spins yet...</p>
           </div>
         ) : (

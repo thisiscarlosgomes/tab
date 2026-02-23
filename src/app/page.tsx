@@ -1486,7 +1486,7 @@ export default function Home() {
             <div>
               <p className="text-base font-medium text-white">Earn USDC</p>
               <p className="text-md text-white/40 mt-0.5">
-                Deposit and earn yield on your USDC
+                Earn yield on your stablecoins
               </p>
             </div>
           </button>
@@ -1552,7 +1552,7 @@ export default function Home() {
             onOpenChange={setShowEarnDetailsDialog}
           >
             <ResponsiveDialogContent className="p-4 md:w-full md:max-w-md max-h-[calc(100dvh-110px)] md:max-h-[85vh] overflow-hidden">
-              <div className="rounded-t-3xl md:rounded-2xl bg-background p-5 flex flex-col gap-5 max-h-[calc(100dvh-140px)] md:max-h-[calc(85vh-2rem)] overflow-y-auto">
+              <div className="rounded-t-3xl md:rounded-2xl bg-background p-4 flex flex-col gap-5 max-h-[calc(100dvh-140px)] md:max-h-[calc(85vh-2rem)] overflow-y-auto">
                 <ResponsiveDialogTitle className="text-lg font-semibold text-white text-center">
                   You&apos;re earning
                 </ResponsiveDialogTitle>
@@ -1572,7 +1572,7 @@ export default function Home() {
                     {formattedEarnBalance}
                   </p>
                   {typeof monthlyEarn === "number" && monthlyEarn > 0 && (
-                    <p className="mt-2 text-sm text-green-400">
+                    <p className="mt-1 text-sm text-green-400">
                       +${formatMonthlyEarnings(monthlyEarn)}/mo at current rate
                     </p>
                   )}
@@ -1585,7 +1585,7 @@ export default function Home() {
                     setShowMorphoDrawer(true);
                   }}
                 >
-                  Deposit more
+                  View
                 </Button>
               </div>
             </ResponsiveDialogContent>

@@ -70,7 +70,7 @@ export function Header() {
   };
   const isMobileMainPage = Boolean(pathname && MOBILE_MAIN_PAGE_TITLES[pathname]);
   const showBackButton = !isMobileMainPage;
-  const showMobileMainPageIcon = isMobileMainPage;
+  const showMobileMainPageIcon = false;
   const [points, setPoints] = useState<number | null>(null);
   const [shake, setShake] = useState(false);
   const [spinOpen, setSpinOpen] = useState(false);
