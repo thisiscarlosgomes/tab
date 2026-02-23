@@ -1056,9 +1056,6 @@ export default function Home() {
             </button>
           </div>
 
-          <div className="text-xs text-yellow-400 text-center mt-4 mb-1">
-            This is an early version of Tab v2
-          </div>
         </div>
 
         {(showActiveCards || isLoadingActives) && (
