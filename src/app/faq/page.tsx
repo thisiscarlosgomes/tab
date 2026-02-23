@@ -99,7 +99,20 @@ export default function TabAgentFAQPage() {
           <ChatBubble from="tab">✅ Linked. Your agent can now send and settle.</ChatBubble>
         </div> */}
 
-        {/* EXAMPLE 2 — SEND */}
+        {/* EXAMPLE 2 — CREATE SPLIT */}
+        <div className="border border-white/10 rounded-lg p-6 flex flex-col gap-2">
+          <ChatBubble system>Create split from tagged users</ChatBubble>
+
+          <ChatBubble>split 0.2 eth @alex @rita</ChatBubble>
+
+          <ChatBubble from="tab">
+            Split created: 0.2 ETH with @alex and @rita.
+          </ChatBubble>
+
+          <ChatBubble from="tab">https://usetab.app/split/abcd1234</ChatBubble>
+        </div>
+
+        {/* EXAMPLE 3 — SEND */}
         <div className="border border-white/10 rounded-lg p-6 flex flex-col gap-2">
           <ChatBubble system>Quick payment to farcaster user</ChatBubble>
 
@@ -150,6 +163,7 @@ export default function TabAgentFAQPage() {
           {open && (
             <div className="px-4 pb-4 text-md text-white/60 space-y-1">
               <p className="text-white/80 font-medium">Current Skills</p>
+              <p>• Create invited splits from tagged Farcaster users</p>
               <p>• Send payments by @username or any wallet</p>
               <p>• Settle the latest split bills</p>
               <p className="pt-2 text-white/80 font-medium">Guardrails</p>

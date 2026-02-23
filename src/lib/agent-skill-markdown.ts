@@ -4,6 +4,7 @@ Send token payments and settle split shares from a user's delegated Privy wallet
 
 ## Endpoint
 
+- \`POST /api/agent/split/create\`
 - \`POST /api/agent/send\`
 - \`POST /api/agent/settle\`
 - \`POST /api/agent/link/start\`
@@ -17,6 +18,19 @@ One of:
 - \`x-agent-key: <AGENT_EXECUTOR_KEY>\` and body includes \`agentId\` + \`userId\`
 
 ## Input
+
+Create split:
+
+\`\`\`json
+{
+  "agentId": "YourAgentName",
+  "userId": "did:privy:...",
+  "amount": "0.2",
+  "token": "ETH",
+  "users": ["@alex", "@rita"],
+  "description": "Dinner split"
+}
+\`\`\`
 
 Send payment:
 
@@ -62,6 +76,7 @@ POST /api/agent/link/start
 
 ## Behavior
 
+- \`/api/agent/split/create\` creates an invited split and returns a confirmation payload with amount, currency, split URL, and tagged users.
 - Uses only the delegated wallet from active Agent Access policy.
 - \`/api/agent/settle\` accepts any one of \`splitId\`, \`splitCode\`, or \`splitUrl\` (including URLs with \`?code=...\`); if omitted, it settles the latest pending eligible split.
 - Enforces \`allowedToken\`, \`maxPerPayment\`, \`dailyCap\`, and expiry.

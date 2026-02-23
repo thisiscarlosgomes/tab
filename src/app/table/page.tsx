@@ -5,10 +5,10 @@ import { useAccount } from "wagmi";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import sdk from "@farcaster/frame-sdk";
-import { Drawer } from "vaul";
 import { NumericFormat } from "react-number-format";
 import { tokenList } from "@/lib/tokens";
 import { useTabIdentity } from "@/lib/useTabIdentity";
+import { PaymentTokenPickerDialog } from "@/components/app/PaymentTokenPickerDialog";
 
 import { LoaderCircle } from "lucide-react";
 
@@ -27,7 +27,7 @@ export default function SplitPage() {
 
   const [creating, setCreating] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [tokenDrawerOpen, setTokenDrawerOpen] = useState(false);
+  const [tokenDialogOpen, setTokenDialogOpen] = useState(false);
 
   const selectedToken = tokenList.find((t) => t.name === tokenType);
   const [showHowItWorks, setShowHowItWorks] = useState(true);
@@ -112,7 +112,7 @@ export default function SplitPage() {
         {/* Intro */}
 
         <div className="text-center text-lg font-medium">
-          Create a spin to pay group
+          Create a new spin
         </div>
 
         {/* Amount */}
@@ -145,7 +145,7 @@ export default function SplitPage() {
 
           {/* Token selector */}
           <button
-            onClick={() => setTokenDrawerOpen(true)}
+            onClick={() => setTokenDialogOpen(true)}
             className="w-full flex items-center justify-between p-4 rounded-lg bg-white/5"
           >
             <div className="flex items-center gap-2">
@@ -195,36 +195,12 @@ export default function SplitPage() {
         </div>
       </div>
 
-      {/* Token drawer */}
-      <Drawer.Root open={tokenDrawerOpen} onOpenChange={setTokenDrawerOpen}>
-        <Drawer.Portal>
-          <Drawer.Overlay className="fixed inset-0 bg-[#4E4C52]/60 backdrop-blur-sm z-50" />
-          <Drawer.Content className="pb-16 fixed bottom-0 left-0 right-0 bg-background p-4 rounded-t-3xl max-h-[80vh] overflow-y-auto z-50">
-            {/* Top Handle */}
-            <div className="mx-auto w-12 h-1.5 rounded-full bg-white/10 mb-4" />
-
-            <p className="text-center text-white mb-4">
-              Choose a payment token
-            </p>
-
-            <div className="space-y-2">
-              {tokenList.map((token) => (
-                <button
-                  key={token.name}
-                  onClick={() => {
-                    setTokenType(token.name);
-                    setTokenDrawerOpen(false);
-                  }}
-                  className="w-full flex items-center p-3 rounded-lg bg-white/5"
-                >
-                  <img src={token.icon} className="w-8 h-8 rounded-full mr-4" />
-                  <span className="text-white">{token.name}</span>
-                </button>
-              ))}
-            </div>
-          </Drawer.Content>
-        </Drawer.Portal>
-      </Drawer.Root>
+      <PaymentTokenPickerDialog
+        open={tokenDialogOpen}
+        onOpenChange={setTokenDialogOpen}
+        selectedToken={tokenType}
+        onSelect={setTokenType}
+      />
     </div>
   );
 }

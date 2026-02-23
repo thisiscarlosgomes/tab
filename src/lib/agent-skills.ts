@@ -20,6 +20,54 @@ const tokenSymbols = Array.from(
 
 export const AGENT_SKILLS: AgentSkill[] = [
   {
+    name: "tab_create_split",
+    description:
+      "Create an invited Tab split with tagged Farcaster users and return a split confirmation URL.",
+    endpoint: "/api/agent/split/create",
+    method: "POST",
+    headers: ["x-agent-key", "Content-Type: application/json"],
+    inputSchema: {
+      type: "object",
+      required: ["agentId", "userId", "amount", "users"],
+      properties: {
+        agentId: {
+          type: "string",
+          description:
+            "Your registered agent id. Must be linked by the user via claim flow.",
+        },
+        userId: {
+          type: "string",
+          description:
+            "Privy user id that owns the delegated wallet and Agent Access policy.",
+        },
+        amount: {
+          type: "string",
+          description: "Total split amount, e.g. '0.2' or '$84.40'.",
+        },
+        token: {
+          type: "string",
+          enum: tokenSymbols,
+          description: "Optional token symbol. Defaults to USDC.",
+        },
+        users: {
+          type: "array",
+          description: "Tagged Farcaster usernames to split with.",
+          items: {
+            type: "string",
+          },
+        },
+        description: {
+          type: "string",
+          description: "Optional split description shown on the split.",
+        },
+      },
+    },
+    examples: [
+      "split 0.2 eth @alex @rita",
+      "Create a $84.40 USDC split with @alex @rita @maya",
+    ],
+  },
+  {
     name: "tab",
     description:
       "Send a payment from the user's delegated Privy wallet under Agent Access guardrails.",

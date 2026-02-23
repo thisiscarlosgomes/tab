@@ -17,6 +17,7 @@ import { Button } from "@/components/ui/button";
 import { tokenList } from "@/lib/tokens";
 import { getTokenPrices } from "@/lib/getTokenPrices";
 import { useTabIdentity } from "@/lib/useTabIdentity";
+import { PaymentTokenPickerDialog } from "@/components/app/PaymentTokenPickerDialog";
 
 type FarcasterUser = {
   fid: number;
@@ -589,7 +590,7 @@ export default function SplitNewPage() {
       {step === 1 && (
         <div className="w-full max-w-md flex flex-col space-y-5">
           <div className="text-center text-lg font-medium">
-            Create, Split, and settle fast
+            Create new bill split
           </div>
 
           <div className="flex flex-col items-center -mt-2 mb-4">
@@ -819,40 +820,12 @@ export default function SplitNewPage() {
         </div>
       )}
 
-      <Drawer.Root open={tokenDrawerOpen} onOpenChange={setTokenDrawerOpen}>
-        <Drawer.Portal>
-          <Drawer.Overlay className="fixed inset-0 bg-[#4E4C52]/60 backdrop-blur-sm z-50" />
-          <Drawer.Content className="pb-16 fixed bottom-0 left-0 right-0 bg-background p-4 rounded-t-3xl max-h-[80vh] overflow-y-auto z-50">
-            {/* Top Handle */}
-            <div className="mx-auto w-12 h-1.5 rounded-full bg-white/10 mb-4" />
-
-            <p className="text-center text-white mb-4">
-              Choose a payment token
-            </p>
-
-            <div className="space-y-2">
-              {tokenList.map((token) => (
-                <button
-                  key={token.name}
-                  onClick={() => {
-                    setTokenType(token.name);
-                    setTokenDrawerOpen(false);
-                  }}
-                  className="w-full flex items-center p-3 rounded-lg bg-white/5 hover:bg-white/10"
-                >
-                  <img
-                    src={token.icon}
-                    className="w-8 h-8 rounded-full mr-4"
-                    alt={token.name}
-                  />
-
-                  <p className="text-white font-medium">{token.name}</p>
-                </button>
-              ))}
-            </div>
-          </Drawer.Content>
-        </Drawer.Portal>
-      </Drawer.Root>
+      <PaymentTokenPickerDialog
+        open={tokenDrawerOpen}
+        onOpenChange={setTokenDrawerOpen}
+        selectedToken={tokenType}
+        onSelect={setTokenType}
+      />
 
       <Drawer.Root
         open={followerDrawerOpen}

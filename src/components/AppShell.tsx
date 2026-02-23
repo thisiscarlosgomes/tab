@@ -26,7 +26,6 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     pathname.startsWith("/join-split") ||
     pathname.startsWith("/agent/claim/");
   const hideHeaderOnRoute =
-    pathname === "/table" ||
     pathname === "/rooms";
   const showDesktopHeaderOnly = pathname.startsWith("/game");
   const hasLinkedFarcaster = useMemo(

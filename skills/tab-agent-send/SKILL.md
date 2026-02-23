@@ -6,6 +6,7 @@ description: Send token payments and settle split shares from a user's delegated
 # tab
 
 Use this skill when a user asks an agent to send money or settle a split share, for example:
+- "split 0.2 eth @alex @rita"
 - "Send $0.50 to @alice"
 - "Pay 0.5 USDC to 0xabc..."
 - "Send 0.5 USDC to vitalik.eth"
@@ -15,6 +16,7 @@ Use this skill when a user asks an agent to send money or settle a split share, 
 
 ## Endpoint
 
+- `POST /api/agent/split/create`
 - `POST /api/agent/send`
 - `POST /api/agent/settle`
 - `POST /api/agent/link/start`
@@ -28,6 +30,19 @@ One of:
 - `x-agent-key: <AGENT_EXECUTOR_KEY>` and body includes `agentId` + `userId`
 
 ## Input
+
+Create split:
+
+```json
+{
+  "agentId": "YourAgentName",
+  "userId": "did:privy:...",
+  "amount": "0.2",
+  "token": "ETH",
+  "users": ["@alex", "@rita"],
+  "description": "Dinner split"
+}
+```
 
 Send payment:
 
@@ -73,6 +88,7 @@ POST /api/agent/link/start
 
 ## Behavior
 
+- `/api/agent/split/create` creates an invited split and returns a confirmation payload with amount, currency, split URL, and tagged users.
 - Uses only the delegated wallet from active Agent Access policy.
 - `/api/agent/settle` accepts any one of `splitId`, `splitCode`, or `splitUrl` (including URLs with `?code=...`); if omitted, it settles the latest pending eligible split.
 - Enforces `allowedToken`, `maxPerPayment`, `dailyCap`, and expiry.
