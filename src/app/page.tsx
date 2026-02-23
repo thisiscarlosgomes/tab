@@ -121,7 +121,7 @@ function AuthValidationSplash() {
   return (
     <main className="bg-background h-[100dvh] w-full flex flex-col items-center justify-center p-6 text-center overflow-hidden">
       <img
-        src="/app.png"
+        src="/ping.svg"
         alt="Tab"
         className="w-16 h-16 mb-4 animate-pulse"
       />

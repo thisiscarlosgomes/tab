@@ -248,13 +248,6 @@ export default function ActivityPage() {
 
   const renderLoadingSkeleton = () => (
     <div className="mt-4">
-      <div className="flex gap-2 mb-4 mt-6">
-        <Skeleton className="h-9 w-14" />
-        <Skeleton className="h-9 w-16" />
-        <Skeleton className="h-9 w-14" />
-      </div>
-
-      <Skeleton className="h-4 w-32 mb-3" />
       <ul className="space-y-3">
         {Array.from({ length: 6 }).map((_, idx) => (
           <li

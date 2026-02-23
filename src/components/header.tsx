@@ -36,20 +36,20 @@ const PAGE_TITLES: Record<string, string> = {
 
 const ABOUT_STEPS = [
   {
-    icon: "👨‍👩‍👧",
+    iconSrc: "/link.png",
     title: "Your social wallet",
     desc: "Move money between people you follow and trust. Split group bills, send payments, and get paid — in seconds",
     accent: "from-lime-400 to-green-500",
   },
 
   {
-    icon: "💵",
+    iconSrc: "/dollars.png",
     title: "Put your money to work",
     desc: "Earn up to 5% APY on your USDC, Play onchain jackpot, airdrop tokens, spin to pay and more",
     accent: "from-emerald-400 to-lime-500",
   },
   {
-    icon: "🧠",
+    iconSrc: "/stack.png",
     title: "Tab Agent skill",
     desc: "Use Tab skill to trigger payments and agent actions from any chat app you already use.",
     accent: "from-indigo-400 to-blue-500",
@@ -326,9 +326,14 @@ export function Header() {
               <div className="flex items-center gap-3 min-w-0">
                 <div
                   aria-hidden
-                  className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-white/5 text-2xl"
+                  className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-white/5"
                 >
-                  {currentAboutStep.icon}
+                  <img
+                    src={currentAboutStep.iconSrc}
+                    alt=""
+                    aria-hidden="true"
+                    className="w-9 h-9 object-contain"
+                  />
                 </div>
                 <div className="min-w-0">
                   <div className="text-white text-lg font-semibold leading-tight">
