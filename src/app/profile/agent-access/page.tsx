@@ -674,17 +674,17 @@ export default function AgentAccessPage() {
                 <span className="text-primary">usetab.app/skill.md</span>
               </p>
               <p className="text-sm text-white/90">
-                <span className="text-white/50">2.</span> Approve the link it returns
+                <span className="text-white/50">2.</span> Open and approve the link it returns
               </p>
               <p className="text-sm text-white/90">
                 <span className="text-white/50">3.</span> Share your{" "}
-                <span className="text-white">did:privy:...</span> and enable Agent Access
+                <span className="text-white">did:privy:...</span> to activate
               </p>
             </div>
 
             <div className="space-y-2">
               <p className="text-xs uppercase tracking-wide text-white/40 px-1">
-                Try asking
+                try
               </p>
               <div className="rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-sm text-white/90">
                 Pay $0.50 USDC to @alice

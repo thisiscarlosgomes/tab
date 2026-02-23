@@ -302,7 +302,7 @@ export function Header() {
       {/* 🆕 About Drawer */}
       <ResponsiveDialog open={aboutOpen} onOpenChange={setAboutOpen}>
         <ResponsiveDialogContent className="p-0 md:w-full md:max-w-md overflow-hidden">
-          <div className="relative bg-background px-4 pt-4 pb-[calc(1rem+env(safe-area-inset-bottom))] md:px-5 md:pb-5">
+          <div className="relative bg-background px-4 pt-4 pb-4 md:px-5 md:pb-5">
             <ResponsiveDialogTitle className="mt-6 text-center text-xl font-semibold tracking-tight">
               Welcome to tab
             </ResponsiveDialogTitle>
