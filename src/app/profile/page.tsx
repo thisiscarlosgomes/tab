@@ -62,6 +62,9 @@ const profileHeroCache = new Map<
   string,
   { hero: FarcasterHeroState; ts: number }
 >();
+const PROFILE_LIST_CACHE_TTL_MS = 60 * 1000;
+const profileBillsCache = new Map<string, { bills: SplitBill[]; ts: number }>();
+const profileRoomsCache = new Map<string, { rooms: Room[]; ts: number }>();
 
 export default function ProfilePage() {
   const {
@@ -303,7 +306,9 @@ export default function ProfilePage() {
       return;
     }
 
-    setBillsLoading(true);
+    const cacheKey = address.toLowerCase();
+    const hasVisibleBills = billsLoaded || bills.length > 0;
+    if (!hasVisibleBills) setBillsLoading(true);
     const controller = new AbortController();
     const timeoutId = window.setTimeout(() => controller.abort(), 10000);
     try {
@@ -317,6 +322,7 @@ export default function ProfilePage() {
       const data = await res.json();
       if (Array.isArray(data.bills)) {
         setBills(data.bills);
+        profileBillsCache.set(cacheKey, { bills: data.bills, ts: Date.now() });
       }
     } catch {
       // Keep last successful bills list on transient failure.
@@ -325,7 +331,7 @@ export default function ProfilePage() {
       setBillsLoading(false);
       setBillsLoaded(true);
     }
-  }, [address]);
+  }, [address, bills.length, billsLoaded]);
 
   const fetchUserRooms = useCallback(async () => {
     if (!address) {
@@ -333,7 +339,9 @@ export default function ProfilePage() {
       return;
     }
 
-    setRoomsLoading(true);
+    const cacheKey = address.toLowerCase();
+    const hasVisibleRooms = roomsLoaded || userRooms.length > 0;
+    if (!hasVisibleRooms) setRoomsLoading(true);
     const controller = new AbortController();
     const timeoutId = window.setTimeout(() => controller.abort(), 6000);
     try {
@@ -347,6 +355,7 @@ export default function ProfilePage() {
       const data = await res.json();
       if (Array.isArray(data.rooms)) {
         setUserRooms(data.rooms);
+        profileRoomsCache.set(cacheKey, { rooms: data.rooms, ts: Date.now() });
       }
     } catch {
       // Keep last successful rooms list on transient failure.
@@ -354,6 +363,27 @@ export default function ProfilePage() {
       clearTimeout(timeoutId);
       setRoomsLoading(false);
       setRoomsLoaded(true);
+    }
+  }, [address, roomsLoaded, userRooms.length]);
+
+  useEffect(() => {
+    if (!address) return;
+
+    const cacheKey = address.toLowerCase();
+    const now = Date.now();
+    const cachedBills = profileBillsCache.get(cacheKey);
+    const cachedRooms = profileRoomsCache.get(cacheKey);
+
+    if (cachedBills && now - cachedBills.ts < PROFILE_LIST_CACHE_TTL_MS) {
+      setBills(cachedBills.bills);
+      setBillsLoaded(true);
+      setBillsLoading(false);
+    }
+
+    if (cachedRooms && now - cachedRooms.ts < PROFILE_LIST_CACHE_TTL_MS) {
+      setUserRooms(cachedRooms.rooms);
+      setRoomsLoaded(true);
+      setRoomsLoading(false);
     }
   }, [address]);
 

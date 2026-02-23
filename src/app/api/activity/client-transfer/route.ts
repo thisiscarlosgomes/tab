@@ -7,6 +7,7 @@ type ClientTransferBody = {
   amount?: number | string;
   token?: string;
   txHash?: string;
+  note?: string | null;
   recipientUsername?: string | null;
   recipientPfp?: string | null;
   senderUsername?: string | null;
@@ -39,6 +40,13 @@ function normalizeToken(value: unknown) {
   return token;
 }
 
+function normalizeNote(value: unknown) {
+  if (typeof value !== "string") return null;
+  const note = value.trim();
+  if (!note) return null;
+  return note.slice(0, 280);
+}
+
 export async function POST(req: NextRequest) {
   let body: ClientTransferBody | null = null;
 
@@ -53,6 +61,7 @@ export async function POST(req: NextRequest) {
   const txHash = normalizeTxHash(body?.txHash);
   const amount = normalizeAmount(body?.amount);
   const token = normalizeToken(body?.token);
+  const note = normalizeNote(body?.note);
 
   if (!senderAddress || !recipientAddress || !txHash || amount === null || !token) {
     return NextResponse.json({ error: "Invalid payload" }, { status: 400 });
@@ -93,6 +102,7 @@ export async function POST(req: NextRequest) {
             amount,
             token,
             txHash,
+            note: note ?? undefined,
             executionMode: "user_session",
             recipientResolutionSource,
             counterparty: {
@@ -122,6 +132,7 @@ export async function POST(req: NextRequest) {
             amount,
             token,
             txHash,
+            note: note ?? undefined,
             executionMode: "user_session",
             counterparty: {
               address: senderAddress,

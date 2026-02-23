@@ -2,6 +2,11 @@ import { NextRequest, NextResponse } from "next/server";
 
 const MORALIS_BASE_URL = "https://deep-index.moralis.io/api/v2.2";
 const DEFAULT_CHAIN = "base";
+const PORTFOLIO_CACHE_TTL_MS = 30 * 1000;
+const portfolioCache = new Map<
+  string,
+  { ts: number; payload: { totalBalanceUSD: number; tokens: Array<NormalizedToken & { portfolioPercent: number }> } }
+>();
 
 type MoralisTokenItem = {
   token_address?: string | null;
@@ -139,6 +144,21 @@ export async function GET(req: NextRequest) {
     );
   }
 
+  const cacheKey = `${chain}:${address}`;
+  const cached = portfolioCache.get(cacheKey);
+
+  const buildPayload = (tokens: NormalizedToken[]) => {
+    const totalBalanceUSD = tokens.reduce((sum, token) => sum + token.balanceUSD, 0);
+    return {
+      totalBalanceUSD,
+      tokens: tokens.map((token) => ({
+        ...token,
+        portfolioPercent:
+          totalBalanceUSD > 0 ? (token.balanceUSD / totalBalanceUSD) * 100 : 0,
+      })),
+    };
+  };
+
   try {
     const url = new URL(`${MORALIS_BASE_URL}/wallets/${address}/tokens`);
     url.searchParams.set("chain", chain);
@@ -157,6 +177,11 @@ export async function GET(req: NextRequest) {
 
     const body = await response.json().catch(() => ({}));
     if (!response.ok) {
+      if (cached && Date.now() - cached.ts < PORTFOLIO_CACHE_TTL_MS) {
+        return NextResponse.json(cached.payload, {
+          headers: { "x-portfolio-cache": "stale-fallback" },
+        });
+      }
       return NextResponse.json(
         { error: "Failed to fetch portfolio", details: body ?? null },
         { status: 502 }
@@ -197,17 +222,15 @@ export async function GET(req: NextRequest) {
     const tokens = Array.from(dedupedBySymbol.values())
       .sort((a, b) => b.balanceUSD - a.balanceUSD)
       .map((token) => ({ ...token, imgUrl: getStableTokenIcon(token.symbol) ?? token.imgUrl }));
-
-    const totalBalanceUSD = tokens.reduce((sum, token) => sum + token.balanceUSD, 0);
-
-    return NextResponse.json({
-      totalBalanceUSD,
-      tokens: tokens.map((token) => ({
-        ...token,
-        portfolioPercent: totalBalanceUSD > 0 ? (token.balanceUSD / totalBalanceUSD) * 100 : 0,
-      })),
-    });
+    const payload = buildPayload(tokens);
+    portfolioCache.set(cacheKey, { ts: Date.now(), payload });
+    return NextResponse.json(payload);
   } catch {
+    if (cached && Date.now() - cached.ts < PORTFOLIO_CACHE_TTL_MS) {
+      return NextResponse.json(cached.payload, {
+        headers: { "x-portfolio-cache": "stale-fallback" },
+      });
+    }
     return NextResponse.json(
       { error: "Failed to fetch portfolio" },
       { status: 502 }

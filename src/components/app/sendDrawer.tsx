@@ -472,6 +472,7 @@ export function GlobalSendDrawer() {
             amount: parsedAmount,
             token: selectedToken,
             txHash,
+            note: customMessage?.trim() || null,
             recipientUsername: selectedUser?.username ?? null,
             recipientPfp: selectedUser?.pfp_url ?? null,
             senderUsername: identityUsername ?? null,

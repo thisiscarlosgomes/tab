@@ -8,8 +8,10 @@ import { NumericFormat } from "react-number-format";
 import { Button } from "@/components/ui/button";
 import Tilt from "react-parallax-tilt";
 import { useAccount } from "wagmi";
-import { useWallets } from "@privy-io/react-auth";
+import { usePrivy, useWallets } from "@privy-io/react-auth";
 import { shortAddress } from "@/lib/shortAddress";
+import { parseUnits } from "viem";
+import { useTabIdentity } from "@/lib/useTabIdentity";
 import {
   ResponsiveDialog,
   ResponsiveDialogContent,
@@ -39,14 +41,29 @@ export function ReceiveDrawer({
 }) {
   const { isConnected, address: wagmiAddress } = useAccount();
   const { wallets } = useWallets();
+  const { user } = usePrivy();
+  const { username: tabUsername } = useTabIdentity();
   const address =
     (isConnected && wagmiAddress ? wagmiAddress : wallets[0]?.address) ?? null;
   const [recipient, setRecipient] = useState("");
   const [amount, setAmount] = useState("");
-  const [tokenType, setTokenType] = useState(tokenList[2]?.name ?? "ETH");
+  const [tokenType, setTokenType] = useState("ETH");
   const [tokenDrawerOpen, setTokenDrawerOpen] = useState(false);
   const [copied, setCopied] = useState(false);
   const [resolvedAddress, setResolvedAddress] = useState<string | null>(null);
+  const linkedFarcasterAccount = user?.linkedAccounts?.find(
+    (
+      account
+    ): account is { type?: string; username?: string | null } =>
+      account?.type === "farcaster"
+  );
+  const receiveUsername =
+    tabUsername ??
+    user?.farcaster?.username ??
+    (linkedFarcasterAccount?.type === "farcaster"
+      ? linkedFarcasterAccount.username
+      : null) ??
+    null;
 
   useEffect(() => {
     if (!address) {
@@ -61,6 +78,33 @@ export function ReceiveDrawer({
   const fullUrl = resolvedAddress
     ? `https://usetab.app/r?payTo=${resolvedAddress}&token=${tokenType}${amount ? `&amount=${amount}` : ""}`
     : "";
+  const qrValue = (() => {
+    if (!resolvedAddress) return "";
+
+    const token = tokenList.find((t) => t.name === tokenType);
+    if (!token) return `ethereum:${resolvedAddress}@8453`;
+
+    try {
+      if (token.name === "ETH") {
+        if (!amount) return `ethereum:${resolvedAddress}@8453`;
+        const wei = parseUnits(amount, token.decimals ?? 18);
+        return `ethereum:${resolvedAddress}@8453?value=${wei.toString()}`;
+      }
+
+      if (!token.address) return `ethereum:${resolvedAddress}@8453`;
+      if (!amount) {
+        return `ethereum:${token.address}@8453/transfer?address=${resolvedAddress}`;
+      }
+      const rawAmount = parseUnits(amount, token.decimals ?? 18);
+      return `ethereum:${token.address}@8453/transfer?address=${resolvedAddress}&uint256=${rawAmount.toString()}`;
+    } catch {
+      return token.name === "ETH"
+        ? `ethereum:${resolvedAddress}@8453`
+        : token.address
+          ? `ethereum:${token.address}@8453/transfer?address=${resolvedAddress}`
+          : `ethereum:${resolvedAddress}@8453`;
+    }
+  })();
 
   return (
     <ResponsiveDialog open={isOpen} onOpenChange={onOpenChange}>
@@ -68,7 +112,7 @@ export function ReceiveDrawer({
         <div className="bg-background p-4 rounded-t-3xl h-full md:mx-auto md:mt-0 md:h-auto md:max-h-[85vh] md:w-full md:rounded-2xl md:border-0 md:p-6 md:overflow-y-auto">
           <ResponsiveDialogHeader className="pt-0 pb-0">
             <ResponsiveDialogTitle className="text-white text-lg text-center font-medium">
-              Get paid
+              Request
             </ResponsiveDialogTitle>
           </ResponsiveDialogHeader>
 
@@ -152,7 +196,7 @@ export function ReceiveDrawer({
                   className="p-2 bg-white rounded-xl"
                 >
                   <QRCode
-                    value={fullUrl}
+                    value={qrValue}
                     size={240}
                     logoImage="/app.png"
                     logoWidth={48}
@@ -162,23 +206,18 @@ export function ReceiveDrawer({
                   />
                 </Tilt>
 
-                {/* Username */}
-                <button
-                  type="button"
-                  onClick={() => {
-                    if (!fullUrl) return;
-                    navigator.clipboard.writeText(fullUrl);
-                    setCopied(true);
-                    setTimeout(() => setCopied(false), 2000);
-                  }}
-                  className="text-primary text-md mt-4 hover:underline"
-                >
-                  {`usetab.app/r?payTo=${shortAddress(resolvedAddress)}`}
-                </button>
-
                 {/* Wallet Address */}
+                {receiveUsername && (
+                  <div className="text-primary text-md mt-4">
+                    @{receiveUsername}
+                  </div>
+                )}
                 <button
-                  className="text-white/30 text-md transition"
+                  className={
+                    receiveUsername
+                      ? "text-white/30 text-md transition mt-1"
+                      : "text-white/30 text-md transition mt-4"
+                  }
                   onClick={() => navigator.clipboard.writeText(resolvedAddress)}
                 >
                   {shortAddress(resolvedAddress)}
@@ -199,9 +238,6 @@ export function ReceiveDrawer({
               {copied ? "Copied!" : "Copy Address"}
             </Button>
 
-            <p className="text-center text-white/30 text-sm mb-1">
-              Use tab to scan and pay
-            </p>
           </div>
 
           <Drawer.Root open={tokenDrawerOpen} onOpenChange={setTokenDrawerOpen}>

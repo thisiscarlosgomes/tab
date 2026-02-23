@@ -72,6 +72,16 @@ const TRANSACTION_TYPES = new Set([
   "jackpot_deposit",
   "earn_deposit",
 ]);
+const WALLET_PORTFOLIO_CACHE_TTL_MS = 60 * 1000;
+const WALLET_TRANSACTIONS_CACHE_TTL_MS = 30 * 1000;
+const walletPortfolioCache = new Map<
+  string,
+  { wallet: WalletPortfolioResponse; ts: number }
+>();
+const walletTransactionsCache = new Map<
+  string,
+  { transactions: ActivityItem[]; ts: number }
+>();
 
 function getAgentAccessCacheKey(address: string) {
   return `tab:agent-access:${address.toLowerCase()}`;
@@ -119,7 +129,8 @@ export default function WalletPage() {
       return;
     }
 
-    setWalletLoading(true);
+    if (!walletLoaded) setWalletLoading(true);
+    const cacheKey = address.toLowerCase();
     const controller = new AbortController();
     const timeoutId = window.setTimeout(() => controller.abort(), 12000);
     try {
@@ -132,7 +143,9 @@ export default function WalletPage() {
         const errorPayload = await res
           .json()
           .catch(() => ({ error: "Could not load wallet balances" }));
-        setWallet({ totalBalanceUSD: 0, tokens: [] });
+        if (!walletLoaded) {
+          setWallet({ totalBalanceUSD: 0, tokens: [] });
+        }
         setWalletError(
           typeof errorPayload?.error === "string"
             ? errorPayload.error
@@ -142,20 +155,24 @@ export default function WalletPage() {
       }
 
       const data = await res.json();
-      setWallet({
+      const nextWallet = {
         totalBalanceUSD: Number(data?.totalBalanceUSD ?? 0),
         tokens: Array.isArray(data?.tokens) ? data.tokens : [],
-      });
+      };
+      setWallet(nextWallet);
+      walletPortfolioCache.set(cacheKey, { wallet: nextWallet, ts: Date.now() });
       setWalletError(null);
     } catch {
-      setWallet({ totalBalanceUSD: 0, tokens: [] });
+      if (!walletLoaded) {
+        setWallet({ totalBalanceUSD: 0, tokens: [] });
+      }
       setWalletError("Could not load wallet balances");
     } finally {
       clearTimeout(timeoutId);
       setWalletLoading(false);
       setWalletLoaded(true);
     }
-  }, [address]);
+  }, [address, walletLoaded]);
 
   useEffect(() => {
     let cancelled = false;
@@ -265,7 +282,8 @@ export default function WalletPage() {
       return;
     }
 
-    setTransactionsLoading(true);
+    if (!transactionsLoaded) setTransactionsLoading(true);
+    const cacheKey = address.toLowerCase();
     const controller = new AbortController();
     const timeoutId = window.setTimeout(() => controller.abort(), 10000);
     try {
@@ -286,12 +304,38 @@ export default function WalletPage() {
           )
         : [];
       setTransactions(next);
+      walletTransactionsCache.set(cacheKey, { transactions: next, ts: Date.now() });
     } catch {
       // Keep last successful transactions list on transient failure.
     } finally {
       clearTimeout(timeoutId);
       setTransactionsLoading(false);
       setTransactionsLoaded(true);
+    }
+  }, [address, transactionsLoaded]);
+
+  useEffect(() => {
+    if (!address) return;
+
+    const cacheKey = address.toLowerCase();
+    const now = Date.now();
+    const cachedWallet = walletPortfolioCache.get(cacheKey);
+    const cachedTransactions = walletTransactionsCache.get(cacheKey);
+
+    if (cachedWallet && now - cachedWallet.ts < WALLET_PORTFOLIO_CACHE_TTL_MS) {
+      setWallet(cachedWallet.wallet);
+      setWalletLoaded(true);
+      setWalletLoading(false);
+      setWalletError(null);
+    }
+
+    if (
+      cachedTransactions &&
+      now - cachedTransactions.ts < WALLET_TRANSACTIONS_CACHE_TTL_MS
+    ) {
+      setTransactions(cachedTransactions.transactions);
+      setTransactionsLoaded(true);
+      setTransactionsLoading(false);
     }
   }, [address]);
 
@@ -314,7 +358,7 @@ export default function WalletPage() {
     let cancelled = false;
 
     const bootstrapProfileData = async () => {
-      // 1) wallet (zapper) first
+      // 1) wallet first (cache hydration can mark this loaded before we get here)
       if (!walletLoaded && !walletLoading) {
         await fetchWallet();
         if (cancelled) return;
@@ -400,8 +444,15 @@ export default function WalletPage() {
   /* RENDER                                 */
   /* -------------------------------------- */
 
+  const hasFreshWalletCache = Boolean(
+    address &&
+      (() => {
+        const cached = walletPortfolioCache.get(address.toLowerCase());
+        return cached && Date.now() - cached.ts < WALLET_PORTFOLIO_CACHE_TTL_MS;
+      })()
+  );
   const isInitialProfileLoading =
-    (isProfileLoading && !address) || (!!address && !walletLoaded);
+    (isProfileLoading && !address) || (!!address && !walletLoaded && !hasFreshWalletCache);
   const isAgentLive = Boolean(
     agentAccess?.enabled &&
     agentAccess?.delegated &&
@@ -614,12 +665,6 @@ export default function WalletPage() {
 
     return (
       <div className="space-y-4">
-        {walletError && (
-          <div className="rounded-xl border border-red-500/30 bg-red-500/10 px-4 py-3 text-md text-red-200">
-            {walletError}
-          </div>
-        )}
-
         <div className="overflow-hidden">
           <div className="px-1 py-2">
             <p className="text-md text-white/60">

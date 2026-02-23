@@ -5,6 +5,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { Drawer } from "vaul";
 import sdk from "@farcaster/frame-sdk";
 import { NumericFormat } from "react-number-format";
+import { parseUnits } from "viem";
 import { Button } from "@/components/ui/button";
 import { SendToAddressDrawer } from "@/components/app/SendToAddressDrawer";
 import { SendToRawAddressDrawer } from "@/components/app/SendToRawAddressDrawer";
@@ -175,14 +176,38 @@ export default function Page() {
   const fullUrl = resolvedAddress
     ? `https://usetab.app/r?payTo=${resolvedAddress}&token=${tokenType}${amount ? `&amount=${amount}` : ""}`
     : "";
+  const qrValue = (() => {
+    if (!resolvedAddress) return "";
+
+    const token = tokenList.find((t) => t.name === tokenType);
+    if (!token) return `ethereum:${resolvedAddress}@8453`;
+
+    try {
+      if (token.name === "ETH") {
+        if (!amount) return `ethereum:${resolvedAddress}@8453`;
+        const wei = parseUnits(amount, token.decimals ?? 18);
+        return `ethereum:${resolvedAddress}@8453?value=${wei.toString()}`;
+      }
+
+      if (!token.address) return `ethereum:${resolvedAddress}@8453`;
+      if (!amount) {
+        return `ethereum:${token.address}@8453/transfer?address=${resolvedAddress}`;
+      }
+
+      const rawAmount = parseUnits(amount, token.decimals ?? 18);
+      return `ethereum:${token.address}@8453/transfer?address=${resolvedAddress}&uint256=${rawAmount.toString()}`;
+    } catch {
+      return token.name === "ETH"
+        ? `ethereum:${resolvedAddress}@8453`
+        : token.address
+          ? `ethereum:${token.address}@8453/transfer?address=${resolvedAddress}`
+          : `ethereum:${resolvedAddress}@8453`;
+    }
+  })();
 
   return (
     <div className="p-4 pb-[calc(8rem+env(safe-area-inset-bottom))] pt-12 mt-[calc(4rem+env(safe-area-inset-top))] relative">
       <div className="max-w-sm w-full mx-auto space-y-6">
-        <div className="text-center text-md mb-4 pb-2 mx-4 px-4">
-          Generate a unique Payment Link or QR to receive payments
-        </div>
-
         <div className="text-center">
           <NumericFormat
             inputMode="decimal"
@@ -195,9 +220,8 @@ export default function Page() {
             decimalScale={4}
             prefix={getTokenSuffix(tokenType)}
             placeholder={`${getTokenSuffix(tokenType)}0`}
-            className={`text-5xl text-center font-medium bg-transparent outline-none placeholder-white/20 w-full ${
-              amount === "" || amount === "0" ? "text-white/20" : "text-primary"
-            }`}
+            className={`text-5xl text-center font-medium bg-transparent outline-none placeholder-white/20 w-full ${amount === "" || amount === "0" ? "text-white/20" : "text-primary"
+              }`}
           />
           <p className="text-sm text-white/30 mt-2">
             {tokenType}
@@ -243,7 +267,7 @@ export default function Page() {
               className="p-2 bg-white rounded-xl"
             >
               <QRCode
-                value={fullUrl}
+                value={qrValue}
                 size={240}
                 logoImage="/app.png"
                 logoWidth={36}
@@ -268,28 +292,17 @@ export default function Page() {
           <Button
             className="w-full"
             onClick={() => {
-              if (!fullUrl) return;
-              navigator.clipboard.writeText(fullUrl);
+              if (!resolvedAddress) return;
+              navigator.clipboard.writeText(resolvedAddress);
               setCopied(true);
               setTimeout(() => setCopied(false), 2000);
             }}
             disabled={!resolvedAddress}
           >
-            {copied ? "Link copied!" : "Copy Link"}
+            {copied ? "Address copied!" : "Copy Address"}
           </Button>
         )}
 
-        {hasMounted && connected && address && (
-          <div className="text-center text-sm text-white/30 -mt-2 space-y-1">
-            <p>Connected: {shortAddress(address)}</p>
-            <button
-              onClick={handleLogout}
-              className="text-xs underline text-white/30 hover:text-white/50 transition"
-            >
-              Logout
-            </button>
-          </div>
-        )}
       </div>
 
       <Drawer.Root open={tokenDrawerOpen} onOpenChange={setTokenDrawerOpen}>
