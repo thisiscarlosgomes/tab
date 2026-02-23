@@ -18,7 +18,7 @@ export async function GET(req: NextRequest) {
   const room = await res.json();
   const roomName = `${room.name} Spin` || "Spin the tab";
 
-  const splash = `${origin}/app.png`;
+  const splash = `${origin}/newnewapp.png`;
   const bg = `${origin}/ogbg.png`;
 
   return new ImageResponse(

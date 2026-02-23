@@ -481,7 +481,7 @@ export default function JackpotPage() {
     ctx.fillText("TAB JACKPOT", 60, 115);
 
     try {
-      const logo = await loadImage("/app.png");
+      const logo = await loadImage("/newnewapp.png");
       const logoSize = 72;
       const logoX = canvas.width - 60 - logoSize;
       const logoY = 58;
@@ -938,7 +938,7 @@ export default function JackpotPage() {
                 <div className="flex items-start justify-between gap-3">
                   <p className="text-sm opacity-80">TAB JACKPOT</p>
                   <img
-                    src="/app.png"
+                    src="/newnewapp.png"
                     alt="Tab logo"
                     className="w-9 h-9 rounded-lg object-cover shrink-0"
                   />

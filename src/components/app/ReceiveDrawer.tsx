@@ -170,8 +170,8 @@ export function ReceiveDrawer({
                     size={240}
                     logoImage={
                       isFarcasterName(recipient.trim())
-                        ? pfpUrl || "/app.png"
-                        : "/app.png"
+                        ? pfpUrl || "/newnewapp.png"
+                        : "/newnewapp.png"
                     }
                     logoWidth={40}
                     logoHeight={40}
@@ -198,7 +198,7 @@ export function ReceiveDrawer({
                   <QRCode
                     value={qrValue}
                     size={240}
-                    logoImage="/app.png"
+                    logoImage="/newnewapp.png"
                     logoWidth={48}
                     logoHeight={48}
                     logoOpacity={1}

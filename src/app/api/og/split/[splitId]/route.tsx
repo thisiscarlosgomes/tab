@@ -55,7 +55,7 @@ export async function GET(req: NextRequest) {
 
   const title = `${prefix}${amountFormatted} Split`;
 
-  const splash = `${origin}/app.png`;
+  const splash = `${origin}/newnewapp.png`;
   const bg = `${origin}/ogbg.png`;
 
   return new ImageResponse(

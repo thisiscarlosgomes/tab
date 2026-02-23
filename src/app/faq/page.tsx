@@ -106,10 +106,10 @@ export default function TabAgentFAQPage() {
           <ChatBubble>split 0.2 eth @alex @rita</ChatBubble>
 
           <ChatBubble from="tab">
-            Split created: 0.2 ETH with @alex and @rita.
+            Split created. Amount: 0.2, currency: ETH, users: @alex, @rita.
           </ChatBubble>
 
-          <ChatBubble from="tab">https://usetab.app/split/abcd1234</ChatBubble>
+          <ChatBubble from="tab">URL: https://usetab.app/split/abcd1234</ChatBubble>
         </div>
 
         {/* EXAMPLE 3 — SEND */}
@@ -145,6 +145,19 @@ export default function TabAgentFAQPage() {
           </ChatBubble>
         </div>
 
+        {/* EXAMPLE 5 — SPLIT CONFIRMATION PAYLOAD */}
+        <div className="border border-white/10 rounded-lg p-6 flex flex-col gap-2">
+          <ChatBubble system>Split confirmation details</ChatBubble>
+
+          <ChatBubble>split 0.2 eth @alex @rita</ChatBubble>
+
+          <ChatBubble from="tab">
+            Split created. Amount: 0.2, currency: ETH, users: @alex, @rita.
+          </ChatBubble>
+
+          <ChatBubble from="tab">URL: https://usetab.app/split/abcd1234</ChatBubble>
+        </div>
+
         {/* DETAILS */}
         <div className="border border-white/10 rounded-lg overflow-hidden mt-2">
           <button
@@ -164,6 +177,7 @@ export default function TabAgentFAQPage() {
             <div className="px-4 pb-4 text-md text-white/60 space-y-1">
               <p className="text-white/80 font-medium">Current Skills</p>
               <p>• Create invited splits from tagged Farcaster users</p>
+              <p>• Returns split confirmation: amount, currency, URL, and users</p>
               <p>• Send payments by @username or any wallet</p>
               <p>• Settle the latest split bills</p>
               <p className="pt-2 text-white/80 font-medium">Guardrails</p>

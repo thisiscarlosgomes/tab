@@ -58,7 +58,7 @@ export default function ReceivePage() {
             <QRCode
               value={url}
               size={200}
-              logoImage={pfpUrl || "/app.png"}
+              logoImage={pfpUrl || "/newnewapp.png"}
               logoWidth={32}
               logoHeight={32}
               logoOpacity={1}
@@ -70,7 +70,7 @@ export default function ReceivePage() {
             <QRCode
               value={url}
               size={200}
-              logoImage={pfpUrl || "/app.png"}
+              logoImage={pfpUrl || "/newnewapp.png"}
               logoWidth={32}
               logoHeight={32}
               logoOpacity={1}

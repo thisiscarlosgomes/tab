@@ -892,6 +892,7 @@ export default function Home() {
   if (!authenticated) {
     const showWelcomeStep = authStep === "welcome";
     const showCodeStep = authStep === "code";
+    const activeWelcomeSlide = AUTH_WELCOME_STEPS[authWelcomeStep];
 
     return (
       <main className="relative h-[100dvh] w-full overflow-hidden bg-black text-center text-white overscroll-none">
@@ -947,46 +948,39 @@ export default function Home() {
                 }}
                 className="flex-1 min-h-0 w-full overflow-hidden overscroll-none touch-none select-none"
               >
-                <div
-                  className="flex h-full w-full transition-transform duration-200 ease-out"
-                  style={{ transform: `translate3d(-${authWelcomeStep * 100}%, 0, 0)` }}
+                <section
+                  key={activeWelcomeSlide.key}
+                  className="h-full w-full flex flex-col items-center justify-center text-center px-2 min-h-full"
                 >
-                  {AUTH_WELCOME_STEPS.map((step) => (
-                    <section
-                      key={step.key}
-                      className="w-full shrink-0 flex flex-col items-center justify-center text-center px-2 min-h-full"
-                    >
-                      {step.kind === "brand" ? (
-                        <div className="w-full max-w-sm mx-auto flex items-center justify-center md:pt-24">
-                          <AuthBrandLockup />
+                  {activeWelcomeSlide.kind === "brand" ? (
+                    <div className="w-full max-w-sm mx-auto flex items-center justify-center md:pt-24">
+                      <AuthBrandLockup />
+                    </div>
+                  ) : (
+                    <div className="w-full max-w-sm mx-auto flex flex-col items-center justify-center md:pt-24">
+                      <div
+                        aria-hidden
+                        className="relative mb-4 grid place-items-center h-54 w-54 rounded-full drop-shadow-[0_10px_35px_rgba(99,102,241,0.1)]"
+                      >
+                        <div className="grid place-items-center h-40 w-40 rounded-full bg-gradient-to-b from-indigo-300/10 via-primary/10 to-primary/5 shadow-[inset_0_10px_30px_rgba(255,255,255,0)]">
+                          <img
+                            src={activeWelcomeSlide.iconSrc}
+                            alt=""
+                            aria-hidden="true"
+                            className="w-[148px] h-[148px] object-contain object-center"
+                          />
                         </div>
-                      ) : (
-                        <div className="w-full max-w-sm mx-auto flex flex-col items-center justify-center md:pt-24">
-                          <div
-                            aria-hidden
-                            className="relative mb-4 grid place-items-center h-54 w-54 rounded-full drop-shadow-[0_10px_35px_rgba(99,102,241,0.1)]"
-                          >
-                            <div className="grid place-items-center h-40 w-40 rounded-full bg-gradient-to-b from-indigo-300/10 via-primary/10 to-primary/5 shadow-[inset_0_10px_30px_rgba(255,255,255,0)]">
-                              <img
-                                src={step.iconSrc}
-                                alt=""
-                                aria-hidden="true"
-                                className="w-[148px] h-[148px] object-contain object-center"
-                              />
-                            </div>
-                          </div>
+                      </div>
 
-                          <h2 className="text-xl leading-[1.08] font-semibold tracking-tight text-white text-center">
-                            {step.title}
-                          </h2>
-                          <p className="mt-3 text-lg leading-tight text-white/45 max-w-[18rem] text-center">
-                            {step.desc}
-                          </p>
-                        </div>
-                      )}
-                    </section>
-                  ))}
-                </div>
+                      <h2 className="text-xl leading-[1.08] font-semibold tracking-tight text-white text-center">
+                        {activeWelcomeSlide.title}
+                      </h2>
+                      <p className="mt-3 text-lg leading-tight text-white/45 max-w-[18rem] text-center">
+                        {activeWelcomeSlide.desc}
+                      </p>
+                    </div>
+                  )}
+                </section>
               </div>
 
               <div className="mt-3 flex items-center justify-center gap-2">

@@ -552,7 +552,7 @@ export default function DropCreatePage() {
           className="active:transform active:scale-90 transition-all"
         >
           <Image
-            src="/app.png"
+            src="/newnewapp.png"
             alt="logo"
             width={40}
             height={40}

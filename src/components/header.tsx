@@ -173,7 +173,7 @@ export function Header() {
         <div className="h-16 w-full px-6 flex items-center justify-between gap-4">
           <div className="relative z-10 min-w-0 flex items-center gap-3">
             <Link href="/" aria-label="Go to home">
-              <img src="/app.png" alt="Tab" className="w-8 h-8 rounded-xl" />
+              <img src="/newnewapp.png" alt="Tab" className="w-8 h-8 rounded-xl" />
             </Link>
             <div className="text-lg font-medium truncate">{pageTitle}</div>
           </div>
@@ -246,7 +246,7 @@ export function Header() {
           <div className="absolute left-4 top-1/2 -translate-y-1/2 flex items-center gap-2">
             {showMobileMainPageIcon && (
               <Link href="/" aria-label="Go to home" className="shrink-0">
-                <img src="/app.png" alt="Tab" className="w-8 h-8" />
+                <img src="/newnewapp.png" alt="Tab" className="w-8 h-8" />
               </Link>
             )}
             {showBackButton && (

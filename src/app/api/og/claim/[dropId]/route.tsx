@@ -22,7 +22,7 @@ export async function GET(req: NextRequest) {
     : "You just got";
 
   const amount = `${drop.amount} ${drop.token}`;
-  const splash = drop?.creator?.pfp || `${origin}/app.png`;
+  const splash = drop?.creator?.pfp || `${origin}/newnewapp.png`;
   const bg = `${origin}/ogbg.png`;
 
   return new ImageResponse(

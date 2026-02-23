@@ -31,7 +31,7 @@ export async function GET(req: NextRequest) {
     .toFixed(2);
 
   const creator = drops[0]?.creator || {};
-  const splash = creator.pfp || `${origin}/app.png`;
+  const splash = creator.pfp || `${origin}/newnewapp.png`;
 
   const tokenRaw = drops[0]?.token;
   const token =

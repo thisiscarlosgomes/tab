@@ -52,7 +52,7 @@ export function InstallQrCard() {
             qrStyle="squares"
             eyeRadius={6}
             removeQrCodeBehindLogo
-            logoImage="/app.png"
+            logoImage="/newnewapp.png"
             logoWidth={16}
             logoHeight={16}
             logoOpacity={1}

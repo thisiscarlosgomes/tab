@@ -811,7 +811,7 @@ const paidCount = bill?.paid?.length ?? 0;
                   <QRCode
                     value={`https://usetab.app/join-split?splitId=${bill.splitId}&payTo=${bill.recipient.address}&amount=${eachShare}&token=${bill.token}`}
                     size={200}
-                    logoImage="/app.png"
+                    logoImage="/newnewapp.png"
                     logoWidth={48}
                     logoHeight={48}
                     removeQrCodeBehindLogo

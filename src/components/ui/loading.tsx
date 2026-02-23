@@ -1,7 +1,7 @@
 import React from "react";
 
 import Image from "next/image";
-import SplashImage from "../../../public/app.png";
+import SplashImage from "../../../public/newnewapp.png";
 
 const FRAME_SPLASH_IMAGE_SIZE = 88;
 
