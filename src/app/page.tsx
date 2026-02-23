@@ -956,11 +956,11 @@ export default function Home() {
                       className="w-full shrink-0 flex flex-col items-center justify-center text-center px-2 min-h-full"
                     >
                       {step.kind === "brand" ? (
-                        <div className="w-full max-w-sm mx-auto flex items-center justify-center">
+                        <div className="w-full max-w-sm mx-auto flex items-center justify-center md:pt-24">
                           <AuthBrandLockup />
                         </div>
                       ) : (
-                        <div className="w-full max-w-sm mx-auto flex flex-col items-center justify-center">
+                        <div className="w-full max-w-sm mx-auto flex flex-col items-center justify-center md:pt-24">
                           <div
                             aria-hidden
                             className="relative mb-4 grid place-items-center h-54 w-54 rounded-full drop-shadow-[0_10px_35px_rgba(99,102,241,0.1)]"

@@ -3,7 +3,7 @@
 import { useEffect, useState, useCallback } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useIdentityToken, useToken } from "@privy-io/react-auth";
+import { useIdentityToken, usePrivy, useToken } from "@privy-io/react-auth";
 import { useTabIdentity } from "@/lib/useTabIdentity";
 import { UserAvatar } from "@/components/ui/user-avatar";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -77,8 +77,10 @@ export default function ProfilePage() {
   } = useTabIdentity();
   const { identityToken } = useIdentityToken();
   const { getAccessToken } = useToken();
+  const { logout, ready, authenticated } = usePrivy();
   const router = useRouter();
   const [activeTab, setActiveTab] = useState<ProfileTab>("splits");
+  const [loggingOut, setLoggingOut] = useState(false);
 
   const [userRooms, setUserRooms] = useState<Room[]>([]);
   const [roomsLoaded, setRoomsLoaded] = useState(false);
@@ -97,6 +99,22 @@ export default function ProfilePage() {
       maximumFractionDigits: value >= 10000 ? 0 : 1,
     }).format(value);
   };
+
+  const handleLogout = useCallback(async () => {
+    if (loggingOut) return;
+    setLoggingOut(true);
+    try {
+      if (ready && authenticated) {
+        await logout();
+      }
+      router.replace("/");
+      router.refresh();
+    } catch (error) {
+      console.error("Profile logout failed", error);
+    } finally {
+      setLoggingOut(false);
+    }
+  }, [authenticated, loggingOut, logout, ready, router]);
 
   useEffect(() => {
     let cancelled = false;
@@ -607,6 +625,15 @@ export default function ProfilePage() {
               ) : null}
             </div>
           )}
+
+          <button
+            type="button"
+            onClick={() => void handleLogout()}
+            disabled={loggingOut}
+            className="inline-flex items-center rounded-lg border border-white/15 bg-white/5 px-3 py-1.5 text-sm text-white/80 hover:bg-white/10 disabled:opacity-60 disabled:cursor-not-allowed"
+          >
+            {loggingOut ? "Logging out..." : "Log out"}
+          </button>
         </div>
       </div>
     );
