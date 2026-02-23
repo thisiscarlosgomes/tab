@@ -906,6 +906,7 @@ export default function Home() {
                   authWelcomeSwipeHandledRef.current = false;
                 }}
                 onTouchMove={(e) => {
+                  e.preventDefault();
                   if (authWelcomeSwipeHandledRef.current) return;
                   const startX = authWelcomeTouchStartXRef.current;
                   const currentX = e.touches[0]?.clientX ?? null;
@@ -944,7 +945,7 @@ export default function Home() {
                     setAuthWelcomeStep((prev) => Math.max(0, prev - 1));
                   }
                 }}
-                className="flex-1 min-h-0 w-full overflow-hidden touch-pan-y"
+                className="flex-1 min-h-0 w-full overflow-hidden overscroll-none touch-none select-none"
               >
                 <div
                   className="flex h-full w-full transition-transform duration-200 ease-out"
