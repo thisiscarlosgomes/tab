@@ -317,7 +317,7 @@ export function Header() {
       <ResponsiveDialog open={aboutOpen} onOpenChange={setAboutOpen}>
         <ResponsiveDialogContent className="p-0 md:w-full md:max-w-md overflow-hidden">
           <div className="relative bg-background px-4 pt-4 pb-4 md:px-5 md:pb-5">
-            <ResponsiveDialogTitle className="mt-6 text-center text-xl font-semibold tracking-tight">
+            <ResponsiveDialogTitle className="mt-2 text-center text-xl font-semibold tracking-tight">
               Welcome to tab
             </ResponsiveDialogTitle>
 
@@ -336,7 +336,7 @@ export function Header() {
                 </div>
               </div>
 
-              <p className="mt-5 text-white/75 text-md leading-relaxed text-left">
+              <p className="mt-2 text-white/75 text-md leading-relaxed text-left">
                 {currentAboutStep.desc}
               </p>
             </div>

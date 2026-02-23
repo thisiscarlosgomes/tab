@@ -183,6 +183,13 @@ export default function Home() {
   const [netApy, setNetApy] = useState<number | null>(null);
   const balancesCacheKey = address ? `tab_balances_${address}` : "tab_balances";
 
+  const formatMonthlyEarnings = (value: number) => {
+    if (value <= 0) return "0.00";
+    if (value < 0.000001) return "<0.000001";
+    if (value < 0.01) return value.toFixed(6);
+    return value.toFixed(2);
+  };
+
   const refetchEarnFromMorpho = useCallback(async () => {
     if (!address) return;
     try {
@@ -984,7 +991,7 @@ export default function Home() {
   return (
     <ReceiveDrawerController>
       {({ openReceiveDrawer }) => (
-        <main className="min-h-screen w-full flex flex-col items-center justify-start p-4 pt-[calc(4rem+env(safe-area-inset-top))] pb-[calc(10rem+env(safe-area-inset-bottom))] overflow-y-auto scrollbar-hide">
+        <main className="min-h-screen w-full flex flex-col items-center justify-start p-4 pt-[calc(4rem+env(safe-area-inset-top))] pb-[calc(8rem+env(safe-area-inset-bottom))] overflow-y-auto scrollbar-hide">
           <div className="w-full max-w-md space-y-8">
         {/* BALANCE CARD */}
         <div
@@ -1086,11 +1093,11 @@ export default function Home() {
                       className="flex-1 bg-white/5 rounded-xl px-4 py-3 text-left active:scale-95 transition"
                     >
                       <p className="text-sm text-white/40">Earning</p>
-                      <p className="text-md text-white font-medium">
+                      <p className="text-sm text-white font-medium">
                         ${earnBalance!.toFixed(2)}
                         {typeof monthlyEarn === "number" && monthlyEarn > 0 && (
-                          <span className="text-green-400 ml-1 whitespace-nowrap">
-                            +${monthlyEarn.toFixed(2)}/mo
+                          <span className="text-green-400 ml-1 whitespace-nowrap text-xs">
+                            +${formatMonthlyEarnings(monthlyEarn)}/mo
                           </span>
                         )}
                       </p>
@@ -1165,7 +1172,7 @@ export default function Home() {
 
         {/* FEATURE CARDS */}
         <div className="mt-6">
-          <div className="text-lg ml-2 font-medium mb-2">
+          <div className="text-lg ml-2 font-medium mb-3">
             More ways to use tab
           </div>
           <div className="space-y-3">
@@ -1180,7 +1187,7 @@ export default function Home() {
             <div>
               <p className="text-base font-medium text-white">Earn USDC</p>
               <p className="text-md text-white/40 mt-0.5">
-                Deposit and earn yield on your balance
+                Deposit and earn yield on your USDC
               </p>
             </div>
           </button>
@@ -1194,9 +1201,9 @@ export default function Home() {
             </div>
 
             <div>
-              <p className="text-base font-medium text-white">$1M Jackpot</p>
+              <p className="text-base font-medium text-white">$1m Jackpot</p>
               <p className="text-md text-white/40 mt-0.5">
-                Enter the onchain jackpot and track your tickets
+                Enter onchain jackpot and track your tickets
               </p>
             </div>
           </button>
@@ -1232,7 +1239,7 @@ export default function Home() {
                 Tab Agent <span className="text-blue-400"></span>
               </p>
               <p className="text-md text-white/40 mt-0.5">
-                Split, pay and airdrop on Base chat
+                Link tab to your openclaw agent
               </p>
             </div>
           </button>

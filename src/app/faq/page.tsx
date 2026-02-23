@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { ChevronDown } from "lucide-react";
 import clsx from "clsx";
-import { isFrameRuntime } from "@/lib/isFrame";
+import Link from "next/link";
 
 /* ----------------------------
    Chat Bubble
@@ -46,72 +46,70 @@ function ChatBubble({
 ---------------------------- */
 export default function TabAgentFAQPage() {
   const [open, setOpen] = useState(false);
-  const [openingChat, setOpeningChat] = useState(false);
-
-  const handleOpenChat = async () => {
-    const targetUrl =
-      "bwallet://messaging/0x6b13e4babaffc0337f68ac4635cb2cb43f8a46cd";
-    if (!isFrameRuntime()) {
-      window.open(targetUrl, "_self");
-      return;
-    }
-
-    try {
-      setOpeningChat(true);
-      const { default: sdk } = await import("@farcaster/frame-sdk");
-      await sdk.actions.openUrl(targetUrl);
-    } finally {
-      setOpeningChat(false);
-    }
-  };
+  const [copiedCurl, setCopiedCurl] = useState(false);
+  const curlCmd = "curl -s https://usetab.app/skill.md";
 
   return (
-    <div className="min-h-screen px-4 pt-[calc(5rem+env(safe-area-inset-top))] pb-[calc(12rem+env(safe-area-inset-bottom))] mb-16">
+    <div className="min-h-screen px-4 pt-[calc(5rem+env(safe-area-inset-top))] pb-[calc(12rem+env(safe-area-inset-bottom))] mb-10">
       <div className="max-w-md mx-auto space-y-6">
         {/* TITLE */}
-        <div className="mb-6 ml-1">
+        <div className="mb-6">
           <h1 className="text-lg font-medium text-white">
-            Send and settle splits with tab agent in chat
+            Tab agent skills
           </h1>
-
           <p className="text-md text-white/50 mt-1">
-            Add <span className="text-primary font-medium">tab agent</span> to a
-            Base group, then link your account and use simple messages to send
-            payments or settle split shares.
+            Load Tab skill into OpenClaw, link your account, and send payments or settle splits via chat. All within your guardrails.
           </p>
 
-          <button
-            onClick={handleOpenChat}
-            className="mt-6 w-full bg-white/20 transition-colors text-black py-3 rounded-lg text-base font-semibold col-span-2"
+          <Link
+            href="/profile"
+            className="mt-6 w-full inline-flex items-center justify-center bg-primary transition-colors text-black py-3 rounded-lg text-base font-semibold col-span-2"
           >
-            {openingChat ? "Opening..." : "Open Base Chat"}
-          </button>
+            Activate agent
+          </Link>
+
+          <div className="mt-3 w-full rounded-md border border-white/10 px-3 py-3 flex items-center gap-3">
+            <code className="flex-1 text-left text-white/80 text-[13px] truncate">
+              {curlCmd}
+            </code>
+            <button
+              type="button"
+              onClick={async () => {
+                await navigator.clipboard.writeText(curlCmd);
+                setCopiedCurl(true);
+                setTimeout(() => setCopiedCurl(false), 1500);
+              }}
+              className="shrink-0 rounded-md border border-white/10 px-3 py-1.5 text-xs text-white/80"
+            >
+              {copiedCurl ? "copied" : "copy"}
+            </button>
+          </div>
         </div>
 
         {/* EXAMPLE 1 — LINK */}
-        <div className="border border-white/10 rounded-lg p-6 flex flex-col gap-2">
-          <ChatBubble system>tab agent was added to the group</ChatBubble>
+        {/* <div className="border border-white/10 rounded-lg p-6 flex flex-col gap-2">
+          <ChatBubble system>add tab skill</ChatBubble>
 
-          <ChatBubble>link tab agent to my account</ChatBubble>
+          <ChatBubble>Read https://usetab.app/skill.md and follow instructions to link</ChatBubble>
 
           <ChatBubble from="tab">
             Open this claim link to connect your Tab account and enable Agent Access.
           </ChatBubble>
 
           <ChatBubble from="tab">✅ Linked. Your agent can now send and settle.</ChatBubble>
-        </div>
+        </div> */}
 
         {/* EXAMPLE 2 — SEND */}
         <div className="border border-white/10 rounded-lg p-6 flex flex-col gap-2">
-          <ChatBubble system>Quick payment</ChatBubble>
+          <ChatBubble system>Quick payment to farcaster user</ChatBubble>
 
           <ChatBubble>send $0.50 usdc to @alex</ChatBubble>
 
-          <ChatBubble from="tab">Sent $0.50 USDC to @alex. ✅</ChatBubble>
+          <ChatBubble from="tab">Sent $0.50 USDC to @alex.</ChatBubble>
         </div>
 
         {/* EXAMPLE 3 — SETTLE SPECIFIC SPLIT */}
-        <div className="border border-white/10 rounded-lg p-6 flex flex-col gap-2">
+        {/* <div className="border border-white/10 rounded-lg p-6 flex flex-col gap-2">
           <ChatBubble system>Split settlement</ChatBubble>
 
           <ChatBubble>settle my share for split lunch-ab12</ChatBubble>
@@ -121,19 +119,17 @@ export default function TabAgentFAQPage() {
           </ChatBubble>
 
           <ChatBubble from="tab">Tx confirmed on Base.</ChatBubble>
-        </div>
+        </div> */}
 
         {/* EXAMPLE 4 — SETTLE LATEST */}
         <div className="border border-white/10 rounded-lg p-6 flex flex-col gap-2">
-          <ChatBubble system>Latest pending split</ChatBubble>
+          <ChatBubble system>Settle split bills</ChatBubble>
 
           <ChatBubble>settle my latest split</ChatBubble>
 
           <ChatBubble from="tab">
             Found your latest unpaid split and paid your share. ✅
           </ChatBubble>
-
-          <ChatBubble from="tab">Use split id/code/url if you want a specific one.</ChatBubble>
         </div>
 
         {/* DETAILS */}
@@ -152,22 +148,16 @@ export default function TabAgentFAQPage() {
           </button>
 
           {open && (
-            <div className="px-4 pb-4 text-md text-white/60 space-y-2">
+            <div className="px-4 pb-4 text-md text-white/60 space-y-1">
               <p className="text-white/80 font-medium">Current Skills</p>
-              <p>• Link agent to a Tab account (claim link flow)</p>
-              <p>• Send payments by @username, ENS, or wallet address</p>
-              <p>• Settle a split by splitId, code, or URL</p>
-              <p>• Settle the latest pending eligible split</p>
-
+              <p>• Send payments by @username or any wallet</p>
+              <p>• Settle the latest split bills</p>
               <p className="pt-2 text-white/80 font-medium">Guardrails</p>
-              <p>• Uses delegated Privy wallet (Base)</p>
+              <p>• Uses your tab wallet</p>
               <p>• Allowed token + per-payment cap + daily cap</p>
               <p>• Agent Access expiry and linked-agent checks</p>
 
-              <p className="pt-2 text-white/80 font-medium">Not Yet</p>
-              <p>• Pick/roulette flows</p>
-              <p>• Airdrops in chat</p>
-              <p>• Farcaster follow / unfollow actions</p>
+
             </div>
           )}
         </div>

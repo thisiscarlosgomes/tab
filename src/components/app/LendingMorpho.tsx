@@ -190,6 +190,13 @@ export function MorphoDepositDrawer({
 
   const [totalDeposited, setTotalDeposited] = useState<number | null>(null);
 
+  const formatMonthlyEarnings = (value: number) => {
+    if (value <= 0) return "0.00";
+    if (value < 0.000001) return "<0.000001";
+    if (value < 0.01) return value.toFixed(6);
+    return value.toFixed(2);
+  };
+
   useEffect(() => {
     if (allowance !== undefined) {
       setIsApproved(allowance >= rawAmount);
@@ -481,7 +488,7 @@ export function MorphoDepositDrawer({
                 <div className="text-white/30 w-full flex items-center justify-between px-4 py-1">
                   <div>Current Earnings</div>
                   <p className="text-green-400">
-                    +${monthlyEarn.toFixed(2)}/mo
+                    +${formatMonthlyEarnings(monthlyEarn)}/mo
                   </p>
                 </div>
               )}
