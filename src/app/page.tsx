@@ -192,6 +192,7 @@ function AnimatedPingLogo({ className }: { className?: string }) {
         />
 
         <path
+          className="ping-smile"
           d="M230 290 Q256 310 282 290"
           stroke="#111111"
           strokeWidth="5"
@@ -221,6 +222,13 @@ function AnimatedPingLogo({ className }: { className?: string }) {
 
         .ping-eye-delay {
           animation-delay: 0.02s;
+        }
+
+        .ping-smile {
+          transform-origin: center;
+          transform-box: fill-box;
+          animation: ping-smile 7.2s ease-in-out infinite;
+          will-change: transform;
         }
 
         @keyframes ping-float {
@@ -263,11 +271,28 @@ function AnimatedPingLogo({ className }: { className?: string }) {
           }
         }
 
+        @keyframes ping-smile {
+          0%,
+          58%,
+          100% {
+            transform: translateY(0px) scaleX(1) scaleY(1);
+          }
+
+          62% {
+            transform: translateY(-1px) scaleX(1.05) scaleY(1.12);
+          }
+
+          67% {
+            transform: translateY(-0.5px) scaleX(1.03) scaleY(1.08);
+          }
+        }
+
         @media (prefers-reduced-motion: reduce) {
           .ping-float,
           .ping-aura,
           .ping-eye,
-          .ping-eye-delay {
+          .ping-eye-delay,
+          .ping-smile {
             animation: none;
           }
         }
@@ -957,12 +982,12 @@ export default function Home() {
                       <AuthBrandLockup />
                     </div>
                   ) : (
-                    <div className="w-full max-w-sm mx-auto flex flex-col items-center justify-center md:pt-24">
+                    <div className="w-full max-w-sm mx-auto flex flex-col items-center justify-center md:pt-18">
                       <div
                         aria-hidden
-                        className="relative mb-4 grid place-items-center h-54 w-54 rounded-full drop-shadow-[0_10px_35px_rgba(99,102,241,0.1)]"
+                        className="relative mb-4 grid place-items-center h-54 w-54 rounded-full"
                       >
-                        <div className="grid place-items-center h-40 w-40 rounded-full bg-gradient-to-b from-indigo-300/10 via-primary/10 to-primary/5 shadow-[inset_0_10px_30px_rgba(255,255,255,0)]">
+                        <div className="grid place-items-center h-40 w-40 rounded-full">
                           <img
                             src={activeWelcomeSlide.iconSrc}
                             alt=""
