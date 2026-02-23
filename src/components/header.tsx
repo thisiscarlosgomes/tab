@@ -61,7 +61,15 @@ export function Header() {
   const { username } = useTabIdentity();
   const { logout, ready, authenticated } = usePrivy();
   const pathname = usePathname();
-  const showBackButton = pathname !== "/";
+  const MOBILE_MAIN_PAGE_TITLES: Record<string, string> = {
+    "/": "Home",
+    "/activity": "Activity",
+    "/wallet": "Wallet",
+    "/profile": "Profile",
+  };
+  const isMobileMainPage = Boolean(pathname && MOBILE_MAIN_PAGE_TITLES[pathname]);
+  const showBackButton = !isMobileMainPage;
+  const showMobileMainPageIcon = isMobileMainPage;
   const [points, setPoints] = useState<number | null>(null);
   const [shake, setShake] = useState(false);
   const [spinOpen, setSpinOpen] = useState(false);
@@ -133,6 +141,7 @@ export function Header() {
   ) : (
     (PAGE_TITLES[pathname] ?? "")
   );
+  const mobilePageTitle = pathname ? MOBILE_MAIN_PAGE_TITLES[pathname] ?? (typeof pageTitle === "string" ? pageTitle : "") : "";
 
   const handleLogout = useCallback(async () => {
     if (loggingOut) return;
@@ -234,7 +243,7 @@ export function Header() {
         <div className="relative h-16 w-full max-w-md mx-auto px-4">
           {/* Left side (title + back) */}
           <div className="absolute left-4 top-1/2 -translate-y-1/2 flex items-center gap-2">
-            {!showBackButton && (
+            {showMobileMainPageIcon && (
               <Link href="/" aria-label="Go to home" className="shrink-0">
                 <img src="/app.png" alt="Tab" className="w-8 h-8" />
               </Link>
@@ -259,8 +268,13 @@ export function Header() {
           </div>
 
           {/* Center title */}
-          <div className="absolute left-14 top-1/2 -translate-y-1/2 text-lg font-medium">
-            {pageTitle}
+          <div
+            className={clsx(
+              "absolute top-1/2 -translate-y-1/2 text-lg font-medium",
+              showBackButton || showMobileMainPageIcon ? "left-14" : "left-4"
+            )}
+          >
+            {mobilePageTitle}
           </div>
 
           {/* Right side — actions */}

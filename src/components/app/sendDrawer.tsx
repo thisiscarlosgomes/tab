@@ -551,13 +551,11 @@ export function GlobalSendDrawer() {
                     Send
                   </ResponsiveDialogTitle>
                   <div className="relative w-full mt-4">
-                    <span className="absolute left-4 top-1/2 -translate-y-1/2 text-white/30">
-                      To:
-                    </span>
+                    
                     <input
                       ref={inputRef}
                       type="text"
-                      placeholder="farcaster username, ens, or 0x..."
+                      placeholder="farcaster @, ens, or 0x..."
                       value={query}
                       onFocus={() => {
                         if (mode === "token") {
@@ -566,7 +564,7 @@ export function GlobalSendDrawer() {
                         }
                       }}
                       onChange={(e) => setQuery(e.target.value)}
-                      className="w-full p-4 pl-10 pr-20 rounded-lg bg-white/5 text-white placeholder-white/20"
+                      className="w-full p-4 pl-6 pr-20 rounded-lg bg-white/5 text-white placeholder-white/20"
                     />
 
                     {mode === "search" ? (

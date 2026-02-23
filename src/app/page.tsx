@@ -18,7 +18,14 @@ import {
 import Skeleton from "react-loading-skeleton";
 import clsx from "clsx";
 
-import { ArrowLeft, Bot, Clipboard, Dice5, Loader2 } from "lucide-react";
+import {
+  ArrowLeft,
+  Bot,
+  Clipboard,
+  CircleDollarSign,
+  Dice5,
+  Loader2,
+} from "lucide-react";
 import {
   ResponsiveDialog,
   ResponsiveDialogContent,
@@ -1157,7 +1164,43 @@ export default function Home() {
         </div>
 
         {/* FEATURE CARDS */}
-        <div className="mt-6 space-y-3">
+        <div className="mt-6">
+          <div className="text-lg ml-2 font-medium mb-2">
+            More ways to use tab
+          </div>
+          <div className="space-y-3">
+          <button
+            onClick={() => setShowMorphoDrawer(true)}
+            className="w-full flex items-center gap-3 bg-white/5 rounded-xl p-4 text-left active:scale-[0.98] transition"
+          >
+            <div className="w-10 h-10 rounded-full bg-emerald-500/15 flex items-center justify-center">
+              <CircleDollarSign className="w-5 h-5 text-emerald-400" />
+            </div>
+
+            <div>
+              <p className="text-base font-medium text-white">Earn USDC</p>
+              <p className="text-md text-white/40 mt-0.5">
+                Deposit and earn yield on your balance
+              </p>
+            </div>
+          </button>
+
+          <button
+            onClick={() => router.push("/jackpot")}
+            className="w-full flex items-center gap-3 bg-white/5 rounded-xl p-4 text-left active:scale-[0.98] transition"
+          >
+            <div className="w-10 h-10 rounded-full bg-amber-500/15 flex items-center justify-center">
+              <img src="/vticket.png" className="w-5 h-5 rounded-sm" alt="$1M Jackpot" />
+            </div>
+
+            <div>
+              <p className="text-base font-medium text-white">$1M Jackpot</p>
+              <p className="text-md text-white/40 mt-0.5">
+                Enter the onchain jackpot and track your tickets
+              </p>
+            </div>
+          </button>
+
           {/* PAY ROULETTE */}
           <button
             onClick={() => router.push("/table")}
@@ -1193,54 +1236,9 @@ export default function Home() {
               </p>
             </div>
           </button>
-        </div>
-
-        {/* MORE WAYS TO USE TAB */}
-        <div className="mt-6">
-          <div className="text-lg ml-2 font-medium mb-2">
-            More ways to use Tab
-          </div>
-
-          <div className="grid grid-cols-2 gap-1.5 mb-4">
-            <button
-              onClick={() => router.push("/table")}
-              className={`hidden bg-white/5 rounded-xl px-2 py-3 text-left ${tap}`}
-            >
-              <div className="flex items-center gap-1">
-                <img src="/vpush.png" className="w-9 h-9 rounded-md" />
-                <span className="text-white text-md font-medium">
-                  Spin the tab
-                </span>
-              </div>
-            </button>
-
-            <button
-              onClick={() => router.push("/jackpot")}
-              className={`bg-white/5 rounded-xl px-2 py-3 text-left ${tap}`}
-            >
-              <div className="flex items-center gap-1">
-                <img src="/vticket.png" className="w-9 h-9 rounded-md" />
-                <span className="text-white text-md font-medium">
-                  $1M Jackpot
-                </span>
-              </div>
-            </button>
-
-          
-
-            <button
-              onClick={() => setShowMorphoDrawer(true)}
-              className={`bg-white/5 rounded-xl px-2 py-3 text-left ${tap}`}
-            >
-              <div className="flex items-center gap-1">
-                <img src="/vcash.png" className="w-9 h-9 rounded-md" />
-                <span className="text-white text-md font-medium">
-                  Earn USDC
-                </span>
-              </div>
-            </button>
           </div>
         </div>
+
           </div>
 
           {/* DRAWERS */}

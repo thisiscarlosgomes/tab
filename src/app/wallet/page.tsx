@@ -583,7 +583,7 @@ export default function WalletPage() {
 
     const walletActions = [
       {
-        label: "Receive",
+        label: "Request",
         icon: QrCode,
         onClick: () => openReceiveDrawer(),
         disabled: false,
@@ -865,12 +865,12 @@ export default function WalletPage() {
               </div>
               <p className="text-xs text-white/40 mt-1">
                 {isAgentLive
-                  ? "Agent is online and executing under your guardrails."
+                  ? "Agent is live under your guardrails."
                   : isAgentPaused
-                    ? "Your agent is offline."
+                    ? "Agent Paused."
                     : agentAccessLoading && !agentAccessLoaded
-                      ? "Checking agent status..."
-                      : "Configure delegated split settlement guardrails."}
+                      ? "Checking status..."
+                      : "Configure delegated wallet guardrails."}
               </p>
             </Link>
 

@@ -111,7 +111,7 @@ export const AGENT_SKILLS: AgentSkill[] = [
   {
     name: "tab_settle_split",
     description:
-      "Pay the caller's share for a Tab split using their delegated Privy wallet under Agent Access guardrails.",
+      "Pay the caller's share for a Tab split using their delegated Privy wallet under Agent Access guardrails (or auto-select the latest pending split).",
     endpoint: "/api/agent/settle",
     method: "POST",
     headers: ["x-agent-key", "Content-Type: application/json"],
@@ -131,7 +131,8 @@ export const AGENT_SKILLS: AgentSkill[] = [
         },
         splitId: {
           type: "string",
-          description: "Optional split id (preferred when available).",
+          description:
+            "Optional split id (preferred when available). If omitted with splitCode/splitUrl, the API settles the latest pending eligible split.",
         },
         splitCode: {
           type: "string",
@@ -147,6 +148,7 @@ export const AGENT_SKILLS: AgentSkill[] = [
       "Pay my share for splitId abcd1234",
       "Settle my share for split code lunch-ab12",
       "Pay my share from https://usetab.app/split/abcd1234",
+      "Settle my latest split",
     ],
   },
 ];

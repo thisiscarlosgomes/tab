@@ -36,6 +36,9 @@ type SplitUserLike = {
   name?: string;
   pfp?: string;
   amount?: number;
+  txHash?: string;
+  token?: string;
+  timestamp?: Date | string;
 };
 
 type SplitBillDoc = {
@@ -47,6 +50,8 @@ type SplitBillDoc = {
   numPeople?: number;
   token?: string;
   description?: string;
+  createdAt?: Date | string;
+  code?: string;
 };
 
 type AgentPolicyDoc = {
@@ -134,6 +139,24 @@ function sameUser(a?: SplitUserLike | null, b?: SplitUserLike | null) {
   return false;
 }
 
+function findEligibleInvitedEntry(
+  invited: SplitUserLike[],
+  actorFid: number | null,
+  linkedAddresses: Set<string>,
+  sourceWalletAddress: string
+) {
+  return invited.find((entry) => {
+    const entryFid = normalizeFid(entry.fid);
+    const entryAddress = normalizeAddress(entry.address);
+    return (
+      (actorFid !== null && entryFid !== null && actorFid === entryFid) ||
+      (entryAddress
+        ? linkedAddresses.has(entryAddress) || entryAddress === sourceWalletAddress
+        : false)
+    );
+  });
+}
+
 function getTokenMeta(token: string) {
   return tokenList.find((t) => t.name.toUpperCase() === token.toUpperCase());
 }
@@ -216,13 +239,6 @@ export async function POST(req: NextRequest) {
   let splitId = splitIdInput || splitIdFromUrl;
   const effectiveSplitCode = splitCodeInput || splitCodeFromUrl;
 
-  if (!splitId && !effectiveSplitCode) {
-    return Response.json(
-      { error: "Missing split identifier (splitId, splitCode, or splitUrl)" },
-      { status: 400 }
-    );
-  }
-
   const identityToken = getBearerToken(req.headers.get("authorization"));
   const isServiceAgentRequest = !identityToken && getServiceAgentKey(req);
   const serviceAgentId = isServiceAgentRequest
@@ -273,7 +289,7 @@ export async function POST(req: NextRequest) {
   const links = db.collection<AgentLinkDoc>("a-agent-links");
   const policies = db.collection<AgentPolicyDoc>("a-agent-access");
   const settlements = db.collection("a-agent-settlement");
-  const splitCollection = db.collection("a-split-bill");
+  const splitCollection = db.collection<SplitBillDoc>("a-split-bill");
 
   if (!splitId && effectiveSplitCode) {
     const billByCode = await splitCollection.findOne(
@@ -408,7 +424,78 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  const split = (await splitCollection.findOne({ splitId })) as SplitBillDoc | null;
+  let split: SplitBillDoc | null = null;
+
+  if (!splitId && !effectiveSplitCode) {
+    const recentSplits = (await splitCollection
+      .find(
+        { "invited.0": { $exists: true } },
+        {
+          projection: {
+            splitId: 1,
+            code: 1,
+            invited: 1,
+            paid: 1,
+            recipient: 1,
+            createdAt: 1,
+          },
+          sort: { createdAt: -1, _id: -1 },
+          limit: 100,
+        }
+      )
+      .toArray()) as unknown as SplitBillDoc[];
+
+    split =
+      recentSplits.find((candidate) => {
+        const invited = Array.isArray(candidate.invited) ? candidate.invited : [];
+        const paid = Array.isArray(candidate.paid) ? candidate.paid : [];
+
+        const invitedEntry = findEligibleInvitedEntry(
+          invited,
+          actorFid,
+          linkedAddresses,
+          sourceWalletAddress
+        );
+        if (!invitedEntry) return false;
+
+        const debtorAddress =
+          normalizeAddress(invitedEntry.address) ?? sourceWalletAddress;
+        if (!isAddress(debtorAddress)) return false;
+
+        const debtorFid = normalizeFid(invitedEntry.fid) ?? actorFid;
+        const debtorUserKey =
+          invitedEntry.userKey ??
+          buildUserKey({ fid: debtorFid, address: debtorAddress }) ??
+          null;
+
+        const debtorIdentity: SplitUserLike = {
+          address: debtorAddress,
+          fid: debtorFid,
+          userKey: debtorUserKey,
+          name:
+            invitedEntry.name ??
+            `${debtorAddress.slice(0, 6)}...${debtorAddress.slice(-4)}`,
+        };
+
+        if (sameUser(candidate.recipient, debtorIdentity)) return false;
+        if (paid.some((entry) => sameUser(entry, debtorIdentity))) return false;
+
+        return true;
+      }) ?? null;
+
+    if (!split) {
+      return Response.json(
+        { error: "No pending split found for this account" },
+        { status: 404 }
+      );
+    }
+
+    splitId = String(split.splitId ?? "").toLowerCase().trim();
+  }
+
+  if (!split) {
+    split = (await splitCollection.findOne({ splitId })) as SplitBillDoc | null;
+  }
   if (!split) {
     return Response.json({ error: "Split not found" }, { status: 404 });
   }
@@ -416,16 +503,12 @@ export async function POST(req: NextRequest) {
   const invited = Array.isArray(split.invited) ? split.invited : [];
   const paid = Array.isArray(split.paid) ? split.paid : [];
 
-  const invitedEntry = invited.find((entry) => {
-    const entryFid = normalizeFid(entry.fid);
-    const entryAddress = normalizeAddress(entry.address);
-    return (
-      (actorFid !== null && entryFid !== null && actorFid === entryFid) ||
-      (entryAddress
-        ? linkedAddresses.has(entryAddress) || entryAddress === sourceWalletAddress
-        : false)
-    );
-  });
+  const invitedEntry = findEligibleInvitedEntry(
+    invited,
+    actorFid,
+    linkedAddresses,
+    sourceWalletAddress
+  );
 
   if (!invitedEntry) {
     return Response.json(

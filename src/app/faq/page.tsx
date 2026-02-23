@@ -71,73 +71,69 @@ export default function TabAgentFAQPage() {
         {/* TITLE */}
         <div className="mb-6 ml-1">
           <h1 className="text-lg font-medium text-white">
-            Split, pay, pick, and airdrop — inside group chats
+            Send and settle splits with tab agent in chat
           </h1>
 
           <p className="text-md text-white/50 mt-1">
             Add <span className="text-primary font-medium">tab agent</span> to a
-            Base group. Use simple messages like split bills, pay, pick someone,
-            or airdrop.
+            Base group, then link your account and use simple messages to send
+            payments or settle split shares.
           </p>
 
           <button
             onClick={handleOpenChat}
             className="mt-6 w-full bg-white/20 transition-colors text-black py-3 rounded-lg text-base font-semibold col-span-2"
           >
-            {openingChat ? "Opening..." : "Chat - Soon"}
+            {openingChat ? "Opening..." : "Open Base Chat"}
           </button>
         </div>
 
-        {/* EXAMPLE 1 — SIMPLE SPLIT */}
+        {/* EXAMPLE 1 — LINK */}
         <div className="border border-white/10 rounded-lg p-6 flex flex-col gap-2">
           <ChatBubble system>tab agent was added to the group</ChatBubble>
 
-          <ChatBubble>
-            Split tonight's dinner with everyone for $84.4
-          </ChatBubble>
+          <ChatBubble>link tab agent to my account</ChatBubble>
 
           <ChatBubble from="tab">
-            Split created. 4 people owe $21.1 each.
+            Open this claim link to connect your Tab account and enable Agent Access.
           </ChatBubble>
 
-          {/* <ChatBubble from="tab"><span className="text-white font-medium">@carlos</span> pay</ChatBubble> */}
-
-          <ChatBubble from="tab">✅ Carlos paid. Waiting on 2.</ChatBubble>
+          <ChatBubble from="tab">✅ Linked. Your agent can now send and settle.</ChatBubble>
         </div>
 
-        {/* EXAMPLE 2 — SELECTED USERS */}
+        {/* EXAMPLE 2 — SEND */}
         <div className="border border-white/10 rounded-lg p-6 flex flex-col gap-2">
-          <ChatBubble system>Same group, different split</ChatBubble>
+          <ChatBubble system>Quick payment</ChatBubble>
 
-          <ChatBubble>split 0.2 eth @alex @rita</ChatBubble>
+          <ChatBubble>send $0.50 usdc to @alex</ChatBubble>
 
-          <ChatBubble from="tab">Split created for @alex and @rita.</ChatBubble>
+          <ChatBubble from="tab">Sent $0.50 USDC to @alex. ✅</ChatBubble>
         </div>
 
-        {/* EXAMPLE 3 — ROULETTE */}
+        {/* EXAMPLE 3 — SETTLE SPECIFIC SPLIT */}
         <div className="border border-white/10 rounded-lg p-6 flex flex-col gap-2">
-          <ChatBubble system>Late night drinks</ChatBubble>
+          <ChatBubble system>Split settlement</ChatBubble>
 
-          <ChatBubble>
-            pick someone to pay 10 eurc for this morning coffee
-          </ChatBubble>
+          <ChatBubble>settle my share for split lunch-ab12</ChatBubble>
 
           <ChatBubble from="tab">
-            🎰 Picked: @alex you were picked to cover the tab
+            Paid your share for split lunch-ab12. ✅
           </ChatBubble>
 
-          <ChatBubble from="tab">✅ @alex marked as paid</ChatBubble>
+          <ChatBubble from="tab">Tx confirmed on Base.</ChatBubble>
         </div>
 
-        {/* EXAMPLE 4 — AIRDROP */}
+        {/* EXAMPLE 4 — SETTLE LATEST */}
         <div className="border border-white/10 rounded-lg p-6 flex flex-col gap-2">
-          <ChatBubble system>Celebrating a win</ChatBubble>
+          <ChatBubble system>Latest pending split</ChatBubble>
 
-          <ChatBubble>airdrop $10 to everyone, random amount.</ChatBubble>
+          <ChatBubble>settle my latest split</ChatBubble>
 
-          <ChatBubble from="tab">Review and confirm to send.</ChatBubble>
+          <ChatBubble from="tab">
+            Found your latest unpaid split and paid your share. ✅
+          </ChatBubble>
 
-          <ChatBubble from="tab">✅ Sent, @carlos $2, @maria $8</ChatBubble>
+          <ChatBubble from="tab">Use split id/code/url if you want a specific one.</ChatBubble>
         </div>
 
         {/* DETAILS */}
@@ -157,19 +153,21 @@ export default function TabAgentFAQPage() {
 
           {open && (
             <div className="px-4 pb-4 text-md text-white/60 space-y-2">
-              <p className="text-white/80 font-medium">Payments</p>
-              <p>• USDC by default</p>
-              <p>• ETH + other local coins supported</p>
+              <p className="text-white/80 font-medium">Current Skills</p>
+              <p>• Link agent to a Tab account (claim link flow)</p>
+              <p>• Send payments by @username, ENS, or wallet address</p>
+              <p>• Settle a split by splitId, code, or URL</p>
+              <p>• Settle the latest pending eligible split</p>
 
-              <p className="pt-2 text-white/80 font-medium">Airdrops</p>
-              <p>• Send to everyone in the group</p>
-              <p>• Equal or random distribution</p>
-              <p>• No setup, one message</p>
+              <p className="pt-2 text-white/80 font-medium">Guardrails</p>
+              <p>• Uses delegated Privy wallet (Base)</p>
+              <p>• Allowed token + per-payment cap + daily cap</p>
+              <p>• Agent Access expiry and linked-agent checks</p>
 
-              <p className="pt-2 text-white/80 font-medium">Automation</p>
-              <p>• Mini app support</p>
-              <p>• Auto-reminders</p>
-              <p>• Auto-settles when complete</p>
+              <p className="pt-2 text-white/80 font-medium">Not Yet</p>
+              <p>• Pick/roulette flows</p>
+              <p>• Airdrops in chat</p>
+              <p>• Farcaster follow / unfollow actions</p>
             </div>
           )}
         </div>
