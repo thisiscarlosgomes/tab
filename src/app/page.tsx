@@ -66,21 +66,21 @@ const AUTH_WELCOME_STEPS = [
     kind: "guide" as const,
     iconSrc: "/link.png",
     title: "Your social wallet",
-    desc: "Move money between people you follow and trust. Split group bills, send payments, and get paid in seconds.",
+    desc: "Move money between people you follow and trust, instantly.",
   },
   {
     key: "earn-more",
     kind: "guide" as const,
     iconSrc: "/dollars.png",
     title: "Put your money to work",
-    desc: "Earn on your USDC, play jackpot, airdrop tokens, spin to pay, and use more onchain money tools in one place.",
+    desc: "Earn on your stablecoins and use more onchain money tools in one place.",
   },
   {
     key: "agent-skill",
     kind: "guide" as const,
     iconSrc: "/stack.png",
-    title: "Tab Agent skill",
-    desc: "Use the Tab skill to trigger payments and actions from chat apps you already use with your agent.",
+    title: "Tab agent skill",
+    desc: "Use Tab skill to trigger payments from chat apps you already use.",
   },
 ] as const;
 
@@ -323,8 +323,8 @@ export default function Home() {
   const [showEarnDetailsDialog, setShowEarnDetailsDialog] = useState(false);
   const [showGiftDrawer, setShowGiftDrawer] = useState(false);
   const [authWelcomeStep, setAuthWelcomeStep] = useState(0);
-  const authWelcomeScrollerRef = useRef<HTMLDivElement | null>(null);
-  const authWelcomeSnapTimeoutRef = useRef<number | null>(null);
+  const authWelcomeTouchStartXRef = useRef<number | null>(null);
+  const authWelcomeSwipeHandledRef = useRef(false);
 
   const [friends, setFriends] = useState<FriendUser[]>([]);
   const [multiBalances, setMultiBalances] = useState<MultiBalances | null>(null);
@@ -424,18 +424,7 @@ export default function Home() {
   useEffect(() => {
     if (authStep !== "welcome") return;
     setAuthWelcomeStep(0);
-    if (authWelcomeScrollerRef.current) {
-      authWelcomeScrollerRef.current.scrollTo({ left: 0, behavior: "auto" });
-    }
   }, [authStep]);
-
-  useEffect(() => {
-    return () => {
-      if (authWelcomeSnapTimeoutRef.current !== null) {
-        window.clearTimeout(authWelcomeSnapTimeoutRef.current);
-      }
-    };
-  }, []);
 
   useEffect(() => {
     if (resendSecondsLeft <= 0) return;
@@ -910,74 +899,96 @@ export default function Home() {
 
         <div className="relative z-10 min-h-screen px-6 mx-auto w-full max-w-md flex flex-col">
           {showWelcomeStep ? (
-            <div className="flex-1 min-h-0 pt-[max(3rem,env(safe-area-inset-top))] pb-44 flex flex-col">
+            <div className="flex-1 min-h-0 pt-[max(6rem,env(safe-area-inset-top))] pb-44 flex flex-col">
               <div
-                ref={authWelcomeScrollerRef}
-                onScroll={(e) => {
-                  const el = e.currentTarget;
-                  if (!el.clientWidth) return;
-                  const nextStep = Math.round(el.scrollLeft / el.clientWidth);
-                  if (nextStep !== authWelcomeStep) {
-                    setAuthWelcomeStep(
-                      Math.max(0, Math.min(AUTH_WELCOME_STEPS.length - 1, nextStep))
-                    );
-                  }
+                onTouchStart={(e) => {
+                  authWelcomeTouchStartXRef.current = e.touches[0]?.clientX ?? null;
+                  authWelcomeSwipeHandledRef.current = false;
                 }}
-                onTouchEnd={() => {
-                  if (authWelcomeSnapTimeoutRef.current !== null) {
-                    window.clearTimeout(authWelcomeSnapTimeoutRef.current);
-                  }
-                  authWelcomeSnapTimeoutRef.current = window.setTimeout(() => {
-                    const el = authWelcomeScrollerRef.current;
-                    if (!el || !el.clientWidth) return;
-                    const idx = Math.round(el.scrollLeft / el.clientWidth);
-                    el.scrollTo({
-                      left: el.clientWidth * Math.max(0, Math.min(AUTH_WELCOME_STEPS.length - 1, idx)),
-                      behavior: "smooth",
-                    });
-                    setAuthWelcomeStep(Math.max(0, Math.min(AUTH_WELCOME_STEPS.length - 1, idx)));
-                  }, 40);
-                }}
-                className="flex-1 min-h-0 w-full overflow-x-auto overflow-y-hidden snap-x snap-mandatory scrollbar-hide flex touch-pan-x scroll-smooth overscroll-x-contain"
-              >
-                {AUTH_WELCOME_STEPS.map((step) => (
-                  <section
-                    key={step.key}
-                    className="w-full shrink-0 snap-start snap-always flex flex-col items-center justify-center text-center px-2 min-h-full"
-                  >
-                    {step.kind === "brand" ? (
-                      <div className="w-full max-w-sm mx-auto flex items-center justify-center">
-                        <AuthBrandLockup />
-                      </div>
-                    ) : (
-                      <div className="w-full max-w-sm mx-auto flex flex-col items-center justify-center">
-                        <div
-                          aria-hidden
-                          className="relative mb-8 grid place-items-center h-56 w-56 rounded-full bg-gradient-to-b from-indigo-300/10 via-indigo-400/5 to-transparent shadow-[0_0_80px_rgba(129,140,248,0.08)]"
-                        >
-                          <div className="grid place-items-center h-44 w-44 rounded-full bg-gradient-to-br from-indigo-300/10 via-primary/20 to-primary/10 shadow-[inset_0_10px_30px_rgba(255,255,255,0)]">
-                            <img
-                              src={step.iconSrc}
-                              alt=""
-                              aria-hidden="true"
-                              className="w-[158px] h-[158px] object-contain object-center"
-                            />
-                          </div>
-                        </div>
+                onTouchMove={(e) => {
+                  if (authWelcomeSwipeHandledRef.current) return;
+                  const startX = authWelcomeTouchStartXRef.current;
+                  const currentX = e.touches[0]?.clientX ?? null;
+                  if (startX === null || currentX === null) return;
 
-                        <h2 className="text-[28px] leading-[1.08] font-semibold tracking-tight text-white text-center">
-                          {step.title}
-                        </h2>
-                        <p className="mt-4 text-lg leading-relaxed text-white/45 max-w-[22rem] text-center">
-                          {step.desc}
-                        </p>
-                      </div>
-                    )}
-                  </section>
-                ))}
+                  const deltaX = currentX - startX;
+                  const threshold = 18;
+                  let nextIndex: number | null = null;
+
+                  if (deltaX <= -threshold) {
+                    nextIndex = Math.min(AUTH_WELCOME_STEPS.length - 1, authWelcomeStep + 1);
+                  } else if (deltaX >= threshold) {
+                    nextIndex = Math.max(0, authWelcomeStep - 1);
+                  }
+
+                  if (nextIndex === null || nextIndex === authWelcomeStep) return;
+                  authWelcomeSwipeHandledRef.current = true;
+                  setAuthWelcomeStep(nextIndex);
+                }}
+                onTouchEnd={(e) => {
+                  const startX = authWelcomeTouchStartXRef.current;
+                  const endX = e.changedTouches[0]?.clientX ?? null;
+                  const alreadyHandled = authWelcomeSwipeHandledRef.current;
+                  authWelcomeTouchStartXRef.current = null;
+                  authWelcomeSwipeHandledRef.current = false;
+                  if (alreadyHandled) return;
+
+                  if (startX === null || endX === null) return;
+                  const deltaX = endX - startX;
+                  const threshold = 18;
+                  if (deltaX <= -threshold) {
+                    setAuthWelcomeStep((prev) =>
+                      Math.min(AUTH_WELCOME_STEPS.length - 1, prev + 1)
+                    );
+                  } else if (deltaX >= threshold) {
+                    setAuthWelcomeStep((prev) => Math.max(0, prev - 1));
+                  }
+                }}
+                className="flex-1 min-h-0 w-full overflow-hidden touch-pan-y"
+              >
+                <div
+                  className="flex h-full w-full transition-transform duration-200 ease-out"
+                  style={{ transform: `translate3d(-${authWelcomeStep * 100}%, 0, 0)` }}
+                >
+                  {AUTH_WELCOME_STEPS.map((step) => (
+                    <section
+                      key={step.key}
+                      className="w-full shrink-0 flex flex-col items-center justify-center text-center px-2 min-h-full"
+                    >
+                      {step.kind === "brand" ? (
+                        <div className="w-full max-w-sm mx-auto flex items-center justify-center">
+                          <AuthBrandLockup />
+                        </div>
+                      ) : (
+                        <div className="w-full max-w-sm mx-auto flex flex-col items-center justify-center">
+                          <div
+                            aria-hidden
+                            className="relative mb-4 grid place-items-center h-54 w-54 rounded-full drop-shadow-[0_10px_35px_rgba(99,102,241,0.1)]"
+                          >
+                            <div className="grid place-items-center h-40 w-40 rounded-full bg-gradient-to-b from-indigo-300/10 via-primary/10 to-primary/5 shadow-[inset_0_10px_30px_rgba(255,255,255,0)]">
+                              <img
+                                src={step.iconSrc}
+                                alt=""
+                                aria-hidden="true"
+                                className="w-[148px] h-[148px] object-contain object-center"
+                              />
+                            </div>
+                          </div>
+
+                          <h2 className="text-xl leading-[1.08] font-semibold tracking-tight text-white text-center">
+                            {step.title}
+                          </h2>
+                          <p className="mt-3 text-lg leading-tight text-white/45 max-w-[18rem] text-center">
+                            {step.desc}
+                          </p>
+                        </div>
+                      )}
+                    </section>
+                  ))}
+                </div>
               </div>
 
-              <div className="mt-5 flex items-center justify-center gap-2">
+              <div className="mt-3 flex items-center justify-center gap-2">
                 {AUTH_WELCOME_STEPS.map((step, idx) => (
                   <button
                     key={step.key}
@@ -985,12 +996,6 @@ export default function Home() {
                     aria-label={`Go to step ${idx + 1}`}
                     aria-current={authWelcomeStep === idx}
                     onClick={() => {
-                      const el = authWelcomeScrollerRef.current;
-                      if (!el) return;
-                      el.scrollTo({
-                        left: el.clientWidth * idx,
-                        behavior: "smooth",
-                      });
                       setAuthWelcomeStep(idx);
                     }}
                     className={clsx(
@@ -1168,7 +1173,7 @@ export default function Home() {
                       }}
                       placeholder="example@email.com"
                       className={clsx(
-                        "w-full rounded-2xl border px-5 py-4 text-white text-lg placeholder:text-white/25 outline-none bg-white/5",
+                        "w-full rounded-2xl border px-5 py-4 text-white text-lg placeholder:text-white/25 outline-none bg-background",
                         showInvalidEmailError
                           ? "border-red-400/80 focus:border-red-300"
                           : "border-white/15 focus:border-white/40"
@@ -1214,7 +1219,7 @@ export default function Home() {
                 </>
               )}
 
-              <p className="text-xs text-white/20 text-center pt-1">2025 © tab tech</p>
+              <p className="hidden text-xs text-white/20 text-center pt-1">2025 © tab tech</p>
             </div>
           </ResponsiveDialogContent>
         </ResponsiveDialog>
