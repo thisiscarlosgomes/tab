@@ -14,7 +14,7 @@
     "@farcaster/frame-core": "^0.1.4",
     "@farcaster/frame-node": "^0.0.34",
     "@farcaster/frame-sdk": "^0.0.59",
-    "@farcaster/frame-wagmi-connector": "^0.0.6",
+    "@farcaster/frame-wagmi-connector": "^0.0.48",
     "@morpho-org/blue-sdk": "^3.0.2",
     "@morpho-org/blue-sdk-viem": "^3.0.0",
     "@morpho-org/morpho-ts": "^2.3.0",

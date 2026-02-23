@@ -1,5 +1,7 @@
 import { AGENT_SKILL_MARKDOWN } from "@/lib/agent-skill-markdown";
 
+export const dynamic = "force-dynamic";
+
 export async function GET() {
   return new Response(AGENT_SKILL_MARKDOWN, {
     headers: {
@@ -8,4 +10,3 @@ export async function GET() {
     },
   });
 }
-
