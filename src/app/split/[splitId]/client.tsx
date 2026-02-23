@@ -84,6 +84,7 @@ export default function SplitPage() {
   } = useTabIdentity();
 
   const [bill, setBill] = useState<SplitBill | null>(null);
+  const [creatorUsernameOverride, setCreatorUsernameOverride] = useState<string | null>(null);
   const [isJoining, setIsJoining] = useState(false);
   const [hasPaid, setHasPaid] = useState(false);
   const [showSuccess, setShowSuccess] = useState(false);
@@ -238,9 +239,10 @@ export default function SplitPage() {
     !!bill?.creator?.name &&
     (bill.creator.name.startsWith("0x") || bill.creator.name.startsWith("@0x"));
   const creatorDisplayName =
-    isCreator && creatorNameLooksLikeAddress && identityUsername
+    creatorUsernameOverride ??
+    (isCreator && creatorNameLooksLikeAddress && identityUsername
       ? identityUsername
-      : bill?.creator?.name;
+      : bill?.creator?.name);
   const creatorHandleLabel = (creatorDisplayName ?? "").replace(/^@+/, "");
 
   const debtorCount =
@@ -308,6 +310,45 @@ const paidCount = bill?.paid?.length ?? 0;
   useEffect(() => {
     if (isPaid) setHasPaid(true);
   }, [isPaid]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const creatorFid = bill?.creator?.fid;
+    if (!creatorNameLooksLikeAddress || !creatorFid) {
+      setCreatorUsernameOverride(null);
+      return;
+    }
+
+    if (isCreator && identityUsername) {
+      setCreatorUsernameOverride(identityUsername);
+      return;
+    }
+
+    const loadCreatorUsername = async () => {
+      try {
+        const res = await fetch(
+          `/api/neynar/user/by-fids?fids=${encodeURIComponent(String(creatorFid))}`,
+          { cache: "no-store" }
+        );
+        if (!res.ok) return;
+        const data = await res.json();
+        const user = Array.isArray(data) ? data[0] : null;
+        const username =
+          typeof user?.username === "string" && user.username.trim()
+            ? user.username.trim()
+            : null;
+        if (!cancelled) setCreatorUsernameOverride(username);
+      } catch {
+        if (!cancelled) setCreatorUsernameOverride(null);
+      }
+    };
+
+    void loadCreatorUsername();
+    return () => {
+      cancelled = true;
+    };
+  }, [bill?.creator?.fid, creatorNameLooksLikeAddress, isCreator, identityUsername]);
 
   const invitedButNotJoined =
     bill?.invited?.filter(

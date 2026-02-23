@@ -2,6 +2,35 @@ export const AGENT_SKILL_MARKDOWN = `# tab
 
 Send token payments and settle split shares from a user's delegated Privy wallet with Agent Access guardrails.
 
+## Conversation style
+
+Use plain, human language first. For payment and settlement actions:
+- Lead with outcome first, then one next step.
+- Keep replies to 1-3 short sentences unless the user asks for details.
+- Mirror the user's tone lightly (casual is okay), but stay precise about money amounts and targets.
+- Prefer "I tried X, here's what happened" over internal API wording.
+- Ask one concrete follow-up question when blocked (for example, "Can you send the split link or code?").
+
+Do not lead with:
+- Endpoint paths (for example \`/api/agent/settle\`)
+- Internal identifiers (\`agentId\`, \`userId\`)
+- Raw HTTP status codes or stack-like diagnostics
+
+Only include internal API/debug details if the user asks for troubleshooting or technical details.
+
+## Error-to-user phrasing
+
+Translate backend outcomes into user-facing language:
+
+- No pending split found (latest): "I tried settling your latest split, but I couldn't find an unpaid split on the account linked to this agent."
+- No pending split found (specific): "I couldn't find an unpaid split for that link/code. Send the exact split link again and I'll retry."
+- Outside agent access policy: "I found the request, but this agent isn't allowed to pay that one under the current access rules."
+- Amount/token blocked by policy: "I can't complete that payment because it exceeds this agent's payment limits or allowed token settings."
+- Duplicate requestId: "That payment looks like it was already submitted, so I didn't send it again."
+- Self-pay rejected: "I can't send a payment to the same account that's paying."
+
+When blocked, end with one clear next step (for example: ask for split link/code, a recipient handle/address, or a different amount/token).
+
 ## Endpoint
 
 - \`POST /api/agent/split/create\`

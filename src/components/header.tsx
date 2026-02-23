@@ -11,6 +11,7 @@ import {
   RefreshCw,
   Menu,
   LogOut,
+  Bell,
 } from "lucide-react";
 import { usePrivy } from "@privy-io/react-auth";
 import { DailySpinDrawer } from "@/components/app/DailySpinDrawer";
@@ -280,6 +281,14 @@ export function Header() {
 
           {/* Right side — actions */}
           <div className="absolute right-4 top-1/2 -translate-y-1/2 flex items-center gap-4">
+            <button
+              onClick={() => router.push("/notifications")}
+              aria-label="Notifications"
+              className="text-white hover:text-white transition"
+            >
+              <Bell className="w-5 h-5" />
+            </button>
+
             <button
               onClick={() => window.location.reload()}
               aria-label="Refresh"
