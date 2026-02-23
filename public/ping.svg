@@ -1,0 +1,42 @@
+<svg width="512" height="512" viewBox="0 0 512 512" xmlns="http://www.w3.org/2000/svg">
+
+  <defs>
+    <!-- Orb gradient -->
+    <radialGradient id="orbGradient" cx="50%" cy="40%" r="60%">
+      <stop offset="0%" stop-color="#C4B5FD"/>
+      <stop offset="60%" stop-color="#A78BFA"/>
+      <stop offset="100%" stop-color="#7C3AED"/>
+    </radialGradient>
+
+    <!-- Glow filter -->
+    <filter id="glow" x="-50%" y="-50%" width="200%" height="200%">
+      <feGaussianBlur stdDeviation="25" result="coloredBlur"/>
+      <feMerge>
+        <feMergeNode in="coloredBlur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+
+    <!-- Soft shadow -->
+    <filter id="shadow" x="-50%" y="-50%" width="200%" height="200%">
+      <feDropShadow dx="0" dy="20" stdDeviation="20" flood-color="#A78BFA" flood-opacity="0.4"/>
+    </filter>
+  </defs>
+
+  <!-- Glow Aura -->
+  <circle cx="256" cy="256" r="180" fill="#A78BFA" opacity="0.25" filter="url(#glow)" />
+
+  <!-- Main Orb -->
+  <circle cx="256" cy="256" r="140" fill="url(#orbGradient)" filter="url(#shadow)" />
+
+  <!-- Highlight -->
+  <ellipse cx="320" cy="200" rx="30" ry="18" fill="white" opacity="0.25"/>
+
+  <!-- Eyes -->
+  <circle cx="220" cy="250" r="12" fill="#111111"/>
+  <circle cx="292" cy="250" r="12" fill="#111111"/>
+
+  <!-- Subtle Smile -->
+  <path d="M230 290 Q256 310 282 290" stroke="#111111" stroke-width="5" fill="transparent" stroke-linecap="round"/>
+
+</svg>

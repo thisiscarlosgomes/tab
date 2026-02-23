@@ -56,6 +56,34 @@ type MultiBalances = {
   totalPortfolio?: number;
 };
 
+const AUTH_WELCOME_STEPS = [
+  {
+    key: "intro",
+    kind: "brand" as const,
+  },
+  {
+    key: "social-wallet",
+    kind: "guide" as const,
+    iconSrc: "/link.png",
+    title: "Your social wallet",
+    desc: "Move money between people you follow and trust. Split group bills, send payments, and get paid in seconds.",
+  },
+  {
+    key: "earn-more",
+    kind: "guide" as const,
+    iconSrc: "/dollars.png",
+    title: "Put your money to work",
+    desc: "Earn on your USDC, play jackpot, airdrop tokens, spin to pay, and use more onchain money tools in one place.",
+  },
+  {
+    key: "agent-skill",
+    kind: "guide" as const,
+    iconSrc: "/stack.png",
+    title: "Tab Agent skill",
+    desc: "Use the Tab skill to trigger payments and actions from chat apps you already use with your agent.",
+  },
+] as const;
+
 async function loadBalances(address: `0x${string}`, force = false) {
   try {
     const portfolio = await fetchMoralisPortfolio(address, { force });
@@ -102,6 +130,152 @@ function AuthValidationSplash() {
   );
 }
 
+function AnimatedPingLogo({ className }: { className?: string }) {
+  return (
+    <>
+      <svg
+        viewBox="0 0 512 512"
+        xmlns="http://www.w3.org/2000/svg"
+        className={clsx("ping-float", className)}
+        aria-hidden="true"
+      >
+        <defs>
+          <radialGradient id="pingOrbGradient" cx="50%" cy="40%" r="60%">
+            <stop offset="0%" stopColor="#C4B5FD" />
+            <stop offset="60%" stopColor="#A78BFA" />
+            <stop offset="100%" stopColor="#7C3AED" />
+          </radialGradient>
+          <filter id="pingGlow" x="-50%" y="-50%" width="200%" height="200%">
+            <feGaussianBlur stdDeviation="25" result="coloredBlur" />
+            <feMerge>
+              <feMergeNode in="coloredBlur" />
+              <feMergeNode in="SourceGraphic" />
+            </feMerge>
+          </filter>
+          <filter id="pingShadow" x="-50%" y="-50%" width="200%" height="200%">
+            <feDropShadow
+              dx="0"
+              dy="20"
+              stdDeviation="20"
+              floodColor="#A78BFA"
+              floodOpacity="0.4"
+            />
+          </filter>
+        </defs>
+
+        <circle
+          className="ping-aura"
+          cx="256"
+          cy="256"
+          r="180"
+          fill="#A78BFA"
+          opacity="0.25"
+          filter="url(#pingGlow)"
+        />
+        <circle
+          cx="256"
+          cy="256"
+          r="140"
+          fill="url(#pingOrbGradient)"
+          filter="url(#pingShadow)"
+        />
+        <ellipse cx="320" cy="200" rx="30" ry="18" fill="white" opacity="0.25" />
+
+        <ellipse className="ping-eye" cx="220" cy="250" rx="12" ry="12" fill="#111111" />
+        <ellipse
+          className="ping-eye ping-eye-delay"
+          cx="292"
+          cy="250"
+          rx="12"
+          ry="12"
+          fill="#111111"
+        />
+
+        <path
+          d="M230 290 Q256 310 282 290"
+          stroke="#111111"
+          strokeWidth="5"
+          fill="transparent"
+          strokeLinecap="round"
+        />
+      </svg>
+
+      <style jsx>{`
+        .ping-float {
+          animation: ping-float 4.8s ease-in-out infinite;
+          will-change: transform;
+        }
+
+        .ping-aura {
+          transform-origin: center;
+          transform-box: fill-box;
+          animation: ping-aura-pulse 6.5s ease-in-out infinite;
+          will-change: transform, opacity;
+        }
+
+        .ping-eye {
+          transform-origin: center;
+          transform-box: fill-box;
+          animation: ping-blink 5.5s ease-in-out infinite;
+        }
+
+        .ping-eye-delay {
+          animation-delay: 0.02s;
+        }
+
+        @keyframes ping-float {
+          0%,
+          100% {
+            transform: translateY(0px);
+          }
+
+          50% {
+            transform: translateY(-8px);
+          }
+        }
+
+        @keyframes ping-aura-pulse {
+          0%,
+          100% {
+            transform: scale(1);
+            opacity: 0.2;
+          }
+
+          50% {
+            transform: scale(1.06);
+            opacity: 0.33;
+          }
+        }
+
+        @keyframes ping-blink {
+          0%,
+          44%,
+          100% {
+            transform: scaleY(1);
+          }
+
+          46% {
+            transform: scaleY(0.12);
+          }
+
+          48% {
+            transform: scaleY(1);
+          }
+        }
+
+        @media (prefers-reduced-motion: reduce) {
+          .ping-float,
+          .ping-aura,
+          .ping-eye,
+          .ping-eye-delay {
+            animation: none;
+          }
+        }
+      `}</style>
+    </>
+  );
+}
+
 function AuthBrandLockup() {
   return (
     <div className="relative flex flex-col items-center">
@@ -109,15 +283,11 @@ function AuthBrandLockup() {
         aria-hidden
         className="absolute left-1/2 top-12 h-40 w-40 -translate-x-1/2 rounded-full bg-indigo-400/10 blur-3xl"
       />
-      <img
-        src="/app.png"
-        alt="Tab App Icon"
-        className="relative z-10 w-20 h-20 mb-5 drop-shadow-[0_10px_35px_rgba(99,102,241,0.14)]"
-      />
+      <AnimatedPingLogo className="relative z-10 w-[120px] h-[120px] mb-2 drop-shadow-[0_10px_35px_rgba(99,102,241,0.14)]" />
       <h1 className="relative z-10 text-2xl font-semibold tracking-tight leading-none text-white">
         meet tab
       </h1>
-      <p className="relative z-10 mt-2 text-lg text-white/35">
+      <p className="hidden relative z-10 mt-2 text-lg text-white/35">
         Split, send, and get paid in seconds.
       </p>
     </div>
@@ -152,6 +322,9 @@ export default function Home() {
   const [showMorphoDrawer, setShowMorphoDrawer] = useState(false);
   const [showEarnDetailsDialog, setShowEarnDetailsDialog] = useState(false);
   const [showGiftDrawer, setShowGiftDrawer] = useState(false);
+  const [authWelcomeStep, setAuthWelcomeStep] = useState(0);
+  const authWelcomeScrollerRef = useRef<HTMLDivElement | null>(null);
+  const authWelcomeSnapTimeoutRef = useRef<number | null>(null);
 
   const [friends, setFriends] = useState<FriendUser[]>([]);
   const [multiBalances, setMultiBalances] = useState<MultiBalances | null>(null);
@@ -247,6 +420,22 @@ export default function Home() {
       return;
     }
   }, [authenticated]);
+
+  useEffect(() => {
+    if (authStep !== "welcome") return;
+    setAuthWelcomeStep(0);
+    if (authWelcomeScrollerRef.current) {
+      authWelcomeScrollerRef.current.scrollTo({ left: 0, behavior: "auto" });
+    }
+  }, [authStep]);
+
+  useEffect(() => {
+    return () => {
+      if (authWelcomeSnapTimeoutRef.current !== null) {
+        window.clearTimeout(authWelcomeSnapTimeoutRef.current);
+      }
+    };
+  }, []);
 
   useEffect(() => {
     if (resendSecondsLeft <= 0) return;
@@ -719,15 +908,113 @@ export default function Home() {
       <main className="relative min-h-screen w-full overflow-hidden bg-black text-center text-white">
         <div className="absolute inset-0 bg-background" />
 
-        <div className="relative z-10 min-h-screen px-6 mx-auto w-full max-w-md flex flex-col items-center justify-center">
-          <AuthBrandLockup />
+        <div className="relative z-10 min-h-screen px-6 mx-auto w-full max-w-md flex flex-col">
+          {showWelcomeStep ? (
+            <div className="flex-1 min-h-0 pt-[max(3rem,env(safe-area-inset-top))] pb-44 flex flex-col">
+              <div
+                ref={authWelcomeScrollerRef}
+                onScroll={(e) => {
+                  const el = e.currentTarget;
+                  if (!el.clientWidth) return;
+                  const nextStep = Math.round(el.scrollLeft / el.clientWidth);
+                  if (nextStep !== authWelcomeStep) {
+                    setAuthWelcomeStep(
+                      Math.max(0, Math.min(AUTH_WELCOME_STEPS.length - 1, nextStep))
+                    );
+                  }
+                }}
+                onTouchEnd={() => {
+                  if (authWelcomeSnapTimeoutRef.current !== null) {
+                    window.clearTimeout(authWelcomeSnapTimeoutRef.current);
+                  }
+                  authWelcomeSnapTimeoutRef.current = window.setTimeout(() => {
+                    const el = authWelcomeScrollerRef.current;
+                    if (!el || !el.clientWidth) return;
+                    const idx = Math.round(el.scrollLeft / el.clientWidth);
+                    el.scrollTo({
+                      left: el.clientWidth * Math.max(0, Math.min(AUTH_WELCOME_STEPS.length - 1, idx)),
+                      behavior: "smooth",
+                    });
+                    setAuthWelcomeStep(Math.max(0, Math.min(AUTH_WELCOME_STEPS.length - 1, idx)));
+                  }, 40);
+                }}
+                className="flex-1 min-h-0 w-full overflow-x-auto overflow-y-hidden snap-x snap-mandatory scrollbar-hide flex touch-pan-x scroll-smooth overscroll-x-contain"
+              >
+                {AUTH_WELCOME_STEPS.map((step) => (
+                  <section
+                    key={step.key}
+                    className="w-full shrink-0 snap-start snap-always flex flex-col items-center justify-center text-center px-2 min-h-full"
+                  >
+                    {step.kind === "brand" ? (
+                      <div className="w-full max-w-sm mx-auto flex items-center justify-center">
+                        <AuthBrandLockup />
+                      </div>
+                    ) : (
+                      <div className="w-full max-w-sm mx-auto flex flex-col items-center justify-center">
+                        <div
+                          aria-hidden
+                          className="relative mb-8 grid place-items-center h-56 w-56 rounded-full bg-gradient-to-b from-indigo-300/10 via-indigo-400/5 to-transparent shadow-[0_0_80px_rgba(129,140,248,0.08)]"
+                        >
+                          <div className="grid place-items-center h-44 w-44 rounded-full bg-gradient-to-br from-indigo-300/10 via-primary/20 to-primary/10 shadow-[inset_0_10px_30px_rgba(255,255,255,0)]">
+                            <img
+                              src={step.iconSrc}
+                              alt=""
+                              aria-hidden="true"
+                              className="w-[158px] h-[158px] object-contain object-center"
+                            />
+                          </div>
+                        </div>
+
+                        <h2 className="text-[28px] leading-[1.08] font-semibold tracking-tight text-white text-center">
+                          {step.title}
+                        </h2>
+                        <p className="mt-4 text-lg leading-relaxed text-white/45 max-w-[22rem] text-center">
+                          {step.desc}
+                        </p>
+                      </div>
+                    )}
+                  </section>
+                ))}
+              </div>
+
+              <div className="mt-5 flex items-center justify-center gap-2">
+                {AUTH_WELCOME_STEPS.map((step, idx) => (
+                  <button
+                    key={step.key}
+                    type="button"
+                    aria-label={`Go to step ${idx + 1}`}
+                    aria-current={authWelcomeStep === idx}
+                    onClick={() => {
+                      const el = authWelcomeScrollerRef.current;
+                      if (!el) return;
+                      el.scrollTo({
+                        left: el.clientWidth * idx,
+                        behavior: "smooth",
+                      });
+                      setAuthWelcomeStep(idx);
+                    }}
+                    className={clsx(
+                      "h-2.5 rounded-full transition-all",
+                      authWelcomeStep === idx
+                        ? "w-6 bg-primary"
+                        : "w-2.5 bg-white/20"
+                    )}
+                  />
+                ))}
+              </div>
+            </div>
+          ) : (
+            <div className="flex-1 flex items-center justify-center">
+              <AuthBrandLockup />
+            </div>
+          )}
         </div>
 
         <div className="fixed bottom-0 inset-x-0 z-20 p-5 pb-8">
           <div className="mx-auto w-full max-w-md">
             {showWelcomeStep && (
               <Button
-                className="w-full bg-white text-black shadow-[0_10px_40px_rgba(0,0,0,0.35)]"
+                className="w-full bg-white text-black shadow-[0_10px_40px_rgba(0,0,0,0.35)] mb-2"
                 onClick={() => {
                   setAuthStep("email");
                   setAuthError(null);
@@ -736,7 +1023,7 @@ export default function Home() {
                 Log in / Sign up
               </Button>
             )}
-            <p className="text-xs text-white/20 mt-3 py-4">2025 © tab tech</p>
+           
           </div>
         </div>
 
@@ -1100,7 +1387,7 @@ export default function Home() {
                     >
                       <p className="text-sm text-white/40">Earning</p>
                       <p className="text-sm text-white font-medium">
-                        ${earnBalance!.toFixed(2)}
+                        {/* ${earnBalance!.toFixed(2)} */}
                         {typeof monthlyEarn === "number" && monthlyEarn > 0 && (
                           <span className="text-green-400 ml-1 whitespace-nowrap text-xs">
                             +${formatMonthlyEarnings(monthlyEarn)}/mo
