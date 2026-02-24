@@ -26,6 +26,11 @@ import { toast } from "sonner";
 import { Drawer } from "vaul";
 import { shortAddress } from "@/lib/shortAddress";
 import { useTabIdentity } from "@/lib/useTabIdentity";
+import {
+  ResponsiveDialog,
+  ResponsiveDialogContent,
+  ResponsiveDialogTitle,
+} from "@/components/ui/responsive-dialog";
 
 interface Participant {
   address: string;
@@ -447,8 +452,8 @@ const paidCount = bill?.paid?.length ?? 0;
             body: JSON.stringify({
               fid: Number(p.fid), // ✅ REQUIRED
               recipientAddress: p.address,
-              title: "Reminder to Pay",
-              message: `Hey @${p.name}, remember to settle your share for "${bill?.description}" 💸`,
+              title: "Reminder",
+              message: `Hey @${p.name}, remember to settle your share for "${bill?.description}"`,
               targetUrl: `https://usetab.app/split/${bill?.splitId}`,
             }),
           });
@@ -748,88 +753,85 @@ const paidCount = bill?.paid?.length ?? 0;
         )}
       </Card>
 
-      {/* SETTINGS DRAWER */}
-      <Drawer.Root
+      {/* SETTINGS DIALOG / SHEET */}
+      <ResponsiveDialog
         open={showSettingsDrawer}
         onOpenChange={setShowSettingsDrawer}
       >
-        <Drawer.Portal>
-          <Drawer.Overlay className="fixed inset-0 bg-black/50 backdrop-blur-sm" />
-          <Drawer.Content className="z-40 bg-background rounded-t-3xl p-6 fixed bottom-0 w-full max-h-[85vh] overflow-y-auto pb-8 mb-4">
-            <div className="mx-auto w-12 h-1.5 rounded-full bg-white/10 mb-4" />
+        <ResponsiveDialogContent className="p-6 pb-8 md:max-w-md">
+          <ResponsiveDialogTitle className="text-center text-lg">
+            Split Settings
+          </ResponsiveDialogTitle>
 
-            <p className="text-center text-lg">Split Settings</p>
+          <p className="text-center text-white/40 mt-2">
+            Waiting on payments? Send reminders
+          </p>
 
-            <p className="text-center text-white/40 mt-2">
-              Waiting on payments? Send reminders
-            </p>
+          <Button
+            onClick={notifyUnpaid}
+            disabled={unpaidList.length === 0}
+            className="w-full bg-white text-black mt-4"
+          >
+            Send Reminder
+          </Button>
 
-            <Button
-              onClick={notifyUnpaid}
-              disabled={unpaidList.length === 0}
-              className="w-full bg-white text-black mt-4"
-            >
-              Send Reminder
-            </Button>
+          {/* TOGGLE: INVITED ONLY */}
+          <div className="hidden mt-4 flex items-center justify-between bg-white/5 p-4 rounded-lg">
+            <span className="text-white/60">Restrict to invited only</span>
 
-            {/* TOGGLE: INVITED ONLY */}
-            <div className="hidden mt-4 flex items-center justify-between bg-white/5 p-4 rounded-lg">
-              <span className="text-white/60">Restrict to invited only</span>
-
-              <button
-                onClick={async () => {
-                  const next = !bill?.invitedOnly;
-                  await fetch(`/api/split/${safeSplitId}`, {
-                    method: "PATCH",
-                    headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({ invitedOnly: next }),
-                  });
-                  fetchBill();
-                }}
-                className={`relative inline-flex h-[26px] w-[44px] rounded-full transition ${
-                  bill?.invitedOnly ? "bg-primary" : "bg-white/20"
-                }`}
-              >
-                <span
-                  className={`absolute h-[20px] w-[20px] rounded-full bg-white transition-transform ${
-                    bill?.invitedOnly
-                      ? "translate-x-[20px]"
-                      : "translate-x-[2px]"
-                  }`}
-                />
-              </button>
-            </div>
-
-            {/* DELETE SPLIT */}
-            <Button
-              className="w-full bg-red-500 text-white mt-6"
+            <button
               onClick={async () => {
-                if (!address) return;
-
-                toast.promise(
-                  fetch(`/api/split/${safeSplitId}`, {
-                    method: "DELETE",
-                    headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({ address }),
-                  }),
-                  {
-                    loading: "Deleting...",
-                    success: () => {
-                      setTimeout(() => {
-                        window.location.href = "/";
-                      }, 1200);
-                      return "Split deleted.";
-                    },
-                    error: "Failed to delete",
-                  }
-                );
+                const next = !bill?.invitedOnly;
+                await fetch(`/api/split/${safeSplitId}`, {
+                  method: "PATCH",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({ invitedOnly: next }),
+                });
+                fetchBill();
               }}
+              className={`relative inline-flex h-[26px] w-[44px] rounded-full transition ${
+                bill?.invitedOnly ? "bg-primary" : "bg-white/20"
+              }`}
             >
-              Delete Split
-            </Button>
-          </Drawer.Content>
-        </Drawer.Portal>
-      </Drawer.Root>
+              <span
+                className={`absolute h-[20px] w-[20px] rounded-full bg-white transition-transform ${
+                  bill?.invitedOnly
+                    ? "translate-x-[20px]"
+                    : "translate-x-[2px]"
+                }`}
+              />
+            </button>
+          </div>
+
+          {/* DELETE SPLIT */}
+          <Button
+            className="w-full bg-red-500 text-white mt-6"
+            onClick={async () => {
+              if (!address) return;
+
+              toast.promise(
+                fetch(`/api/split/${safeSplitId}`, {
+                  method: "DELETE",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({ address }),
+                }),
+                {
+                  loading: "Deleting...",
+                  success: () => {
+                    setTimeout(() => {
+                      window.location.href = "/";
+                    }, 1200);
+                    return "Split deleted.";
+                  },
+                  error: "Failed to delete",
+                }
+              );
+            }}
+          >
+            Delete Split
+          </Button>
+        </ResponsiveDialogContent>
+      </ResponsiveDialog>
 
       {/* QR DRAWER */}
       <Drawer.Root open={showQrDrawer} onOpenChange={setShowQrDrawer}>

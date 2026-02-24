@@ -6,6 +6,7 @@ import { getBearerToken, getPrivyServerClient } from "@/lib/privy-server";
 import { resolveRecipient } from "@/lib/recipient-resolver";
 import { tokenList } from "@/lib/tokens";
 import { writeActivity } from "@/lib/writeActivity";
+import { sendWebNotificationToUser } from "@/lib/user-notifications";
 
 type LinkedAccountLike = {
   type?: string;
@@ -395,7 +396,31 @@ export async function POST(req: NextRequest) {
 
   const splitUrl = `${getPublicBaseUrl(req)}/split/${splitId}`;
 
-    return Response.json({
+  // Best-effort invite notifications for users who already have web push enabled.
+  const creatorLabel =
+    typeof creator.name === "string" && creator.name.trim()
+      ? creator.name.trim().replace(/^@+/, "")
+      : "Someone";
+  void Promise.allSettled(
+    invitedUsers.map((user) =>
+      sendWebNotificationToUser(
+        {
+          fid: user.fid,
+          address: user.address,
+        },
+        {
+          title: "Split invite",
+          body: `@${creatorLabel} invited you to split "${description}" (${perPersonAmount.toFixed(
+            tokenSymbol === "ETH" ? 4 : 2
+          )} ${tokenSymbol} each)`,
+          url: splitUrl,
+          tag: `split-invite-${splitId}`,
+        }
+      )
+    )
+  ).catch(() => {});
+
+  return Response.json({
       success: true,
       splitId,
       splitCode: code,

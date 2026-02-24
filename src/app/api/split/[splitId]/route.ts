@@ -4,6 +4,7 @@ import { writeActivity } from "@/lib/writeActivity";
 import { requireTrustedRequest } from "@/lib/security";
 import { buildUserKey, resolveUserFid } from "@/lib/identity";
 import { getCanonicalUserProfileByFid } from "@/lib/user-profile";
+import { sendWebNotificationToUser } from "@/lib/user-notifications";
 
 /* =========================
    Helpers
@@ -13,6 +14,14 @@ function generateCode() {
   const randomWord = words[Math.floor(Math.random() * words.length)];
   const randomSuffix = Math.random().toString(36).substring(2, 6);
   return `${randomWord}-${randomSuffix}`;
+}
+
+function getPublicBaseUrl(req: NextRequest) {
+  return (
+    process.env.PUBLIC_URL?.trim() ||
+    process.env.NEXT_PUBLIC_URL?.trim() ||
+    req.nextUrl.origin
+  ).replace(/\/$/, "");
 }
 
 function normalizeAddress(address?: string) {
@@ -253,6 +262,35 @@ export async function POST(req: NextRequest) {
     refId: splitId,
     timestamp: createdAt,
   });
+
+  // Best-effort invite notifications for users who already enabled web push.
+  const splitUrl = `${getPublicBaseUrl(req)}/split/${splitId}`;
+  const creatorLabel =
+    typeof normalizedCreator?.name === "string" && normalizedCreator.name.trim()
+      ? normalizedCreator.name.trim().replace(/^@+/, "")
+      : "Someone";
+  const perPersonText =
+    Number.isFinite(perPerson) && perPerson > 0
+      ? ` (${perPerson.toFixed(token === "ETH" ? 4 : 2)} ${token} each)`
+      : "";
+  if (!isReceiptOpen && Array.isArray(doc.invited) && doc.invited.length > 0) {
+    void Promise.allSettled(
+      doc.invited.map((invitedUser: any) =>
+        sendWebNotificationToUser(
+          {
+            fid: invitedUser?.fid ?? null,
+            address: invitedUser?.address ?? null,
+          },
+          {
+            title: "Split invite",
+            body: `@${creatorLabel} invited you to split "${description}"${perPersonText}`,
+            url: splitUrl,
+            tag: `split-invite-${splitId}`,
+          }
+        )
+      )
+    ).catch(() => {});
+  }
 
   return Response.json(doc);
 }
