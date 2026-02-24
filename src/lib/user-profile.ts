@@ -40,8 +40,27 @@ export type UserProfileDoc = {
   lastSyncedAt: Date;
 };
 
+let ensureUserProfileIndexesPromise: Promise<void> | null = null;
+
 function normalizeAddress(value?: string | null) {
   return typeof value === "string" && value ? value.toLowerCase() : null;
+}
+
+function ensureUserProfileIndexes(
+  collection: import("mongodb").Collection<UserProfileDoc>
+) {
+  if (!ensureUserProfileIndexesPromise) {
+    ensureUserProfileIndexesPromise = (async () => {
+      await collection.createIndexes([
+        { key: { userId: 1 }, unique: true },
+        { key: { fid: 1 } },
+        { key: { usernameLower: 1 } },
+      ]);
+    })().catch(() => {
+      ensureUserProfileIndexesPromise = null;
+    });
+  }
+  return ensureUserProfileIndexesPromise;
 }
 
 function toLinkedAccounts(user: unknown): LinkedAccountLike[] {
@@ -207,6 +226,7 @@ export async function syncCanonicalUserProfileFromPrivyUser(input: {
   const client = await clientPromise;
   const db = client.db();
   const collection = db.collection<UserProfileDoc>("a-user-profile");
+  await ensureUserProfileIndexes(collection);
   const now = new Date();
 
   await collection.updateOne(
@@ -249,6 +269,7 @@ export async function getCanonicalUserProfileByUserId(userId: string) {
   const client = await clientPromise;
   const db = client.db();
   const collection = db.collection<UserProfileDoc>("a-user-profile");
+  await ensureUserProfileIndexes(collection);
   const profile = await collection.findOne({ userId });
   return profile ? sanitizeProfile(profile) : null;
 }
@@ -260,6 +281,19 @@ export async function getCanonicalUserProfileByUsername(username: string) {
   const client = await clientPromise;
   const db = client.db();
   const collection = db.collection<UserProfileDoc>("a-user-profile");
+  await ensureUserProfileIndexes(collection);
   const profile = await collection.findOne({ usernameLower: normalized });
+  return profile ? sanitizeProfile(profile) : null;
+}
+
+export async function getCanonicalUserProfileByFid(fid: number) {
+  const normalizedFid = Number(fid);
+  if (!Number.isFinite(normalizedFid) || normalizedFid <= 0) return null;
+
+  const client = await clientPromise;
+  const db = client.db();
+  const collection = db.collection<UserProfileDoc>("a-user-profile");
+  await ensureUserProfileIndexes(collection);
+  const profile = await collection.findOne({ fid: normalizedFid });
   return profile ? sanitizeProfile(profile) : null;
 }

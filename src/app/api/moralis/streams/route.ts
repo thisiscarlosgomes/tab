@@ -110,11 +110,22 @@ function getMoralisSignature(req: NextRequest) {
 }
 
 function verifyMoralisSignature(rawBody: string, signature: string | null) {
-  const apiKey = process.env.MORALIS_API_KEY?.trim();
-  if (!apiKey) return false;
   if (!signature) return false;
-  const expected = keccak256(stringToHex(`${rawBody}${apiKey}`)).toLowerCase();
-  return signature.trim().toLowerCase() === expected;
+  const provided = signature.trim().toLowerCase();
+  const secrets = Array.from(
+    new Set(
+      [
+        process.env.MORALIS_STREAMS_SECRET?.trim(),
+        process.env.MORALIS_API_KEY?.trim(),
+      ].filter((v): v is string => Boolean(v))
+    )
+  );
+  if (secrets.length === 0) return false;
+
+  return secrets.some((secret) => {
+    const expected = keccak256(stringToHex(`${rawBody}${secret}`)).toLowerCase();
+    return expected === provided;
+  });
 }
 
 function isLikelyMoralisValidationProbe(payload: MoralisStreamsPayload, rawBody: string) {

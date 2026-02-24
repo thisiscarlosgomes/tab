@@ -3,6 +3,7 @@ import clientPromise from "@/lib/mongodb";
 import { writeActivity } from "@/lib/writeActivity";
 import { requireTrustedRequest } from "@/lib/security";
 import { buildUserKey, resolveUserFid } from "@/lib/identity";
+import { getCanonicalUserProfileByFid } from "@/lib/user-profile";
 
 /* =========================
    Helpers
@@ -80,6 +81,32 @@ function isSameUser(a: any, b: any) {
   return false;
 }
 
+async function resolvePreferredSplitUser(user: any) {
+  const normalized = normalizeUser(user);
+  if (!normalized) return normalized;
+
+  // For Tab users, prefer their Tab (Privy) wallet for payouts and split invites.
+  if (normalized.fid) {
+    const profile = await getCanonicalUserProfileByFid(Number(normalized.fid)).catch(
+      () => null
+    );
+    if (profile?.primaryAddress) {
+      return normalizeUser({
+        ...normalized,
+        address: profile.primaryAddress,
+        payoutAddressSource: "tab_wallet",
+        farcasterVerifiedAddress: normalized.address ?? null,
+      });
+    }
+  }
+
+  return {
+    ...normalized,
+    payoutAddressSource: "farcaster_verified",
+    farcasterVerifiedAddress: normalized.address ?? null,
+  };
+}
+
 /* =========================
    GET split
 ========================= */
@@ -135,9 +162,11 @@ export async function POST(req: NextRequest) {
     numPeople,             // required for receipt_open
   } = body;
 
-  const normalizedCreator = normalizeUser(creator);
-  const normalizedInvited = invited.map(normalizeUser);
-  const normalizedRecipient = normalizeUser(recipient ?? creator);
+  const normalizedCreator = await resolvePreferredSplitUser(creator);
+  const normalizedInvited = await Promise.all(invited.map(resolvePreferredSplitUser));
+  const normalizedRecipient = recipient
+    ? normalizeUser(recipient)
+    : normalizedCreator;
 
   const isReceiptOpen = splitType === "receipt_open";
 

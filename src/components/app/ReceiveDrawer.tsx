@@ -112,7 +112,7 @@ export function ReceiveDrawer({
         <div className="bg-background p-4 rounded-t-3xl h-full md:mx-auto md:mt-0 md:h-auto md:max-h-[85vh] md:w-full md:rounded-2xl md:border-0 md:p-6 md:overflow-y-auto">
           <ResponsiveDialogHeader className="pt-0 pb-0">
             <ResponsiveDialogTitle className="text-white text-lg text-center font-medium">
-              Request
+              Deposit
             </ResponsiveDialogTitle>
           </ResponsiveDialogHeader>
 
@@ -170,8 +170,8 @@ export function ReceiveDrawer({
                     size={240}
                     logoImage={
                       isFarcasterName(recipient.trim())
-                        ? pfpUrl || "/newnewapp.png"
-                        : "/newnewapp.png"
+                        ? pfpUrl || "/newnewnewapp.png"
+                        : "/newnewnewapp.png"
                     }
                     logoWidth={40}
                     logoHeight={40}
@@ -198,7 +198,7 @@ export function ReceiveDrawer({
                   <QRCode
                     value={qrValue}
                     size={240}
-                    logoImage="/newnewapp.png"
+                    logoImage="/newnewnewapp.png"
                     logoWidth={48}
                     logoHeight={48}
                     logoOpacity={1}

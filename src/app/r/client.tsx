@@ -269,7 +269,7 @@ export default function Page() {
               <QRCode
                 value={qrValue}
                 size={240}
-                logoImage="/newnewapp.png"
+                logoImage="/newnewnewapp.png"
                 logoWidth={36}
                 logoHeight={36}
                 logoOpacity={1}
@@ -349,7 +349,7 @@ export default function Page() {
           className="active:transform active:scale-90 transition-all"
         >
           <Image
-            src="/newnewapp.png"
+            src="/newnewnewapp.png"
             alt="logo"
             width={40}
             height={40}

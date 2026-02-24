@@ -79,7 +79,7 @@ const AUTH_WELCOME_STEPS = [
     kind: "guide" as const,
     iconSrc: "/wallet.png",
     title: "Put your money to work",
-    desc: "Earn up to 5% interest on your stables, play daily jackpot and more.",
+    desc: "Earn up to 5% APY on your stables, play daily jackpot and more.",
   },
   {
     key: "agent-skill",
@@ -1287,7 +1287,7 @@ export default function Home() {
                 Link Farcaster
               </Button>
 
-              <p className="text-xs text-white/20 text-center">2025 © tab tech</p>
+              <p className="hidden text-xs text-white/20 text-center">2025 © tab tech</p>
             </div>
           </ResponsiveDialogContent>
         </ResponsiveDialog>

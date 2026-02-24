@@ -13,7 +13,7 @@ import { getTokenBalance } from "@/lib/getTokenBalance";
 import { tokenList } from "@/lib/tokens"; // or define inline
 import { getTokenPrices } from "@/lib/getTokenPrices"; // or define inline
 import { useWriteContract } from "wagmi";
-import { createPublicClient, erc20Abi, http, parseUnits } from "viem";
+import { createPublicClient, erc20Abi, http, isAddress, parseUnits } from "viem";
 import { mainnet } from "viem/chains";
 import { normalize } from "viem/ens";
 import { usePrivy, useWallets } from "@privy-io/react-auth";
@@ -55,6 +55,7 @@ type EnrichedCast = {
 };
 
 type SendStatus = "idle" | "confirming" | "sending";
+type RecipientResolutionSource = "address" | "ens" | "tab" | "farcaster";
 
 const getTokenSuffix = (token: string) => {
   switch (token) {
@@ -139,6 +140,11 @@ export function GlobalSendDrawer() {
 
   const { writeContractAsync } = useWriteContract();
   const [sharedCast, setSharedCast] = useState<EnrichedCast | null>(null);
+  const [resolvedRecipientAddress, setResolvedRecipientAddress] = useState<
+    `0x${string}` | null
+  >(null);
+  const [recipientResolutionSource, setRecipientResolutionSource] =
+    useState<RecipientResolutionSource>("farcaster");
 
   useEffect(() => {
     const detectShareContext = async () => {
@@ -215,6 +221,51 @@ export function GlobalSendDrawer() {
   }, [selectedUser, walletAddress, tokenBalances]);
 
   useEffect(() => {
+    if (!selectedUser) {
+      setResolvedRecipientAddress(null);
+      setRecipientResolutionSource("farcaster");
+      return;
+    }
+
+    let cancelled = false;
+    const fallbackAddress =
+      (selectedUser.verified_addresses?.primary?.eth_address as
+        | `0x${string}`
+        | undefined) ?? null;
+
+    const resolvePreferredRecipient = async () => {
+      try {
+        const qs = new URLSearchParams();
+        if (selectedUser.username) qs.set("username", selectedUser.username);
+        if (fallbackAddress) qs.set("address", fallbackAddress);
+        const res = await fetch(`/api/recipient-resolve?${qs.toString()}`);
+        const data = await res.json().catch(() => null);
+        if (cancelled) return;
+
+        if (data?.resolved?.address) {
+          setResolvedRecipientAddress(data.resolved.address);
+          setRecipientResolutionSource(
+            (data.resolved.source as RecipientResolutionSource) ?? "farcaster"
+          );
+          return;
+        }
+      } catch {
+        // fall through to fallback
+      }
+
+      if (!cancelled) {
+        setResolvedRecipientAddress(fallbackAddress);
+        setRecipientResolutionSource("farcaster");
+      }
+    };
+
+    void resolvePreferredRecipient();
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedUser]);
+
+  useEffect(() => {
     if (!isOpen || mode !== "search" || query.trim() !== "") return;
 
     const cacheKey =
@@ -254,6 +305,59 @@ export function GlobalSendDrawer() {
           setIsSearching(true);
           const trimmedQuery = query.trim();
           const normalizedQuery = trimmedQuery.replace(/^@/, "");
+
+          if (isAddress(trimmedQuery)) {
+            try {
+              const profileRes = await fetch(
+                `/api/neynar/user/by-address/${trimmedQuery}`
+              );
+              const profile = await profileRes.json().catch(() => null);
+
+              const addressResult: FarcasterUser = {
+                fid:
+                  typeof profile?.fid === "number" && Number.isFinite(profile.fid)
+                    ? profile.fid
+                    : 0,
+                username:
+                  typeof profile?.username === "string" && profile.username
+                    ? profile.username
+                    : shortAddress(trimmedQuery),
+                display_name:
+                  typeof profile?.display_name === "string" && profile.display_name
+                    ? profile.display_name
+                    : shortAddress(trimmedQuery),
+                pfp_url:
+                  typeof profile?.pfp_url === "string" ? profile.pfp_url : "",
+                verified_addresses:
+                  profile?.verified_addresses &&
+                  typeof profile.verified_addresses === "object"
+                    ? profile.verified_addresses
+                    : {
+                        primary: {
+                          eth_address: trimmedQuery,
+                        },
+                      },
+              };
+
+              setResults([addressResult]);
+              return;
+            } catch {
+              setResults([
+                {
+                  fid: 0,
+                  username: shortAddress(trimmedQuery),
+                  display_name: shortAddress(trimmedQuery),
+                  pfp_url: "",
+                  verified_addresses: {
+                    primary: {
+                      eth_address: trimmedQuery,
+                    },
+                  },
+                },
+              ]);
+              return;
+            }
+          }
 
           if (normalizedQuery.toLowerCase().endsWith(".eth")) {
             try {
@@ -396,7 +500,10 @@ export function GlobalSendDrawer() {
 
   const handleSend = async () => {
     const parsedAmount = parseFloat(amount);
-    if (!selectedUser?.verified_addresses?.primary?.eth_address) return;
+    const fallbackAddress = selectedUser?.verified_addresses?.primary
+      ?.eth_address as `0x${string}` | undefined;
+    const recipient = resolvedRecipientAddress ?? fallbackAddress ?? null;
+    if (!recipient) return;
     if (!isConnected) {
       const connector = connectors[0];
       if (!connector) return;
@@ -413,8 +520,6 @@ export function GlobalSendDrawer() {
 
     setSendStatus("confirming");
 
-    const recipient = selectedUser.verified_addresses.primary
-      .eth_address as `0x${string}`;
     const token = tokenList.find((t) => t.name === selectedToken);
     const decimals = token?.decimals ?? 18;
     const rawAmount = parseUnits(amount, decimals);
@@ -477,22 +582,12 @@ export function GlobalSendDrawer() {
             recipientPfp: selectedUser?.pfp_url ?? null,
             senderUsername: identityUsername ?? null,
             senderPfp: identityPfp ?? null,
-            recipientResolutionSource: "farcaster",
+            recipientResolutionSource,
           }),
         }).catch(() => {});
       }
 
-      await fetch("/api/send-notif", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          fid: selectedUser.fid,
-          amount: parsedAmount,
-          token: selectedToken, // <-- added
-          senderUsername: identityUsername,
-          message: customMessage,
-        }),
-      });
+      // Incoming payment notifications are sent by the Moralis webhook to avoid duplicates.
     } catch (err) {
       console.error("Send failed:", err);
     } finally {
@@ -530,7 +625,13 @@ export function GlobalSendDrawer() {
     amountNumber <= 0 ||
     !selectedToken ||
     amountNumber > balance ||
-    !selectedUser?.verified_addresses?.primary?.eth_address; // 👈 add this
+    !(resolvedRecipientAddress ?? selectedUser?.verified_addresses?.primary?.eth_address);
+  const displayedRecipientAddress =
+    resolvedRecipientAddress ??
+    (selectedUser?.verified_addresses?.primary?.eth_address as
+      | `0x${string}`
+      | undefined) ??
+    null;
 
   return (
     <>
@@ -592,7 +693,7 @@ export function GlobalSendDrawer() {
                   </div>
                   <div className="h-4" /> {/* spacer */}
                 </div>
-                <div className="flex-1 min-h-0 overflow-y-auto pb-16 space-y-2">
+                <div className="flex-1 min-h-0 overflow-y-auto pb-8 space-y-2">
                   {mode === "search" && query.trim() !== "" && isSearching &&
                     Array.from({ length: 4 }).map((_, idx) => (
                       <div
@@ -627,7 +728,7 @@ export function GlobalSendDrawer() {
                           className="w-8 h-8 rounded-full object-cover mr-3 shrink-0"
                         />
                         <div className="text-left">
-                          <p className="text-primary font-medium">
+                          <p className="text-white font-medium">
                             @{user.username}
                           </p>
                         </div>
@@ -741,10 +842,8 @@ export function GlobalSendDrawer() {
                       </ResponsiveDialogTitle>
 
                       <p className="text-white/30 text-sm break-all text-center">
-                        {selectedUser?.verified_addresses?.primary?.eth_address ? (
-                          shortAddress(
-                            selectedUser.verified_addresses.primary.eth_address
-                          )
+                        {displayedRecipientAddress ? (
+                          shortAddress(displayedRecipientAddress)
                         ) : (
                           <span className="text-red-400 text-sm">
                             This user has no connected wallet

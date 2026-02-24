@@ -281,19 +281,7 @@ export function SendToRawAddressDrawer({
         }).catch(() => {});
       }
 
-      if (selectedUser?.fid) {
-        await fetch("/api/send-notif", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            fid: selectedUser.fid,
-            amount: parsedAmount,
-            token: selectedToken,
-            message: customMessage,
-            senderUsername: sender,
-          }),
-        });
-      }
+      // Incoming payment notifications are sent by the Moralis webhook to avoid duplicates.
 
       setTimeout(() => onOpenChange(false), 100);
     } catch (e) {

@@ -53,7 +53,7 @@ export default function ReceiveByAddressPage() {
             <QRCode
               value={url}
               size={200}
-              logoImage={pfpUrl || "/newnewapp.png"}
+              logoImage={pfpUrl || "/newnewnewapp.png"}
               logoWidth={32}
               logoHeight={32}
               logoOpacity={1}

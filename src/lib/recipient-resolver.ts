@@ -2,7 +2,10 @@ import { createPublicClient, http, isAddress } from "viem";
 import { normalize } from "viem/ens";
 import { mainnet } from "viem/chains";
 import { neynarApi } from "@/lib/neynar";
-import { getCanonicalUserProfileByUsername } from "@/lib/user-profile";
+import {
+  getCanonicalUserProfileByFid,
+  getCanonicalUserProfileByUsername,
+} from "@/lib/user-profile";
 
 export type ResolvedRecipient = {
   address: string;
@@ -131,6 +134,18 @@ export async function resolveRecipient(params: {
 
     const fidRaw = profile.fid;
     const fid = Number.isFinite(Number(fidRaw)) ? Number(fidRaw) : null;
+
+    if (fid) {
+      const localByFid = await getCanonicalUserProfileByFid(fid).catch(() => null);
+      if (localByFid?.primaryAddress && isAddress(localByFid.primaryAddress)) {
+        return {
+          address: localByFid.primaryAddress.toLowerCase(),
+          username: localByFid.username ?? (typeof profile.username === "string" ? profile.username : usernameCandidate),
+          source: "tab",
+          fid,
+        };
+      }
+    }
 
     return {
       address: resolvedAddress,

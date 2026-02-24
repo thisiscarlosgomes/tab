@@ -6,7 +6,7 @@ import { encrypt, decrypt } from "@/lib/encryption";
 import { isAddress } from "viem";
 import { writeActivity } from "@/lib/writeActivity";
 import { requireTrustedRequest } from "@/lib/security";
-import { sendFrameNotification } from "@/lib/notifs";
+import { sendWebNotificationToUser } from "@/lib/user-notifications";
 
 /* =========================
    Helpers
@@ -406,17 +406,18 @@ if (!updated) {
     const payer = updated.chosen;
 
     for (const p of updated.participants ?? []) {
-      if (!p.fid) continue;
-
       try {
-        await sendFrameNotification({
-          fid: Number(p.fid),
+        await sendWebNotificationToUser({
+          fid: p.fid ? Number(p.fid) : null,
+          address: p.address ?? null,
+        }, {
           title: "🎉 Tab settled",
           body:
             p.address.toLowerCase() === payer.address.toLowerCase()
               ? "You covered the tab. Thanks!"
               : `@${payer.name} covered the tab for everyone`,
-          targetUrl: `https://usetab.app/game/${updated.gameId}`,
+          url: `https://usetab.app/game/${updated.gameId}`,
+          tag: `game-settled-${updated.gameId}`,
         });
       } catch {
         console.warn("Tab settled notification failed for", p.fid);

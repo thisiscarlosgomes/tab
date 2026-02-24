@@ -68,7 +68,7 @@ export default function TabitPage() {
                 >
                   <div className="flex items-center gap-4">
                     <img
-                      src="/newnewapp.png"
+                      src="/newnewnewapp.png"
                       className="w-[94px] h-[94px] mr-1 leading-none"
                       alt="Tab Logo"
                     />

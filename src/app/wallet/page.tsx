@@ -18,6 +18,7 @@ import { ReceiveDrawerController } from "@/components/app/ReceiveDrawerControlle
 import { useSendDrawer } from "@/providers/SendDrawerProvider";
 import { useTabIdentity } from "@/lib/useTabIdentity";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Button } from "@/components/ui/button";
 import { shortAddress } from "@/lib/shortAddress";
 
 /* -------------------------------------- */
@@ -458,6 +459,11 @@ export default function WalletPage() {
     agentAccess?.delegated &&
     agentAccess?.status === "ACTIVE"
   );
+  const isUnfundedWallet =
+    walletLoaded &&
+    !walletLoading &&
+    Number.isFinite(wallet.totalBalanceUSD) &&
+    wallet.totalBalanceUSD <= 0;
   const isAgentPaused = Boolean(
     agentAccess?.status === "PAUSED" && agentAccess?.delegated
   );
@@ -667,7 +673,7 @@ export default function WalletPage() {
       <div className="space-y-4">
         <div className="overflow-hidden">
           <div className="px-1 py-2">
-            <p className="text-md text-white/60">
+            <p className="hidden text-md text-white/60">
               Tokens ({visibleTokens.length})
             </p>
           </div>
@@ -843,6 +849,9 @@ export default function WalletPage() {
       {({ openReceiveDrawer }) => (
         <div className="min-h-screen w-full flex flex-col items-center p-4 pt-[calc(4rem+env(safe-area-inset-top))] pb-[calc(10rem+env(safe-area-inset-bottom))] overflow-y-auto scrollbar-hide">
           <div className="w-full max-w-md">
+            {(() => {
+              return (
+                <>
             <div className="mb-2 mt-2">{renderWalletHeader(openReceiveDrawer)}</div>
 
             <Link
@@ -870,10 +879,22 @@ export default function WalletPage() {
                     ? "Agent Paused."
                     : agentAccessLoading && !agentAccessLoaded
                       ? "Checking status..."
-                      : "Configure delegated wallet guardrails."}
+                    : "Configure delegated wallet guardrails."}
               </p>
             </Link>
 
+            {isUnfundedWallet && (
+              <Button
+                type="button"
+                onClick={() => openReceiveDrawer()}
+                className="w-full mb-6 bg-primary text-black font-semibold"
+              >
+                Deposit
+              </Button>
+            )}
+
+            {!isUnfundedWallet && (
+              <>
             <div className="mb-4 mt-3 grid grid-cols-2 border-b border-white/10">
               <button
                 onClick={() => {
@@ -905,6 +926,11 @@ export default function WalletPage() {
 
             {activeTab === "tokens" && renderTokensTab()}
             {activeTab === "transactions" && renderTransactionsTab()}
+              </>
+            )}
+                </>
+              );
+            })()}
           </div>
         </div>
       )}

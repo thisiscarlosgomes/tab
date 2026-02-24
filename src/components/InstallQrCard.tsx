@@ -21,7 +21,7 @@ export function InstallQrCard() {
   if (dismissed) return null;
 
   return (
-    <aside className="hidden md:block fixed right-4 bottom-4 z-30 w-[380px] rounded-2xl border border-white/10 bg-[#121218]/95 backdrop-blur-xl shadow-[0_8px_30px_rgba(0,0,0,0.35)] p-3">
+    <aside className="hidden md:block fixed right-4 bottom-4 z-30 w-fit max-w-[220px] rounded-2xl border border-white/10 bg-[#121218]/95 backdrop-blur-xl shadow-[0_8px_30px_rgba(0,0,0,0.35)] p-4">
       <button
         type="button"
         aria-label="Close add to mobile card"
@@ -36,45 +36,30 @@ export function InstallQrCard() {
         <X className="w-4 h-4" />
       </button>
 
-      <div className="flex items-center gap-3">
+      <div className="flex flex-col items-center text-center">
+        <p className="text-xs font-medium text-white leading-tight mb-3">
+          Open on mobile
+        </p>
         <a
           href="https://usetab.app"
           target="_blank"
           rel="noreferrer"
-          className="shrink-0 rounded-xl bg-white p-2"
+          className="shrink-0 rounded-2xl bg-white p-3"
           aria-label="Open usetab.app"
         >
           <QRCode
             value="https://usetab.app"
-            size={84}
+            size={90}
             ecLevel="M"
-            quietZone={4}
+            quietZone={2}
             qrStyle="squares"
             eyeRadius={6}
             removeQrCodeBehindLogo
-            logoImage="/newnewapp.png"
-            logoWidth={16}
-            logoHeight={16}
-            logoOpacity={1}
+           
             bgColor="#FFFFFF"
             fgColor="#111111"
           />
         </a>
-
-        <div className="min-w-0 flex-1 pr-5">
-          <p className="text-sm font-medium text-white leading-tight">Add to mobile</p>
-          <p className="text-xs text-white/50 mt-1 leading-tight">
-            Scan this QR code to open Tab on your phone.
-          </p>
-          <a
-            href="https://usetab.app"
-            target="_blank"
-            rel="noreferrer"
-            className="inline-block mt-2 text-[12px] text-primary hover:text-white transition"
-          >
-            usetab.app
-          </a>
-        </div>
       </div>
     </aside>
   );

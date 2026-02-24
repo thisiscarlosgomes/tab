@@ -102,6 +102,7 @@ export function SpinButton({
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
               fid: picked.fid,
+              recipientAddress: picked.address,
               title: "Spin to pay",
               message: "You got the tab for this group",
               targetUrl: `https://usetab.app/game/${encodeURIComponent(roomId)}`,

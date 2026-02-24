@@ -351,7 +351,7 @@ export function MorphoDepositDrawer({
   return (
     <ResponsiveDialog open={isOpen} onOpenChange={onOpenChange}>
       <ResponsiveDialogContent className="top-[110px] md:top-1/2 p-4 md:w-full md:max-w-md max-h-[calc(100dvh-110px)] md:max-h-[85vh] overflow-hidden">
-        <div className="bg-background rounded-t-3xl md:rounded-2xl flex flex-col h-full max-h-[calc(100dvh-110px)] md:max-h-[85vh] pb-8">
+        <div className="bg-background rounded-t-3xl md:rounded-2xl flex flex-col h-full max-h-[calc(100dvh-110px)] md:max-h-[85vh] pb-3">
           <ResponsiveDialogTitle className="text-lg text-center font-medium shrink-0">
             <div className="flex flex-col items-center">
               <div className="hidden mt-4 text-2xl mb-6 relative w-10 h-10 rounded-full flex items-center justify-center">
@@ -523,7 +523,7 @@ export function MorphoDepositDrawer({
               </>
             )}
 
-            <p className="text-white/30 text-sm text-center">
+            <p className="text-white/30 text-xs text-center">
               Powered by Morpho. Actual yield may vary
             </p>
 

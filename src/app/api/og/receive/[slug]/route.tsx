@@ -49,7 +49,7 @@ export async function GET(req: NextRequest) {
     }
   }
 
-  const fallbackPfp = `${baseUrl}/newnewapp.png`;
+  const fallbackPfp = `${baseUrl}/newnewnewapp.png`;
 
   const bg = `${baseUrl}/ogbg.png`;
 

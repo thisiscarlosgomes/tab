@@ -446,6 +446,7 @@ const paidCount = bill?.paid?.length ?? 0;
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
               fid: Number(p.fid), // ✅ REQUIRED
+              recipientAddress: p.address,
               title: "Reminder to Pay",
               message: `Hey @${p.name}, remember to settle your share for "${bill?.description}" 💸`,
               targetUrl: `https://usetab.app/split/${bill?.splitId}`,
@@ -852,7 +853,7 @@ const paidCount = bill?.paid?.length ?? 0;
                   <QRCode
                     value={`https://usetab.app/join-split?splitId=${bill.splitId}&payTo=${bill.recipient.address}&amount=${eachShare}&token=${bill.token}`}
                     size={200}
-                    logoImage="/newnewapp.png"
+                    logoImage="/newnewnewapp.png"
                     logoWidth={48}
                     logoHeight={48}
                     removeQrCodeBehindLogo

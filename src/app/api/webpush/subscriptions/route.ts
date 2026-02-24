@@ -3,6 +3,11 @@ import clientPromise from "@/lib/mongodb";
 import { requireTrustedRequest } from "@/lib/security";
 import { getPrivyAuthedUserFromAuthorization } from "@/lib/user-profile";
 import { getWebPushPublicKey, isWebPushConfigured } from "@/lib/web-push";
+import {
+  addAddressesToMoralisStream,
+  isMoralisStreamSyncConfigured,
+  removeAddressesFromMoralisStream,
+} from "@/lib/moralis-streams";
 
 type LinkedAccountLike = {
   type?: string;
@@ -166,6 +171,8 @@ export async function POST(req: NextRequest) {
   const db = client.db();
   const collection = db.collection<WebPushSubscriptionDoc>("a-web-push-subscriptions");
 
+  const addresses = getAddresses(auth.linkedAccounts);
+
   await collection.updateOne(
     { endpoint },
     {
@@ -178,7 +185,7 @@ export async function POST(req: NextRequest) {
             : null,
         keys: { p256dh, auth: authKey },
         fid: getFid(auth.linkedAccounts),
-        addresses: getAddresses(auth.linkedAccounts),
+        addresses,
         ua: req.headers.get("user-agent"),
         platform:
           typeof body.platform === "string" && body.platform.trim()
@@ -195,10 +202,48 @@ export async function POST(req: NextRequest) {
     { upsert: true }
   );
 
+  let moralisSync:
+    | { configured: boolean; ok: boolean; skipped?: string; error?: string; status?: number }
+    | undefined;
+
+  if (addresses.length > 0) {
+    const syncResult = await addAddressesToMoralisStream(addresses);
+    if ("skipped" in syncResult) {
+      moralisSync = {
+        configured: isMoralisStreamSyncConfigured(),
+        ok: true,
+        skipped: syncResult.skipped,
+      };
+    } else if (!syncResult.ok) {
+      moralisSync = {
+        configured: isMoralisStreamSyncConfigured(),
+        ok: false,
+        error: syncResult.error,
+        status: "status" in syncResult ? syncResult.status : undefined,
+      };
+      return Response.json(
+        {
+          error: "Saved web push subscription but failed to sync Moralis stream addresses",
+          moralisSync,
+        },
+        { status: 502 }
+      );
+    } else {
+      moralisSync = { configured: true, ok: true };
+    }
+  } else {
+    moralisSync = {
+      configured: isMoralisStreamSyncConfigured(),
+      ok: true,
+      skipped: "no_wallet_addresses",
+    };
+  }
+
   return Response.json({
     success: true,
     configured: isWebPushConfigured(),
     vapidPublicKey: getWebPushPublicKey(),
+    moralisSync,
   });
 }
 
@@ -224,11 +269,56 @@ export async function DELETE(req: NextRequest) {
   const db = client.db();
   const collection = db.collection<WebPushSubscriptionDoc>("a-web-push-subscriptions");
 
+  const existing = await collection.findOne({ endpoint, userId: auth.userId });
+
   await collection.updateOne(
     { endpoint, userId: auth.userId },
     { $set: { enabled: false, updatedAt: new Date() } }
   );
 
-  return Response.json({ success: true });
-}
+  const candidateAddresses = Array.isArray(existing?.addresses)
+    ? existing.addresses.map((a) => normalizeAddress(a)).filter((v): v is string => Boolean(v))
+    : [];
 
+  const addressesToRemove: string[] = [];
+  for (const addr of candidateAddresses) {
+    const stillActive = await collection.findOne({
+      userId: { $exists: true },
+      enabled: true,
+      addresses: addr,
+    });
+    if (!stillActive) addressesToRemove.push(addr);
+  }
+
+  let moralisSync:
+    | { configured: boolean; ok: boolean; skipped?: string; error?: string; status?: number }
+    | undefined;
+
+  if (addressesToRemove.length > 0) {
+    const syncResult = await removeAddressesFromMoralisStream(addressesToRemove);
+    if ("skipped" in syncResult) {
+      moralisSync = {
+        configured: isMoralisStreamSyncConfigured(),
+        ok: true,
+        skipped: syncResult.skipped,
+      };
+    } else if (!syncResult.ok) {
+      moralisSync = {
+        configured: isMoralisStreamSyncConfigured(),
+        ok: false,
+        error: syncResult.error,
+        status: "status" in syncResult ? syncResult.status : undefined,
+      };
+    } else {
+      moralisSync = { configured: true, ok: true };
+    }
+  } else {
+    moralisSync = {
+      configured: isMoralisStreamSyncConfigured(),
+      ok: true,
+      skipped: candidateAddresses.length ? "address_still_in_use" : "no_wallet_addresses",
+    };
+  }
+
+  return Response.json({ success: true, moralisSync });
+}

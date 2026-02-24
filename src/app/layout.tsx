@@ -24,8 +24,8 @@ const frame = {
       type: "launch_frame",
       name: "Tab",
       url: SITE_ORIGIN,
-      iconImageUrl: `${SITE_ORIGIN}/newnewapp.png`,
-      splashImageUrl: `${SITE_ORIGIN}/newnewapp.png`,
+      iconImageUrl: `${SITE_ORIGIN}/newnewnewapp.png`,
+      splashImageUrl: `${SITE_ORIGIN}/newnewnewapp.png`,
       splashBackgroundColor: "#201E23",
     },
   },
@@ -84,7 +84,7 @@ export async function generateMetadata(): Promise<Metadata> {
     manifest: "/manifest.json",
     icons: {
       icon: [
-        { url: "/newnewapp.png" },
+        { url: "/newnewnewapp.png" },
         { url: "/icons/icon-192.png", sizes: "192x192", type: "image/png" },
         { url: "/icons/icon-512.png", sizes: "512x512", type: "image/png" },
       ],
@@ -95,7 +95,7 @@ export async function generateMetadata(): Promise<Metadata> {
           type: "image/png",
         },
       ],
-      shortcut: ["/newnewapp.png"],
+      shortcut: ["/newnewnewapp.png"],
     },
     appleWebApp: {
       capable: true,

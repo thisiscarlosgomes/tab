@@ -300,7 +300,7 @@ export default function ActivityPage() {
           renderLoadingSkeleton()
         ) : groupedSections.length === 0 ? (
           <div className="text-center text-white/40 mt-20">
-            No activity for this tag yet.
+            No activity...
           </div>
         ) : (
           groupedSections.map(([date, items]) => (

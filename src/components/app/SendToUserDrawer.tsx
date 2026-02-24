@@ -28,6 +28,7 @@ type FarcasterUser = {
 };
 
 type SendStatus = "idle" | "confirming" | "sending";
+type RecipientResolutionSource = "address" | "ens" | "tab" | "farcaster";
 
 export function SendToUserDrawer({
   user,
@@ -58,15 +59,27 @@ export function SendToUserDrawer({
   const [selectedToken, setSelectedToken] = useState<"ETH" | "USDC" | "TAB">(
     "USDC"
   );
+  const [resolvedRecipientAddress, setResolvedRecipientAddress] = useState<
+    `0x${string}` | null
+  >(null);
+  const [recipientResolutionSource, setRecipientResolutionSource] =
+    useState<RecipientResolutionSource>("farcaster");
 
   const { writeContractAsync } = useWriteContract();
 
   const balance = parseFloat(tokenBalances[selectedToken] || "0");
   const parsedAmount = parseFloat(amount);
   const isInsufficient = parsedAmount > balance;
+  const hasRecipientAddress = Boolean(
+    resolvedRecipientAddress ?? user?.verified_addresses?.primary?.eth_address
+  );
 
   const isDisabled =
-    sending || isNaN(parsedAmount) || parsedAmount <= 0 || isInsufficient;
+    sending ||
+    isNaN(parsedAmount) ||
+    parsedAmount <= 0 ||
+    isInsufficient ||
+    !hasRecipientAddress;
 
   useEffect(() => {
     if (!isOpen) {
@@ -79,6 +92,8 @@ export function SendToUserDrawer({
       setTokenBalances({});
       setLastTxHash(null);
       setLastRecipientUsername(null);
+      setResolvedRecipientAddress(null);
+      setRecipientResolutionSource("farcaster");
     }
   }, [isOpen]);
 
@@ -106,9 +121,53 @@ export function SendToUserDrawer({
     fetchBalancesAndPrices();
   }, [isOpen, userAddress]);
 
+  useEffect(() => {
+    if (!isOpen || !user) return;
+
+    let cancelled = false;
+    const fallbackAddress =
+      (user.verified_addresses?.primary?.eth_address as `0x${string}` | undefined) ??
+      null;
+
+    const resolvePreferredRecipient = async () => {
+      try {
+        const qs = new URLSearchParams();
+        if (user.username) qs.set("username", user.username);
+        if (fallbackAddress) qs.set("address", fallbackAddress);
+        const res = await fetch(`/api/recipient-resolve?${qs.toString()}`);
+        const data = await res.json().catch(() => null);
+        if (cancelled) return;
+
+        if (data?.resolved?.address) {
+          setResolvedRecipientAddress(data.resolved.address);
+          setRecipientResolutionSource(
+            (data.resolved.source as RecipientResolutionSource) ?? "farcaster"
+          );
+          return;
+        }
+      } catch {
+        // fall through to fallback
+      }
+
+      if (!cancelled) {
+        setResolvedRecipientAddress(fallbackAddress);
+        setRecipientResolutionSource("farcaster");
+      }
+    };
+
+    void resolvePreferredRecipient();
+    return () => {
+      cancelled = true;
+    };
+  }, [isOpen, user]);
+
   const handleSend = async () => {
     const parsedAmount = parseFloat(amount);
-    if (!user?.verified_addresses?.primary?.eth_address) return;
+    const fallbackAddress = user?.verified_addresses?.primary?.eth_address as
+      | `0x${string}`
+      | undefined;
+    const recipient = resolvedRecipientAddress ?? fallbackAddress ?? null;
+    if (!recipient) return;
     if (isNaN(parsedAmount) || parsedAmount <= 0) return;
     if (!isConnected) {
       const connector = connectors[0];
@@ -119,8 +178,6 @@ export function SendToUserDrawer({
     setSendStatus("confirming");
     setSending(true);
 
-    const recipient = user.verified_addresses.primary
-      .eth_address as `0x${string}`;
     const token = tokenList.find((t) => t.name === selectedToken);
     const decimals = token?.decimals ?? 18;
     const rawAmount = parseUnits(amount, decimals);
@@ -165,7 +222,7 @@ export function SendToUserDrawer({
             txHash,
             recipientUsername: user.username ?? null,
             recipientPfp: user.pfp_url ?? null,
-            recipientResolutionSource: "farcaster",
+            recipientResolutionSource,
           }),
         }).catch(() => {});
       }
@@ -178,16 +235,7 @@ export function SendToUserDrawer({
       } catch {
         senderUsername = null;
       }
-      await fetch("/api/send-notif", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          fid: user.fid,
-          amount: parsedAmount,
-          senderUsername,
-          message,
-        }),
-      });
+      // Incoming payment notifications are sent by the Moralis webhook to avoid duplicates.
 
       setTimeout(() => {
         onOpenChange(false);
@@ -217,6 +265,10 @@ export function SendToUserDrawer({
   };
 
   const selectedTokenMeta = tokenList.find((t) => t.name === selectedToken);
+  const displayRecipientAddress =
+    resolvedRecipientAddress ??
+    (user.verified_addresses?.primary?.eth_address as `0x${string}` | undefined) ??
+    null;
 
   return (
     <>
@@ -256,8 +308,8 @@ export function SendToUserDrawer({
                   <span className="text-primary">@{user.username}</span>
                 </span>
                 <p className="text-white/30 text-sm break-all text-center">
-                  {user.verified_addresses?.primary?.eth_address
-                    ? shortAddress(user.verified_addresses.primary.eth_address)
+                  {displayRecipientAddress
+                    ? shortAddress(displayRecipientAddress)
                     : "No address"}
                 </p>
               </div>

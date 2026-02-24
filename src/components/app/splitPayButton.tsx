@@ -131,25 +131,7 @@ export function SplitPayButton({
       return;
     }
 
-    // 2. Notify creator (best effort)
-    if (creatorFid) {
-      try {
-        await fetch("/api/send-notif", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            fid: creatorFid,
-            title: "Payment received",
-            message: `@${payer.name} paid ${amount} ${token}${
-              description ? ` for ${description}` : ""
-            }`,
-            targetUrl: `https://usetab.app/split/${splitId}`,
-          }),
-        });
-      } catch (err) {
-        console.warn("Creator notification failed:", err);
-      }
-    }
+    // 2. Incoming payment notifications are sent by the Moralis webhook to avoid duplicates.
 
     // 3. Local UI refresh
     onPaid();

@@ -154,7 +154,7 @@ export default function ReceivePageClient() {
               <QRCode
                 value={url}
                 size={200}
-                logoImage={pfpUrl || "/newnewapp.png"}
+                logoImage={pfpUrl || "/newnewnewapp.png"}
                 logoWidth={40}
                 logoHeight={40}
                 logoOpacity={1}
@@ -218,7 +218,7 @@ export default function ReceivePageClient() {
           className="active:transform active:scale-90 transition-all"
         >
           <Image
-            src="/newnewapp.png"
+            src="/newnewnewapp.png"
             alt="logo"
             width={40}
             height={40}
