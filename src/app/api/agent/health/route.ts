@@ -1,4 +1,5 @@
 import { NextRequest } from "next/server";
+import clientPromise from "@/lib/mongodb";
 
 function isNonEmpty(value: string | undefined) {
   return Boolean(value && value.trim().length > 0);
@@ -29,9 +30,23 @@ export async function GET(req: NextRequest) {
     readiness.hasPrivyAuthorizationKey &&
     readiness.hasAlchemyUrl;
 
+  let mongoReady = false;
+  let mongoError: string | null = null;
+  try {
+    const client = await clientPromise;
+    await client.db().command({ ping: 1 });
+    mongoReady = true;
+  } catch (error) {
+    mongoError = error instanceof Error ? error.message : "Mongo ping failed";
+  }
+
   return Response.json({
-    status: sendSkillReady ? "ready" : "not_ready",
-    sendSkillReady,
-    readiness,
+    status: sendSkillReady && mongoReady ? "ready" : "not_ready",
+    sendSkillReady: sendSkillReady && mongoReady,
+    readiness: {
+      ...readiness,
+      hasMongo: mongoReady,
+    },
+    diagnostics: mongoError ? { mongoError } : undefined,
   });
 }

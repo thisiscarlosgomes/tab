@@ -158,6 +158,7 @@ export async function POST(req: NextRequest) {
     return denied;
   }
 
+  try {
   const body = await req.json().catch(() => ({}));
   const identityToken = getBearerToken(req.headers.get("authorization"));
   const isServiceAgentRequest = !identityToken && getServiceAgentKey(req);
@@ -566,6 +567,21 @@ export async function POST(req: NextRequest) {
         requestId,
       },
       { status: 500 }
+    );
+  }
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Agent send failed";
+    const isMongoInfraError =
+      /Mongo|ReplicaSetNoPrimary|server selection timed out|ECONN|topology/i.test(message);
+
+    return Response.json(
+      {
+        error: isMongoInfraError
+          ? "Tab is temporarily unable to send payments (database unavailable). Please retry in a moment."
+          : "Tab hit an internal error while preparing the payment. Please retry.",
+        details: process.env.NODE_ENV === "development" ? message : undefined,
+      },
+      { status: isMongoInfraError ? 503 : 500 }
     );
   }
 }

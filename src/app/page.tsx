@@ -1046,11 +1046,21 @@ export default function Home() {
               <Button
                 className="w-full bg-white text-black shadow-[0_10px_40px_rgba(0,0,0,0.35)] mb-2"
                 onClick={() => {
+                  const isLastWelcomeStep =
+                    authWelcomeStep >= AUTH_WELCOME_STEPS.length - 1;
+                  if (!isLastWelcomeStep) {
+                    setAuthWelcomeStep((prev) =>
+                      Math.min(AUTH_WELCOME_STEPS.length - 1, prev + 1)
+                    );
+                    return;
+                  }
                   setAuthStep("email");
                   setAuthError(null);
                 }}
               >
-                Log in / Sign up
+                {authWelcomeStep >= AUTH_WELCOME_STEPS.length - 1
+                  ? "Sign up / Login"
+                  : "Continue"}
               </Button>
             )}
            

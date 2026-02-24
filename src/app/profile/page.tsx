@@ -696,19 +696,19 @@ export default function ProfilePage() {
 
                           <div className="shrink-0">
                             {isCreator ? (
-                              <span className="px-1.5 py-0.5 text-xs rounded-[6px] bg-yellow-600/20 text-yellow-300 border border-yellow-500/30">
+                              <span className="px-1.5 text-[13px] rounded-[6px] bg-yellow-600/20 text-yellow-300 border border-yellow-500/30">
                                 Owner
                               </span>
                             ) : isInvited && !hasPaid ? (
-                              <span className="px-1.5 py-0.5 text-xs rounded-[6px] bg-white/10 text-white/40 border border-white/20">
+                              <span className="px-1.5 text-[13px] rounded-[6px] bg-white/10 text-white/40 border border-white/20">
                                 Invited
                               </span>
                             ) : hasPaid ? (
-                              <span className="px-1.5 py-0.5 text-xs rounded-[6px] bg-green-500/20 text-green-300 border border-green-500/30">
+                              <span className="px-1.5 text-[13px] rounded-[6px] bg-green-500/20 text-green-300 border border-green-500/30">
                                 Paid
                               </span>
                             ) : (
-                              <span className="px-1.5 py-0.5 text-xs rounded-[6px] bg-orange-900/20 text-orange-400 border border-orange-400/30">
+                              <span className="px-1.5 text-[13px] rounded-[6px] bg-orange-900/20 text-orange-400 border border-orange-400/30">
                                 Unpaid
                               </span>
                             )}

@@ -147,12 +147,13 @@ export async function POST(req: NextRequest) {
     return denied;
   }
 
-  const body = await req.json().catch(() => ({}));
-  const identityToken = getBearerToken(req.headers.get("authorization"));
-  const isServiceAgentRequest = !identityToken && getServiceAgentKey(req);
-  const serviceAgentId = isServiceAgentRequest
-    ? String(body?.agentId ?? "").trim()
-    : null;
+  try {
+    const body = await req.json().catch(() => ({}));
+    const identityToken = getBearerToken(req.headers.get("authorization"));
+    const isServiceAgentRequest = !identityToken && getServiceAgentKey(req);
+    const serviceAgentId = isServiceAgentRequest
+      ? String(body?.agentId ?? "").trim()
+      : null;
 
   if (!identityToken && !isServiceAgentRequest) {
     return Response.json(
@@ -394,25 +395,42 @@ export async function POST(req: NextRequest) {
 
   const splitUrl = `${getPublicBaseUrl(req)}/split/${splitId}`;
 
-  return Response.json({
-    success: true,
-    splitId,
-    splitCode: code,
-    splitUrl,
-    amount: totalAmount,
-    currency: tokenSymbol,
-    description,
-    users: invitedUsers.map((user) => ({
-      username: user.username,
-      fid: user.fid,
-      address: user.address,
-      amount: perPersonAmount,
-    })),
-    confirmation: {
+    return Response.json({
+      success: true,
+      splitId,
+      splitCode: code,
+      splitUrl,
       amount: totalAmount,
       currency: tokenSymbol,
-      url: splitUrl,
-      users: invitedUsers.map((u) => `@${u.username ?? "user"}`),
-    },
-  });
+      description,
+      users: invitedUsers.map((user) => ({
+        username: user.username,
+        fid: user.fid,
+        address: user.address,
+        amount: perPersonAmount,
+      })),
+      confirmation: {
+        amount: totalAmount,
+        currency: tokenSymbol,
+        url: splitUrl,
+        users: invitedUsers.map((u) => `@${u.username ?? "user"}`),
+      },
+    });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Agent split create failed";
+    const isMongoInfraError =
+      /Mongo|ReplicaSetNoPrimary|server selection timed out|ECONN|topology/i.test(
+        message
+      );
+
+    return Response.json(
+      {
+        error: isMongoInfraError
+          ? "Tab is temporarily unable to create splits (database unavailable). Please retry in a moment."
+          : "Tab hit an internal error while creating the split. Please retry.",
+        details: process.env.NODE_ENV === "development" ? message : undefined,
+      },
+      { status: isMongoInfraError ? 503 : 500 }
+    );
+  }
 }

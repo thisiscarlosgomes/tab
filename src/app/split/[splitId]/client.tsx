@@ -702,13 +702,13 @@ const paidCount = bill?.paid?.length ?? 0;
                             )}
 
                             {paid && !isRecipient && (
-                              <span className="bg-green-500/20 text-green-300 border border-green-500/30 px-1.5 py-0.5 text-[13px] rounded-[6px]">
+                              <span className="bg-green-500/20 text-green-300 border border-green-500/30 px-1.5  text-[13px] rounded-[6px]">
                                 Paid
                               </span>
                             )}
 
                             {joined && !paid && !isRecipient && (
-                              <span className="bg-yellow-600/20 text-yellow-400 border border-yellow-600/40 px-1.5 py-0.5 text-[13px] rounded-[6px]">
+                              <span className="bg-yellow-600/20 text-yellow-400 border border-yellow-600/40 px-1.5 text-[13px] rounded-[6px]">
                                 Joined
                               </span>
                             )}
@@ -717,7 +717,7 @@ const paidCount = bill?.paid?.length ?? 0;
                               !joined &&
                               !isRecipient &&
                               bill.invited?.length && (
-                                <span className="bg-blue-600/20 text-blue-400 border border-blue-600/40 px-1.5 py-0.5 text-[13px] rounded-[6px]">
+                                <span className="bg-blue-600/20 text-blue-400 border border-blue-600/40 px-1.5 text-[13px] rounded-[6px]">
                                   Invited
                                 </span>
                               )}

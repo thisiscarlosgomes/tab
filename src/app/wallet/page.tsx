@@ -625,9 +625,9 @@ export default function WalletPage() {
     return (
       <div className="pt-1 pb-4">
         <div className="flex items-start justify-center text-center mb-8 mt-4">
-          <span className="text-3xl leading-none mt-3 text-white/90">$</span>
+          <span className="hidden text-3xl leading-none mt-3 text-white/90">$</span>
           <span className="text-[46px] sm:text-[51px] leading-[0.95] font-semibold tracking-tight">
-            {formatUsdNumber(wallet.totalBalanceUSD)}
+            ${formatUsdNumber(wallet.totalBalanceUSD)}
           </span>
         </div>
 

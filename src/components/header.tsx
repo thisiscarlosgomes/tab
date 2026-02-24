@@ -177,7 +177,7 @@ export function Header() {
             <Link href="/" aria-label="Go to home">
               <img src="/newnewapp.png" alt="Tab" className="w-8 h-8 rounded-xl" />
             </Link>
-            <div className="text-lg font-medium truncate">{pageTitle}</div>
+            <div className="hidden text-lg font-medium truncate">{pageTitle}</div>
           </div>
 
           <div className="absolute left-0 right-0 top-0 h-full flex items-center justify-center pointer-events-none">
