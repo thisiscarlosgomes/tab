@@ -35,6 +35,16 @@ async function ensureIndexes(mongoClient: MongoClient) {
 
     db.collection("a-activity").createIndex({ address: 1, timestamp: -1 }),
 
+    db
+      .collection("a-web-push-subscriptions")
+      .createIndex({ enabled: 1, addresses: 1, updatedAt: -1 }),
+    db
+      .collection("a-web-push-subscriptions")
+      .createIndex({ userId: 1, enabled: 1, updatedAt: -1 }),
+    db
+      .collection("a-web-push-dedupe")
+      .createIndex({ createdAt: 1 }, { expireAfterSeconds: 60 * 60 * 24 * 14 }),
+
     db.collection("a-agent-access").createIndex({ address: 1 }, { unique: true }),
     db.collection("a-agent-access").createIndex({ userId: 1 }),
     db.collection("a-agent-access").createIndex({ status: 1, updatedAt: -1 }),

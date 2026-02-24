@@ -1,4 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
+import { erc20Abi, formatUnits, getAddress } from "viem";
+import baseViemClient from "@/lib/viem-client";
 
 const MORALIS_BASE_URL = "https://deep-index.moralis.io/api/v2.2";
 const DEFAULT_CHAIN = "base";
@@ -43,6 +45,23 @@ const STABLE_TOKEN_ICONS: Record<string, string> = {
   EURC: "/tokens/eurc.png",
   TAB: "/tokens/tab.png",
 };
+
+const BASE_FALLBACK_TOKENS = [
+  {
+    symbol: "USDC",
+    name: "USD Coin",
+    address: "0x833589fcd6edb6e08f4c7c32d4f71b54bda02913",
+    decimals: 6,
+    assumedUsdPrice: 1,
+  },
+  {
+    symbol: "EURC",
+    name: "EURC",
+    address: "0x60a3e35cc302bfa44cb288bc5a4f316fdb1adb42",
+    decimals: 6,
+    assumedUsdPrice: 1,
+  },
+] as const;
 
 function toNumber(value: unknown) {
   const n = Number(value);
@@ -126,6 +145,43 @@ function normalizeToken(item: MoralisTokenItem): NormalizedToken | null {
     imgUrl,
     networkName: "Base",
   };
+}
+
+async function fetchBaseFallbackTokens(address: string): Promise<NormalizedToken[]> {
+  const wallet = getAddress(address);
+
+  const results: Array<NormalizedToken | null> = await Promise.all(
+    BASE_FALLBACK_TOKENS.map(async (token) => {
+      try {
+        const balanceRaw = await baseViemClient.readContract({
+          address: getAddress(token.address),
+          abi: erc20Abi,
+          functionName: "balanceOf",
+          args: [wallet],
+        });
+
+        if (balanceRaw <= 0n) return null;
+
+        const balance = Number(formatUnits(balanceRaw, token.decimals));
+        if (!Number.isFinite(balance) || balance <= 0) return null;
+
+        return {
+          tokenAddress: token.address,
+          symbol: token.symbol,
+          name: token.name,
+          balance,
+          balanceUSD: balance * token.assumedUsdPrice,
+          price: token.assumedUsdPrice,
+          imgUrl: getStableTokenIcon(token.symbol),
+          networkName: "Base",
+        };
+      } catch {
+        return null;
+      }
+    })
+  );
+
+  return results.filter((t): t is NormalizedToken => Boolean(t));
 }
 
 export async function GET(req: NextRequest) {
@@ -217,6 +273,34 @@ export async function GET(req: NextRequest) {
       }
       if (!existing.name && token.name) existing.name = token.name;
       if (!existing.networkName && token.networkName) existing.networkName = token.networkName;
+    }
+
+    if (chain.toLowerCase() === "base") {
+      const fallbackTokens = await fetchBaseFallbackTokens(address);
+      for (const token of fallbackTokens) {
+        const symbolKey = canonicalSymbolKey(token.symbol);
+        const existing = dedupedBySymbol.get(symbolKey);
+
+        if (!existing) {
+          dedupedBySymbol.set(symbolKey, token);
+          continue;
+        }
+
+        // Moralis sometimes omits or under-reports a known token balance on fresh transfers.
+        if (token.balance > existing.balance) {
+          existing.balance = token.balance;
+          if (existing.price <= 0) existing.price = token.price;
+          existing.balanceUSD = token.balance * (existing.price || token.price || 0);
+          if (!existing.imgUrl && token.imgUrl) existing.imgUrl = token.imgUrl;
+          if (
+            normalizeTokenKeyPart(existing.tokenAddress).startsWith("unknown:") &&
+            token.tokenAddress
+          ) {
+            existing.tokenAddress = token.tokenAddress;
+          }
+          if (!existing.name && token.name) existing.name = token.name;
+        }
+      }
     }
 
     const tokens = Array.from(dedupedBySymbol.values())

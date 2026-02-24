@@ -19,7 +19,6 @@ import Skeleton from "react-loading-skeleton";
 import clsx from "clsx";
 
 import {
-  ArrowLeft,
   Bot,
   Clipboard,
   CircleDollarSign,
@@ -69,11 +68,18 @@ const AUTH_WELCOME_STEPS = [
     desc: "Move money between people you follow and trust, instantly.",
   },
   {
-    key: "earn-more",
+    key: "core-feature",
     kind: "guide" as const,
     iconSrc: "/dollars.png",
+    title: "Tooling",
+    desc: "Split group bills, send payments, and get paid — in seconds",
+  },
+    {
+    key: "earn-more",
+    kind: "guide" as const,
+    iconSrc: "/wallet.png",
     title: "Put your money to work",
-    desc: "Earn on your stablecoins and use more onchain money tools in one place.",
+    desc: "Earn up to 5% interest on your stables, play daily jackpot and more.",
   },
   {
     key: "agent-skill",
@@ -309,7 +315,7 @@ function AuthBrandLockup() {
         className="absolute left-1/2 top-12 h-40 w-40 -translate-x-1/2 rounded-full bg-indigo-400/10 blur-3xl"
       />
       <AnimatedPingLogo className="relative z-10 w-[120px] h-[120px] mb-2 drop-shadow-[0_10px_35px_rgba(99,102,241,0.14)]" />
-      <h1 className="relative z-10 text-2xl font-semibold tracking-tight leading-none text-white">
+      <h1 className="relative z-10 text-3xl font-semibold tracking-tight leading-none text-white">
         meet tab
       </h1>
       <p className="hidden relative z-10 mt-2 text-lg text-white/35">
@@ -887,8 +893,7 @@ export default function Home() {
   const isAuthEmailValid = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(emailValueTrimmed);
   const emailLocalPart = emailValueTrimmed.split("@")[0] ?? "";
   const showInvalidEmailError = authError === "Enter a valid email.";
-  const showEmailDomainSuggestions =
-    authStep === "email" && emailLocalPart.length > 0;
+  const showEmailDomainSuggestions = authStep === "email";
 
   const applyEmailDomainSuggestion = (domain: string) => {
     const local = authEmail.trim().split("@")[0]?.replace(/\s/g, "") ?? "";
@@ -985,7 +990,7 @@ export default function Home() {
                     <div className="w-full max-w-sm mx-auto flex flex-col items-center justify-center md:pt-18">
                       <div
                         aria-hidden
-                        className="relative mb-4 grid place-items-center h-54 w-54 rounded-full"
+                        className="relative grid place-items-center h-54 w-54 rounded-full"
                       >
                         <div className="grid place-items-center h-40 w-40 rounded-full">
                           <img
@@ -1072,25 +1077,6 @@ export default function Home() {
                   <div className="space-y-4">
                     <div className="h-1 w-full bg-white/15 rounded-full overflow-hidden">
                       <div className="h-full w-1/2 bg-primary" />
-                    </div>
-
-                    <div className="flex items-center justify-between">
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setAuthStep("email");
-                          setAuthOtp(Array(OTP_LENGTH).fill(""));
-                          setAuthError(null);
-                          setLastAutoSubmittedCode(null);
-                        }}
-                        className="inline-flex h-10 w-10 items-center justify-center rounded-full text-white/90 active:scale-95 transition"
-                        aria-label="Back to email"
-                      >
-                        <ArrowLeft className="h-6 w-6" />
-                      </button>
-                      <div className="text-right">
-                        <p className="text-sm text-white/60">Verify your email</p>
-                      </div>
                     </div>
 
                     <div>
@@ -1218,13 +1204,19 @@ export default function Home() {
                     </Button>
 
                     {showEmailDomainSuggestions && (
-                      <div className="flex flex-wrap gap-2 pt-1">
+                      <div className="flex gap-2 pt-1 overflow-x-auto scrollbar-hide whitespace-nowrap">
                         {emailDomainSuggestions.map((domain) => (
                           <button
                             key={domain}
                             type="button"
                             onClick={() => applyEmailDomainSuggestion(domain)}
-                            className="rounded-full border border-white/15 bg-white text-black px-3 py-1.5 text-xs font-medium active:scale-95 transition"
+                            disabled={emailLocalPart.length === 0}
+                            className={clsx(
+                              "shrink-0 rounded-full border px-3 py-1.5 text-xs font-medium transition",
+                              emailLocalPart.length === 0
+                                ? "border-white/10 bg-white/5 text-white/25 cursor-not-allowed"
+                                : "border-white/15 bg-white text-black active:scale-95"
+                            )}
                           >
                             {domain}
                           </button>

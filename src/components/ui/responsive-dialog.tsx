@@ -102,7 +102,13 @@ function ResponsiveDialogContent({
   }
 
   return (
-    <DrawerContent className={cn("max-h-[85vh]", className)} {...props}>
+    <DrawerContent
+      className={cn(
+        "top-[40px] bottom-0 min-h-[calc(100dvh-40px)] max-h-[calc(100dvh-40px)] overflow-hidden",
+        className
+      )}
+      {...props}
+    >
       {children}
     </DrawerContent>
   );
