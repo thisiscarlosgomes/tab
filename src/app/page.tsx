@@ -888,7 +888,7 @@ export default function Home() {
     }
   };
 
-  const emailDomainSuggestions = ["@gmail.com", "@icloud.com", "@proton.me"];
+  const emailDomainSuggestions = ["@gmail.com", "@icloud.com"];
   const emailValueTrimmed = authEmail.trim();
   const isAuthEmailValid = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(emailValueTrimmed);
   const emailLocalPart = emailValueTrimmed.split("@")[0] ?? "";
@@ -1067,7 +1067,7 @@ export default function Home() {
           }}
         >
           <ResponsiveDialogContent className="p-4 md:w-full md:max-w-md max-h-[calc(100dvh-110px)] md:max-h-[85vh] overflow-hidden [&>svg]:hidden">
-            <div className="rounded-t-3xl md:rounded-2xl bg-background p-4 md:p-5 flex flex-col gap-5 max-h-[calc(100dvh-140px)] md:max-h-[calc(85vh-2rem)] overflow-y-auto">
+            <div className="rounded-t-3xl md:rounded-2xl bg-background flex flex-col gap-5 max-h-[calc(100dvh-140px)] md:max-h-[calc(85vh-2rem)] overflow-y-auto">
               <ResponsiveDialogTitle className="sr-only">
                 {showCodeStep ? "Verify email" : "Log in / Sign up"}
               </ResponsiveDialogTitle>
@@ -1080,7 +1080,7 @@ export default function Home() {
                     </div>
 
                     <div>
-                      <p className="text-white/80 text-sm">Enter the code we emailed to</p>
+                      <p className="text-white text-sm pt-6">Enter the code we emailed to</p>
                         <p className="mt-1 text-white font-semibold text-lg break-all">
                           {authEmail.trim()}
                         </p>
@@ -1159,7 +1159,7 @@ export default function Home() {
                 </>
               ) : (
                 <>
-                  <p className="text-white/50 text-sm text-left">
+                  <p className="text-white text-sm text-left pt-6 px-2">
                     Enter your email to continue.
                   </p>
 
@@ -1212,7 +1212,7 @@ export default function Home() {
                             onClick={() => applyEmailDomainSuggestion(domain)}
                             disabled={emailLocalPart.length === 0}
                             className={clsx(
-                              "shrink-0 rounded-full border px-3 py-1.5 text-xs font-medium transition",
+                              "shrink-0 rounded-full border px-3 py-1.5 text-[14px] font-medium transition",
                               emailLocalPart.length === 0
                                 ? "border-white/10 bg-white/5 text-white/25 cursor-not-allowed"
                                 : "border-white/15 bg-white text-black active:scale-95"

@@ -99,9 +99,13 @@ export default function ActivityTransferDetailPage() {
   );
 
   const pageUrl = useMemo(() => {
-    if (typeof window === "undefined") return null;
-    return window.location.href;
-  }, []);
+    if (!tx?.txHash) return null;
+    const origin =
+      typeof window !== "undefined" && window.location?.origin
+        ? window.location.origin
+        : "https://www.usetab.app";
+    return `${origin}/activity/tx/${tx.txHash}`;
+  }, [tx?.txHash]);
 
   const normalizedViewer = viewerAddress?.toLowerCase() ?? null;
   const isOutgoing =
@@ -188,9 +192,15 @@ export default function ActivityTransferDetailPage() {
             <div className="mt-4 grid grid-cols-1 gap-2 sm:grid-cols-2">
               <Button
                 variant="outline"
-                className="border-white/10 bg-white/5 text-white hover:bg-white/10"
+                className="bg-white/5 text-white hover:bg-white/10"
                 onClick={async () => {
-                  const link = pageUrl ?? window.location.href;
+                  const link =
+                    pageUrl ??
+                    (tx?.txHash
+                      ? `https://www.usetab.app/activity/tx/${tx.txHash}`
+                      : (typeof window !== "undefined"
+                          ? window.location.href
+                          : "https://www.usetab.app/activity"));
                   await navigator.clipboard.writeText(link);
                   setCopied(true);
                   window.setTimeout(() => setCopied(false), 1200);
