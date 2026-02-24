@@ -5,12 +5,14 @@ import clientPromise from "@/lib/mongodb";
 
 interface Participant {
   name: string;
-  address: string;
+  address?: string | null;
+  fid?: number | string | null;
   pfp?: string;
 }
 
 interface Payment {
-  address: string;
+  address?: string | null;
+  fid?: number | string | null;
   name?: string;
   txHash: string;
   status?: string;
@@ -21,7 +23,7 @@ interface Bill {
   splitId: string;
   code: string;
   description: string;
-  creator: { address: string };
+  creator: { address?: string | null; fid?: number | string | null };
   participants: Participant[];
   invited?: Participant[];
   paid?: Payment[];
@@ -39,8 +41,11 @@ function ensureBillsIndexes(collection: Collection<Bill>) {
     ensureBillsIndexesPromise = (async () => {
       await collection.createIndexes([
         { key: { "creator.address": 1, createdAt: -1 } },
+        { key: { "creator.fid": 1, createdAt: -1 } },
         { key: { "participants.address": 1, createdAt: -1 } },
+        { key: { "participants.fid": 1, createdAt: -1 } },
         { key: { "invited.address": 1, createdAt: -1 } },
+        { key: { "invited.fid": 1, createdAt: -1 } },
       ]);
     })().catch(() => {
       ensureBillsIndexesPromise = null;
@@ -52,30 +57,48 @@ function ensureBillsIndexes(collection: Collection<Bill>) {
 export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url);
   const rawAddress = searchParams.get("address");
+  const rawFid = searchParams.get("fid");
 
   const limit = Number(searchParams.get("limit") ?? DEFAULT_LIMIT);
   const before = searchParams.get("before");
 
-  if (!rawAddress) {
-    return Response.json({ error: "Missing address" }, { status: 400 });
-  }
+  const address =
+    typeof rawAddress === "string" && rawAddress.trim()
+      ? rawAddress.trim().toLowerCase()
+      : null;
+  const fid = Number(rawFid);
+  const normalizedFid = Number.isFinite(fid) && fid > 0 ? fid : null;
 
-  const address = rawAddress.toLowerCase();
+  if (!address && !normalizedFid) {
+    return Response.json({ error: "Missing address or fid" }, { status: 400 });
+  }
 
   const client = await clientPromise;
   const db = client.db();
   const collection = db.collection<Bill>("a-split-bill");
   await ensureBillsIndexes(collection);
 
-  const query: {
-    $or: Array<Record<string, string>>;
-    createdAt?: { $lt: Date };
-  } = {
-    $or: [
+  const orClauses: Array<Record<string, string | number>> = [];
+  if (address) {
+    orClauses.push(
       { "creator.address": address },
       { "participants.address": address },
-      { "invited.address": address },
-    ],
+      { "invited.address": address }
+    );
+  }
+  if (normalizedFid) {
+    orClauses.push(
+      { "creator.fid": normalizedFid },
+      { "participants.fid": normalizedFid },
+      { "invited.fid": normalizedFid }
+    );
+  }
+
+  const query: {
+    $or: Array<Record<string, string | number>>;
+    createdAt?: { $lt: Date };
+  } = {
+    $or: orClauses,
   };
 
   if (before) {
@@ -105,16 +128,25 @@ export async function GET(req: NextRequest) {
   }
 
   const formattedBills = bills.map((bill) => {
-    const addr = address.toLowerCase();
+    const addr = address;
+    const matchesAddress = (value?: string | null) =>
+      Boolean(addr && typeof value === "string" && value.toLowerCase() === addr);
+    const matchesFid = (value?: number | string | null) =>
+      Boolean(normalizedFid != null && Number(value) === normalizedFid);
 
-    const isCreator = bill.creator.address.toLowerCase() === addr;
+    const isCreator =
+      matchesAddress(bill.creator?.address) || matchesFid(bill.creator?.fid);
 
     const isParticipant =
-      bill.participants?.some((p: Participant) => p.address?.toLowerCase() === addr) ??
+      bill.participants?.some(
+        (p: Participant) => matchesAddress(p.address) || matchesFid(p.fid)
+      ) ??
       false;
 
     const isInvited =
-      bill.invited?.some((i: Participant) => i.address?.toLowerCase() === addr) ??
+      bill.invited?.some(
+        (i: Participant) => matchesAddress(i.address) || matchesFid(i.fid)
+      ) ??
       false;
 
     const userStatus: "creator" | "participant" | "invited" | null = isCreator
@@ -127,7 +159,9 @@ export async function GET(req: NextRequest) {
 
     const hasPaid = isCreator
       ? true // creator already paid IRL
-      : (bill.paid?.some((p: Payment) => p.address?.toLowerCase() === addr) ??
+      : (bill.paid?.some(
+          (p: Payment) => matchesAddress(p.address) || matchesFid(p.fid)
+        ) ??
         false);
 
     const debtorCount = bill.invited?.length ?? 0;
@@ -168,7 +202,7 @@ export async function GET(req: NextRequest) {
       hasPaid,
 
       // people
-      creator: bill.creator.address,
+      creator: bill.creator.address ?? null,
 
       participants: (bill.participants || []).map((p: Participant) => ({
         name: p.name,

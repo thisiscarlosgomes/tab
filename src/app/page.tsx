@@ -1407,7 +1407,7 @@ export default function Home() {
                         {/* ${earnBalance!.toFixed(2)} */}
                         {typeof monthlyEarn === "number" && monthlyEarn > 0 && (
                           <span className="text-green-400 ml-1 whitespace-nowrap text-xs">
-                            +${formatMonthlyEarnings(monthlyEarn)}/mo
+                            +${formatMonthlyEarnings(monthlyEarn * 12)}/yr
                           </span>
                         )}
                       </p>
@@ -1584,7 +1584,7 @@ export default function Home() {
                   </p>
                   {typeof monthlyEarn === "number" && monthlyEarn > 0 && (
                     <p className="mt-1 text-sm text-green-400">
-                      +${formatMonthlyEarnings(monthlyEarn)}/mo at current rate
+                      +${formatMonthlyEarnings(monthlyEarn * 12)}/yr at current rate
                     </p>
                   )}
                 </div>

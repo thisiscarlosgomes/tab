@@ -488,7 +488,7 @@ export function MorphoDepositDrawer({
                 <div className="text-white/30 w-full flex items-center justify-between px-4 py-1">
                   <div>Current Earnings</div>
                   <p className="text-green-400">
-                    +${formatMonthlyEarnings(monthlyEarn)}/mo
+                    +${formatMonthlyEarnings(monthlyEarn * 12)}/yr
                   </p>
                 </div>
               )}

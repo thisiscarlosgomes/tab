@@ -58,6 +58,7 @@ export async function GET(req: NextRequest) {
           executionMode: doc.executionMode ?? null,
           agentId: doc.agentId ?? null,
           recipientResolutionSource: doc.recipientResolutionSource ?? null,
+          note: typeof doc.note === "string" ? doc.note : null,
           counterparty: isSender
             ? {
                 address: doc.recipientAddress,
@@ -107,17 +108,34 @@ export async function GET(req: NextRequest) {
         new Date(a.timestamp ?? a.createdAt ?? 0).getTime()
     );
 
-    const activity = [];
-    const seen = new Set<string>();
+    const activity: Array<
+      { timestamp?: string | Date; note?: string | null } & Record<string, unknown>
+    > = [];
+    const seenIndexByKey = new Map<string, number>();
 
     for (const doc of raw) {
       try {
         const key = `${String(doc.type ?? "")}:${String(doc.refId ?? "")}`;
-        if (seen.has(key)) continue;
-        seen.add(key);
-
         const mapped = mapActivity(doc);
-        if (mapped) activity.push(mapped);
+        if (!mapped) continue;
+
+        const existingIndex = seenIndexByKey.get(key);
+        if (existingIndex !== undefined) {
+          const existing = activity[existingIndex] as { note?: string | null } | undefined;
+          if ((!existing?.note || !String(existing.note).trim()) && "note" in mapped) {
+            const candidateNote =
+              typeof (mapped as { note?: unknown }).note === "string"
+                ? (mapped as { note?: string }).note?.trim()
+                : "";
+            if (candidateNote) {
+              activity[existingIndex] = mapped as unknown as (typeof activity)[number];
+            }
+          }
+          continue;
+        }
+
+        seenIndexByKey.set(key, activity.length);
+        activity.push(mapped as unknown as (typeof activity)[number]);
         if (activity.length >= limit) break;
       } catch (err) {
         console.error("[mapActivity failed]", {

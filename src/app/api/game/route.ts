@@ -5,6 +5,7 @@ import clientPromise from "@/lib/mongodb";
 import { encrypt } from "@/lib/encryption";
 import { writeActivity } from "@/lib/writeActivity";
 import { requireTrustedRequest } from "@/lib/security";
+import { getCanonicalUserProfileByFid } from "@/lib/user-profile";
 
 /* =========================
    Helpers
@@ -15,6 +16,42 @@ function slugify(input: string) {
     .trim()
     .replace(/[^a-z0-9]+/g, "-")
     .replace(/^-+|-+$/g, "");
+}
+
+function normalizeAddress(value?: string | null) {
+  return typeof value === "string" && value ? value.toLowerCase() : null;
+}
+
+function normalizeFid(value: unknown) {
+  const n = Number(value);
+  return Number.isFinite(n) && n > 0 ? n : null;
+}
+
+async function resolvePreferredGamePlayer(player: any) {
+  const fallbackAddress = normalizeAddress(player?.address);
+  const fid = normalizeFid(player?.fid);
+
+  if (fid) {
+    const profile = await getCanonicalUserProfileByFid(fid).catch(() => null);
+    const tabAddress = normalizeAddress(profile?.primaryAddress);
+    if (tabAddress) {
+      return {
+        ...player,
+        fid,
+        address: tabAddress,
+        payoutAddressSource: "tab_wallet",
+        farcasterVerifiedAddress: fallbackAddress,
+      };
+    }
+  }
+
+  return {
+    ...player,
+    fid,
+    address: fallbackAddress,
+    payoutAddressSource: "farcaster_verified",
+    farcasterVerifiedAddress: fallbackAddress,
+  };
 }
 
 /* =========================
@@ -47,8 +84,13 @@ export async function POST(req: NextRequest) {
     return Response.json({ error: "Missing player" }, { status: 400 });
   }
 
+  const resolvedPlayer = await resolvePreferredGamePlayer(player);
+  if (!resolvedPlayer?.address) {
+    return Response.json({ error: "Missing player" }, { status: 400 });
+  }
+
   /* ---------- normalize address ---------- */
-  const address = player.address.toLowerCase();
+  const address = resolvedPlayer.address.toLowerCase();
 
   /* ---------- generate gameId ---------- */
   const base = slugify(name || "room");
@@ -81,12 +123,12 @@ export async function POST(req: NextRequest) {
   const createdAt = new Date();
 
   /* ---------- create game ---------- */
- const game = {
+  const game = {
   gameId,
   name: name || "Untitled room",
 
   admin: address,
-  participants: [{ ...player, address }],
+  participants: [resolvedPlayer],
 
   recipient: encryptedRecipient,
   amount: typeof amount === "number" ? amount : 1,

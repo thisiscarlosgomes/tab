@@ -14,6 +14,11 @@ import { Check, ClipboardCopy } from "lucide-react";
 import { LoaderCircle } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
+import {
+  ResponsiveDialog,
+  ResponsiveDialogContent,
+  ResponsiveDialogTitle,
+} from "@/components/ui/responsive-dialog";
 import { tokenList } from "@/lib/tokens";
 import { getTokenPrices } from "@/lib/getTokenPrices";
 import { useTabIdentity } from "@/lib/useTabIdentity";
@@ -138,6 +143,7 @@ function ReceiptUploader({ onParsed }: { onParsed: (data: any) => void }) {
 }
 
 export default function SplitNewPage() {
+  const [showSplitIntroDialog, setShowSplitIntroDialog] = useState(false);
   const router = useRouter();
   const { address, isConnected } = useAccount();
   const { connect, connectors } = useConnect();
@@ -236,6 +242,15 @@ export default function SplitNewPage() {
       const prices = await getTokenPrices();
       setTokenPrices(prices);
     })();
+  }, []);
+
+  useEffect(() => {
+    try {
+      const seen = window.localStorage.getItem("tab:intro:split-new");
+      if (seen !== "1") setShowSplitIntroDialog(true);
+    } catch {
+      setShowSplitIntroDialog(true);
+    }
   }, []);
 
   // --------------------------
@@ -444,10 +459,10 @@ export default function SplitNewPage() {
       const recipient =
         splitType === "pay_other"
           ? {
-              address: recipientAddress,
-              fid: null,
-              name: "Recipient",
-            }
+            address: recipientAddress,
+            fid: null,
+            name: "Recipient",
+          }
           : creator;
 
       let payload: any = {
@@ -478,10 +493,10 @@ export default function SplitNewPage() {
         payload.invited = selectedFollowers
           .map((f) => {
             const invitedAddress = getUserEthAddress(f);
-            if (!invitedAddress) return null;
+            if (!invitedAddress && typeof f.fid !== "number") return null;
             return {
               fid: f.fid, // ✅ number
-              address: invitedAddress,
+              address: invitedAddress ?? null,
               name: f.username,
               pfp: f.pfp_url,
             };
@@ -524,6 +539,40 @@ export default function SplitNewPage() {
 
   return (
     <div className="min-h-screen w-full flex flex-col items-center p-4 pt-[calc(5rem+env(safe-area-inset-top))] pb-[calc(7rem+env(safe-area-inset-bottom))] overflow-y-auto scrollbar-hide">
+      <ResponsiveDialog
+        open={showSplitIntroDialog}
+        onOpenChange={(open) => {
+          if (open) setShowSplitIntroDialog(true);
+        }}
+      >
+        <ResponsiveDialogContent className="top-auto h-auto min-h-0 max-h-[calc(100dvh-80px)] p-4 pb-16 md:top-1/2 md:-translate-y-1/2 md:max-w-md md:pb-4">
+          <ResponsiveDialogTitle className="sr-only">
+            Split bills
+          </ResponsiveDialogTitle>
+          <div className="flex flex-col gap-6">
+            <div>
+              <h2 className="text-lg font-semibold text-white">Create a bill split</h2>
+              <p className="mt-2 text-sm leading-6 text-white/60">
+                Set the amount and details. Invite friends and share the link.
+                They join and pay their share instantly.
+              </p>
+            </div>
+
+            <Button
+              className="w-full bg-white/5 text-white"
+              onClick={() => {
+                try {
+                  window.localStorage.setItem("tab:intro:split-new", "1");
+                } catch { }
+                setShowSplitIntroDialog(false);
+              }}
+            >
+              Got it
+            </Button>
+          </div>
+        </ResponsiveDialogContent>
+      </ResponsiveDialog>
+
       {step === 0 && (
         <div className="w-full max-w-md flex flex-col space-y-3">
           <h2 className="text-center text-lg font-medium mb-3">
@@ -604,9 +653,8 @@ export default function SplitNewPage() {
               decimalScale={4}
               prefix={getTokenSuffix(tokenType)}
               placeholder={`${getTokenSuffix(tokenType)}0`}
-              className={`w-full leading-none text-5xl bg-transparent text-center font-medium outline-none placeholder-white/20 ${
-                !totalAmount ? "text-white/20" : "text-primary"
-              }`}
+              className={`w-full leading-none text-5xl bg-transparent text-center font-medium outline-none placeholder-white/20 ${!totalAmount ? "text-white/20" : "text-primary"
+                }`}
             />
             <p className="text-sm text-white/30">Total bill amount</p>
           </div>
@@ -934,11 +982,10 @@ export default function SplitNewPage() {
                           : [...prev, f]
                       );
                     }}
-                    className={`w-full flex items-center justify-between p-3 rounded-lg ${
-                      isPayable
-                        ? "bg-white/5"
-                        : "bg-white/[0.03] opacity-60 cursor-not-allowed"
-                    }`}
+                    className={`w-full flex items-center justify-between p-3 rounded-lg ${isPayable
+                      ? "bg-white/5"
+                      : "bg-white/[0.03] opacity-60 cursor-not-allowed"
+                      }`}
                   >
                     <div className="flex items-center">
                       <img
@@ -960,11 +1007,10 @@ export default function SplitNewPage() {
                     </div>
 
                     <div
-                      className={`w-5 h-5 rounded-full border-2 flex items-center justify-center ${
-                        isSelected && isPayable
-                          ? "border-primary bg-primary"
-                          : "border-white/10"
-                      }`}
+                      className={`w-5 h-5 rounded-full border-2 flex items-center justify-center ${isSelected && isPayable
+                        ? "border-primary bg-primary"
+                        : "border-white/10"
+                        }`}
                     >
                       {isSelected && isPayable && (
                         <Check className="w-4 h-4 text-black" />

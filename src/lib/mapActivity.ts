@@ -14,6 +14,7 @@ type ActivityRecord = {
   recipient?: string;
   recipientUsername?: string;
   recipientResolutionSource?: "address" | "ens" | "tab" | "farcaster" | null;
+  note?: string | null;
   counterparty?: {
     address?: string | null;
     name?: string | null;
@@ -53,7 +54,7 @@ export function mapActivity(a: ActivityRecord) {
           typeof a.summary === "string" && a.summary.trim()
             ? a.summary.trim()
             : hasAmountToken
-              ? `Sent ${a.amount} ${a.token}`
+              ? `You sent ${a.amount} ${a.token}`
               : "Sent transfer";
       return {
         type: "bill_paid",
@@ -63,6 +64,7 @@ export function mapActivity(a: ActivityRecord) {
         recipient: a.recipient ?? a.counterparty?.address ?? undefined,
         recipientUsername: a.recipientUsername,
         recipientResolutionSource: a.recipientResolutionSource ?? null,
+        note: a.note ?? null,
         counterparty: a.counterparty?.name ?? null,
         counterpartyAddress: a.counterparty?.address ?? null,
         pfp: a.counterparty?.pfp ?? null, // ✅ recipient avatar
@@ -90,6 +92,7 @@ export function mapActivity(a: ActivityRecord) {
         splitId: a.refType === "bill" ? a.refId : undefined,
         amount: a.amount,
         token: a.token,
+        note: a.note ?? null,
         counterparty: a.counterparty?.name ?? null,
         counterpartyAddress: a.counterparty?.address ?? null,
         pfp: a.counterparty?.pfp ?? null, // ✅ payer avatar

@@ -319,18 +319,21 @@ export default function ProfilePage() {
   }, [address, username, displayName, pfp, fid, agentAuthToken]);
 
   const fetchUserBills = useCallback(async () => {
-    if (!address) {
+    if (!address && fid == null) {
       setBillsLoading(false);
       return;
     }
 
-    const cacheKey = address.toLowerCase();
+    const cacheKey = (address ?? `fid:${fid}`).toLowerCase();
     const hasVisibleBills = billsLoaded || bills.length > 0;
     if (!hasVisibleBills) setBillsLoading(true);
     const controller = new AbortController();
     const timeoutId = window.setTimeout(() => controller.abort(), 10000);
     try {
-      const res = await fetch(`/api/user-bills?address=${address}`, {
+      const qs = new URLSearchParams();
+      if (address) qs.set("address", address);
+      if (fid != null) qs.set("fid", String(fid));
+      const res = await fetch(`/api/user-bills?${qs.toString()}`, {
         cache: "no-store",
         signal: controller.signal,
       });
@@ -349,7 +352,7 @@ export default function ProfilePage() {
       setBillsLoading(false);
       setBillsLoaded(true);
     }
-  }, [address, bills.length, billsLoaded]);
+  }, [address, fid, bills.length, billsLoaded]);
 
   const fetchUserRooms = useCallback(async () => {
     if (!address) {

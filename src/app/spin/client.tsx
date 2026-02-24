@@ -8,6 +8,11 @@ import { useAccount } from "wagmi";
 import { toast } from "sonner";
 import SpinGameGrid from "@/components/app/NewSpin";
 import { useFrameSplash } from "@/providers/FrameSplashProvider";
+import {
+  ResponsiveDialog,
+  ResponsiveDialogContent,
+  ResponsiveDialogTitle,
+} from "@/components/ui/responsive-dialog";
 
 type Reward = {
   label: string;
@@ -32,6 +37,7 @@ export default function DailySpin() {
   const [streakHistory, setStreakHistory] = useState<
     { date: string; spun: boolean }[]
   >([]);
+  const [showSpinIntroDialog, setShowSpinIntroDialog] = useState(false);
 
   const [spinMeta, setSpinMeta] = useState<{
     totalSpins: number;
@@ -42,6 +48,15 @@ export default function DailySpin() {
   useEffect(() => {
     dismiss();
   }, [dismiss]);
+
+  useEffect(() => {
+    try {
+      const seen = window.localStorage.getItem("tab:intro:spin");
+      if (seen !== "1") setShowSpinIntroDialog(true);
+    } catch {
+      setShowSpinIntroDialog(true);
+    }
+  }, []);
 
   useEffect(() => {
     const init = async () => {
@@ -184,6 +199,40 @@ export default function DailySpin() {
 
   return (
     <div className="pt-[calc(5rem+env(safe-area-inset-top))] pb-[calc(8rem+env(safe-area-inset-bottom))] overflow-y-auto scrollbar-hide">
+      <ResponsiveDialog
+        open={showSpinIntroDialog}
+        onOpenChange={(open) => {
+          if (open) setShowSpinIntroDialog(true);
+        }}
+      >
+        <ResponsiveDialogContent className="top-auto h-auto min-h-0 max-h-[calc(100dvh-80px)] p-4 pb-16 md:top-1/2 md:-translate-y-1/2 md:max-w-md md:pb-4">
+          <ResponsiveDialogTitle className="sr-only">
+            Spin the tab
+          </ResponsiveDialogTitle>
+          <div className="flex flex-col gap-6">
+            <div>
+              <h2 className="text-lg font-semibold text-white">Spin the tab</h2>
+              <p className="mt-2 text-sm leading-6 text-white/60">
+                Set the amount, invite friends, and spin to decide who pays.
+                Simple. Random. Fair.
+              </p>
+            </div>
+
+            <Button
+              className="w-full bg-white/5 text-white"
+              onClick={() => {
+                try {
+                  window.localStorage.setItem("tab:intro:spin", "1");
+                } catch { }
+                setShowSpinIntroDialog(false);
+              }}
+            >
+              Got it
+            </Button>
+          </div>
+        </ResponsiveDialogContent>
+      </ResponsiveDialog>
+
       {/* <div className="px-4 pb-12 space-y-3">
         <SpinGameGrid
           fid={fid}

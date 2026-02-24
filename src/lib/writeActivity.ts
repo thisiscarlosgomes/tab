@@ -25,6 +25,7 @@ export interface ActivityInput {
   executionMode?: "user_session" | "service_agent";
   agentId?: string | null;
   recipientResolutionSource?: "address" | "ens" | "tab" | "farcaster" | null;
+  note?: string | null;
 
   counterparty?: {
     address: string;

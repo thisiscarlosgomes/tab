@@ -510,6 +510,7 @@ export async function POST(req: NextRequest) {
       executionMode,
       agentId: serviceAgentId,
       recipientResolutionSource: recipientResolved.source,
+      note: typeof body?.note === "string" ? body.note.trim() || null : null,
       counterparty: {
         address: recipientAddress,
         name: recipientResolved.username ?? undefined,
@@ -528,6 +529,7 @@ export async function POST(req: NextRequest) {
       txHash: hash,
       executionMode,
       agentId: serviceAgentId,
+      note: typeof body?.note === "string" ? body.note.trim() || null : null,
       counterparty: {
         address: sourceWalletAddress,
       },

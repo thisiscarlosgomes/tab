@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useAccount } from "wagmi";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
@@ -9,6 +9,11 @@ import { NumericFormat } from "react-number-format";
 import { tokenList } from "@/lib/tokens";
 import { useTabIdentity } from "@/lib/useTabIdentity";
 import { PaymentTokenPickerDialog } from "@/components/app/PaymentTokenPickerDialog";
+import {
+  ResponsiveDialog,
+  ResponsiveDialogContent,
+  ResponsiveDialogTitle,
+} from "@/components/ui/responsive-dialog";
 
 import { LoaderCircle } from "lucide-react";
 
@@ -28,9 +33,19 @@ export default function SplitPage() {
   const [creating, setCreating] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [tokenDialogOpen, setTokenDialogOpen] = useState(false);
+  const [showSpinCreateIntroDialog, setShowSpinCreateIntroDialog] = useState(false);
 
   const selectedToken = tokenList.find((t) => t.name === tokenType);
   const [showHowItWorks, setShowHowItWorks] = useState(true);
+
+  useEffect(() => {
+    try {
+      const seen = window.localStorage.getItem("tab:intro:spin-create");
+      if (seen !== "1") setShowSpinCreateIntroDialog(true);
+    } catch {
+      setShowSpinCreateIntroDialog(true);
+    }
+  }, []);
 
   const buildPlayer = async () => {
     let context: Awaited<typeof sdk.context> | null = null;
@@ -108,6 +123,40 @@ export default function SplitPage() {
 
   return (
     <div className="min-h-screen w-full flex flex-col items-center p-4 pt-[calc(5rem+env(safe-area-inset-top))] pb-[calc(7rem+env(safe-area-inset-bottom))] overflow-y-auto scrollbar-hide">
+      <ResponsiveDialog
+        open={showSpinCreateIntroDialog}
+        onOpenChange={(open) => {
+          if (open) setShowSpinCreateIntroDialog(true);
+        }}
+      >
+        <ResponsiveDialogContent className="top-auto h-auto min-h-0 max-h-[calc(100dvh-80px)] p-4 pb-16 md:top-1/2 md:-translate-y-1/2 md:max-w-md md:pb-4">
+          <ResponsiveDialogTitle className="sr-only">
+            Spin the tab
+          </ResponsiveDialogTitle>
+          <div className="flex flex-col gap-6">
+            <div>
+              <h2 className="text-lg font-semibold text-white">Create a new spin</h2>
+              <p className="mt-2 text-sm leading-6 text-white/60">
+                Set the amount, invite friends, and let a spin decide who pays.
+                Fast and fair for group tabs.
+              </p>
+            </div>
+
+            <Button
+              className="w-full bg-white/5 text-white"
+              onClick={() => {
+                try {
+                  window.localStorage.setItem("tab:intro:spin-create", "1");
+                } catch {}
+                setShowSpinCreateIntroDialog(false);
+              }}
+            >
+              Got it
+            </Button>
+          </div>
+        </ResponsiveDialogContent>
+      </ResponsiveDialog>
+
       <div className="w-full max-w-md flex flex-col space-y-5">
         {/* Intro */}
 

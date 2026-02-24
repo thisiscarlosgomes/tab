@@ -30,6 +30,7 @@ interface ActivityItem {
   amount?: number;
   token?: string;
   description?: string;
+  note?: string | null;
   splitId?: string;
   roomId?: string;
   dropId?: string;
@@ -403,6 +404,13 @@ export default function ActivityPage() {
                               {(item.description ?? item.type.replace("_", " ")) +
                                 (item.type === "bill_paid" ? recipientSourceText : "")}
                             </div>
+                            {typeof item.note === "string" && item.note.trim() && (
+                              <div className="mt-1">
+                                <div className="inline-block max-w-[240px] rounded-md bg-white/5 px-3 py-1 text-white/40 text-xs leading-snug line-clamp-2">
+                                  {item.note.trim()}
+                                </div>
+                              </div>
+                            )}
                           </div>
                         </div>
 

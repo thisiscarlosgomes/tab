@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useAccount } from "wagmi";
-import { useWallets } from "@privy-io/react-auth";
+import { useUser, useWallets } from "@privy-io/react-auth";
 import { buildUserKey, resolveUserFid, normalizeAddress } from "@/lib/identity";
 import { shortAddress } from "@/lib/shortAddress";
 
@@ -22,6 +22,7 @@ const profileCache = new Map<
 export function useTabIdentity() {
   const { address: wagmiAddress, isConnected } = useAccount();
   const { wallets } = useWallets();
+  const { user } = useUser();
   const fallbackAddress = wallets[0]?.address;
 
   const address = useMemo(
@@ -84,12 +85,37 @@ export function useTabIdentity() {
     };
   }, [address]);
 
-  const fid = resolveUserFid({ fid: profile?.fid, address });
+  const privyFarcaster = user?.farcaster ?? null;
+  const privyFid =
+    typeof privyFarcaster?.fid === "number"
+      ? privyFarcaster.fid
+      : typeof privyFarcaster?.fid === "string"
+        ? Number(privyFarcaster.fid)
+        : null;
+
+  const fid = resolveUserFid({ fid: profile?.fid ?? privyFid ?? undefined, address });
   const userKey = buildUserKey({ fid, address });
-  const username = profile?.username ?? null;
+  const username =
+    profile?.username ??
+    (typeof privyFarcaster?.username === "string" ? privyFarcaster.username : null) ??
+    null;
   const displayName =
-    profile?.display_name ?? username ?? (address ? shortAddress(address) : null);
-  const pfp = profile?.pfp_url ?? null;
+    profile?.display_name ??
+    (typeof privyFarcaster?.displayName === "string"
+      ? privyFarcaster.displayName
+      : typeof privyFarcaster?.display_name === "string"
+        ? privyFarcaster.display_name
+        : null) ??
+    username ??
+    (address ? shortAddress(address) : null);
+  const pfp =
+    profile?.pfp_url ??
+    (typeof privyFarcaster?.pfpUrl === "string"
+      ? privyFarcaster.pfpUrl
+      : typeof privyFarcaster?.pfp === "string"
+        ? privyFarcaster.pfp
+        : null) ??
+    null;
 
   return {
     address,

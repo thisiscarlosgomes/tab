@@ -192,11 +192,7 @@ export async function POST(req: NextRequest) {
 
   // recipient must never be invited
   if (
-    normalizedInvited.some(
-      (u: any) =>
-        normalizeAddress(u.address) ===
-        normalizeAddress(normalizedRecipient.address)
-    )
+    normalizedInvited.some((u: any) => isSameUser(u, normalizedRecipient))
   ) {
     return Response.json(
       { error: "Recipient cannot be invited (recipient never owes)" },
@@ -293,6 +289,7 @@ export async function PATCH(req: NextRequest) {
 
   const isReceiptOpen = existing.splitType === "receipt_open";
   const updateOps: any = {};
+  const arrayFilters: Record<string, unknown>[] = [];
 
   /* -------- JOIN -------- */
   if (normalizedParticipant?.address) {
@@ -346,6 +343,25 @@ export async function PATCH(req: NextRequest) {
     const invitedEntry = existing.invited.find(
       (invited: any) => isSameUser(invited, normalizedParticipant)
     );
+
+    // Reconcile FID-first invites to the user's current Tab wallet once identity is proven.
+    if (invitedEntry && normalizedParticipant.address) {
+      const invitedFid = normalizeFid(invitedEntry.fid);
+      const participantFid = normalizeFid(normalizedParticipant.fid);
+      const invitedAddress = normalizeAddress(invitedEntry.address);
+      if (
+        invitedFid &&
+        participantFid &&
+        invitedFid === participantFid &&
+        invitedAddress !== normalizedParticipant.address
+      ) {
+        updateOps.$set = {
+          ...(updateOps.$set ?? {}),
+          "invited.$[inviteJoin].address": normalizedParticipant.address,
+        };
+        arrayFilters.push({ "inviteJoin.fid": invitedFid });
+      }
+    }
 
     if (!alreadyParticipant) {
       updateOps.$addToSet = {
@@ -402,6 +418,23 @@ export async function PATCH(req: NextRequest) {
       (paid: any) => isSameUser(paid, normalizedPayment)
     );
     if (!alreadyPaid) {
+      // Keep invited entries aligned with the payer's current Tab wallet for future address lookups.
+      const invitedFid = normalizeFid(invitedEntry.fid);
+      const paymentFid = normalizeFid(normalizedPayment.fid);
+      const invitedAddress = normalizeAddress(invitedEntry.address);
+      if (
+        invitedFid &&
+        paymentFid &&
+        invitedFid === paymentFid &&
+        invitedAddress !== normalizedPayment.address
+      ) {
+        updateOps.$set = {
+          ...(updateOps.$set ?? {}),
+          "invited.$[invitePay].address": normalizedPayment.address,
+        };
+        arrayFilters.push({ "invitePay.fid": invitedFid });
+      }
+
       updateOps.$addToSet = {
         ...(updateOps.$addToSet ?? {}),
         paid: {
@@ -457,7 +490,11 @@ export async function PATCH(req: NextRequest) {
     return Response.json({ error: "Nothing to update" }, { status: 400 });
   }
 
-  await collection.updateOne({ splitId }, updateOps);
+  await collection.updateOne(
+    { splitId },
+    updateOps,
+    arrayFilters.length ? ({ arrayFilters } as any) : undefined
+  );
   const updated = await collection.findOne({ splitId });
 
   return Response.json(updated);
