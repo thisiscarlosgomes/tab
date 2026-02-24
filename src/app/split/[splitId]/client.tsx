@@ -883,7 +883,7 @@ const paidCount = bill?.paid?.length ?? 0;
         setIsOpen={(open) => {
           if (!open) setPaymentSuccess(null);
         }}
-        name="That’s settled"
+        name="Done"
         description={
           paymentSuccess
             ? `${paymentSuccess.amount} ${paymentSuccess.token}`

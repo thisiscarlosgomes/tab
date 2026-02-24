@@ -29,6 +29,7 @@ interface ActivityItem {
   type: string;
   amount?: number;
   token?: string;
+  txHash?: string;
   description?: string;
   note?: string | null;
   splitId?: string;
@@ -350,6 +351,15 @@ export default function ActivityPage() {
                         key={key}
                         className="p-3 border border-white/10 rounded-lg hover:bg-white/5 cursor-pointer flex justify-between"
                         onClick={() => {
+                          const isTransferOnlyRow =
+                            (item.type === "bill_paid" || item.type === "bill_received") &&
+                            !item.splitId &&
+                            !!item.txHash;
+                          if (isTransferOnlyRow && item.txHash) {
+                            router.push(`/activity/tx/${item.txHash}`);
+                            return;
+                          }
+
                           if (item.roomId) {
                             router.push(`/game/${item.roomId}`);
                             return;

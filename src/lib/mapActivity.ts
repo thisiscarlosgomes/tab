@@ -11,6 +11,7 @@ type ActivityRecord = {
   rewarded?: boolean;
   rewardAmount?: number;
   summary?: string;
+  txHash?: string;
   recipient?: string;
   recipientUsername?: string;
   recipientResolutionSource?: "address" | "ens" | "tab" | "farcaster" | null;
@@ -62,6 +63,7 @@ export function mapActivity(a: ActivityRecord) {
         amount: a.amount,
         token: a.token,
         recipient: a.recipient ?? a.counterparty?.address ?? undefined,
+        txHash: a.txHash,
         recipientUsername: a.recipientUsername,
         recipientResolutionSource: a.recipientResolutionSource ?? null,
         note: a.note ?? null,
@@ -92,6 +94,7 @@ export function mapActivity(a: ActivityRecord) {
         splitId: a.refType === "bill" ? a.refId : undefined,
         amount: a.amount,
         token: a.token,
+        txHash: a.txHash,
         note: a.note ?? null,
         counterparty: a.counterparty?.name ?? null,
         counterpartyAddress: a.counterparty?.address ?? null,

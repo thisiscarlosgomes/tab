@@ -143,6 +143,7 @@ export function GlobalSendDrawer() {
   const [resolvedRecipientAddress, setResolvedRecipientAddress] = useState<
     `0x${string}` | null
   >(null);
+  const [isRecipientResolving, setIsRecipientResolving] = useState(false);
   const [recipientResolutionSource, setRecipientResolutionSource] =
     useState<RecipientResolutionSource>("farcaster");
 
@@ -223,6 +224,7 @@ export function GlobalSendDrawer() {
   useEffect(() => {
     if (!selectedUser) {
       setResolvedRecipientAddress(null);
+      setIsRecipientResolving(false);
       setRecipientResolutionSource("farcaster");
       return;
     }
@@ -234,6 +236,10 @@ export function GlobalSendDrawer() {
         | undefined) ?? null;
 
     const resolvePreferredRecipient = async () => {
+      if (!cancelled) {
+        setIsRecipientResolving(true);
+        setResolvedRecipientAddress(null);
+      }
       try {
         const qs = new URLSearchParams();
         if (selectedUser.username) qs.set("username", selectedUser.username);
@@ -247,6 +253,7 @@ export function GlobalSendDrawer() {
           setRecipientResolutionSource(
             (data.resolved.source as RecipientResolutionSource) ?? "farcaster"
           );
+          setIsRecipientResolving(false);
           return;
         }
       } catch {
@@ -256,6 +263,7 @@ export function GlobalSendDrawer() {
       if (!cancelled) {
         setResolvedRecipientAddress(fallbackAddress);
         setRecipientResolutionSource("farcaster");
+        setIsRecipientResolving(false);
       }
     };
 
@@ -620,18 +628,20 @@ export function GlobalSendDrawer() {
 
   const isDisabled =
     sendStatus !== "idle" ||
+    isRecipientResolving ||
     !amount ||
     isNaN(amountNumber) ||
     amountNumber <= 0 ||
     !selectedToken ||
     amountNumber > balance ||
     !(resolvedRecipientAddress ?? selectedUser?.verified_addresses?.primary?.eth_address);
-  const displayedRecipientAddress =
-    resolvedRecipientAddress ??
-    (selectedUser?.verified_addresses?.primary?.eth_address as
-      | `0x${string}`
-      | undefined) ??
-    null;
+  const displayedRecipientAddress = isRecipientResolving
+    ? null
+    : resolvedRecipientAddress ??
+      (selectedUser?.verified_addresses?.primary?.eth_address as
+        | `0x${string}`
+        | undefined) ??
+      null;
 
   return (
     <>
@@ -842,7 +852,11 @@ export function GlobalSendDrawer() {
                       </ResponsiveDialogTitle>
 
                       <p className="text-white/30 text-sm break-all text-center">
-                        {displayedRecipientAddress ? (
+                        {isRecipientResolving ? (
+                          <span className="text-white/40 text-sm">
+                            Resolving wallet...
+                          </span>
+                        ) : displayedRecipientAddress ? (
                           shortAddress(displayedRecipientAddress)
                         ) : (
                           <span className="text-red-400 text-sm">
@@ -1058,8 +1072,8 @@ export function GlobalSendDrawer() {
         name="Payment Sent"
         description={
           successAmount && successToken
-            ? `You paid ${successAmount} ${successToken}${
-                lastMessage ? ` — ${lastMessage}` : ""
+            ? `You sent ${successAmount} ${successToken}${
+                lastMessage ? `` : ""
               }`
             : undefined
         }

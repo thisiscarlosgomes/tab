@@ -3,7 +3,7 @@
 import { useEffect, useState, useCallback } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useIdentityToken, usePrivy, useToken } from "@privy-io/react-auth";
+import { useIdentityToken, useToken } from "@privy-io/react-auth";
 import { useTabIdentity } from "@/lib/useTabIdentity";
 import { UserAvatar } from "@/components/ui/user-avatar";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -77,10 +77,8 @@ export default function ProfilePage() {
   } = useTabIdentity();
   const { identityToken } = useIdentityToken();
   const { getAccessToken } = useToken();
-  const { logout, ready, authenticated } = usePrivy();
   const router = useRouter();
   const [activeTab, setActiveTab] = useState<ProfileTab>("splits");
-  const [loggingOut, setLoggingOut] = useState(false);
 
   const [userRooms, setUserRooms] = useState<Room[]>([]);
   const [roomsLoaded, setRoomsLoaded] = useState(false);
@@ -99,22 +97,6 @@ export default function ProfilePage() {
       maximumFractionDigits: value >= 10000 ? 0 : 1,
     }).format(value);
   };
-
-  const handleLogout = useCallback(async () => {
-    if (loggingOut) return;
-    setLoggingOut(true);
-    try {
-      if (ready && authenticated) {
-        await logout();
-      }
-      router.replace("/");
-      router.refresh();
-    } catch (error) {
-      console.error("Profile logout failed", error);
-    } finally {
-      setLoggingOut(false);
-    }
-  }, [authenticated, loggingOut, logout, ready, router]);
 
   useEffect(() => {
     let cancelled = false;
@@ -567,7 +549,7 @@ export default function ProfilePage() {
       <div className="pt-3 pb-5">
         <div className="flex items-start justify-between gap-4">
           <div className="min-w-0 flex-1">
-            <h1 className="text-2xl sm:text-3xl font-semibold tracking-tight text-white truncate">
+            <h1 className="text-xl sm:text-2xl font-semibold tracking-tight text-white truncate">
               {effectiveName}
             </h1>
             {!effectiveUsername && (
@@ -575,23 +557,27 @@ export default function ProfilePage() {
                 No Farcaster handle
               </div>
             )}
-            <div className="mt-2 text-white/35 text-sm truncate">
+            <div className="mt-2 text-white/35 text-base truncate">
               {shortAddress(address)}
             </div>
-            {/* {joinedLabel ? (
-              <p className="mt-1 text-sm text-white/35 truncate">{joinedLabel}</p>
-            ) : null} */}
+            {joinedLabel ? (
+              <p className="hidden text-xs text-white/35 truncate">{joinedLabel}</p>
+            ) : null}
           </div>
 
-          <div className="shrink-0">
+          <Link
+            href="/settings"
+            aria-label="Open settings"
+            className="shrink-0 rounded-full border border-transparent hover:border-white/10 transition"
+          >
             <UserAvatar
               src={effectivePfp}
               seed={effectiveName}
               alt={effectiveName}
               width={80}
-              className="w-20 h-20 rounded-full object-cover border border-white/10 bg-white/5"
+              className="w-16 h-16 rounded-full object-cover border border-white/10 bg-white/5"
             />
-          </div>
+          </Link>
         </div>
 
         <div className="mt-4 space-y-3">
@@ -628,15 +614,6 @@ export default function ProfilePage() {
               ) : null}
             </div>
           )}
-
-          <button
-            type="button"
-            onClick={() => void handleLogout()}
-            disabled={loggingOut}
-            className="inline-flex items-center rounded-lg border border-white/15 bg-white/5 px-3 py-1.5 text-sm text-white/80 hover:bg-white/10 disabled:opacity-60 disabled:cursor-not-allowed"
-          >
-            {loggingOut ? "Logging out..." : "Log out"}
-          </button>
         </div>
       </div>
     );

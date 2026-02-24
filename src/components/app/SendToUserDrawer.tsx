@@ -62,6 +62,7 @@ export function SendToUserDrawer({
   const [resolvedRecipientAddress, setResolvedRecipientAddress] = useState<
     `0x${string}` | null
   >(null);
+  const [isRecipientResolving, setIsRecipientResolving] = useState(false);
   const [recipientResolutionSource, setRecipientResolutionSource] =
     useState<RecipientResolutionSource>("farcaster");
 
@@ -71,11 +72,15 @@ export function SendToUserDrawer({
   const parsedAmount = parseFloat(amount);
   const isInsufficient = parsedAmount > balance;
   const hasRecipientAddress = Boolean(
-    resolvedRecipientAddress ?? user?.verified_addresses?.primary?.eth_address
+    (resolvedRecipientAddress ||
+      (!isRecipientResolving &&
+        user?.verified_addresses?.primary?.eth_address)) ??
+      null
   );
 
   const isDisabled =
     sending ||
+    isRecipientResolving ||
     isNaN(parsedAmount) ||
     parsedAmount <= 0 ||
     isInsufficient ||
@@ -93,6 +98,7 @@ export function SendToUserDrawer({
       setLastTxHash(null);
       setLastRecipientUsername(null);
       setResolvedRecipientAddress(null);
+      setIsRecipientResolving(false);
       setRecipientResolutionSource("farcaster");
     }
   }, [isOpen]);
@@ -130,6 +136,10 @@ export function SendToUserDrawer({
       null;
 
     const resolvePreferredRecipient = async () => {
+      if (!cancelled) {
+        setIsRecipientResolving(true);
+        setResolvedRecipientAddress(null);
+      }
       try {
         const qs = new URLSearchParams();
         if (user.username) qs.set("username", user.username);
@@ -143,6 +153,7 @@ export function SendToUserDrawer({
           setRecipientResolutionSource(
             (data.resolved.source as RecipientResolutionSource) ?? "farcaster"
           );
+          setIsRecipientResolving(false);
           return;
         }
       } catch {
@@ -152,6 +163,7 @@ export function SendToUserDrawer({
       if (!cancelled) {
         setResolvedRecipientAddress(fallbackAddress);
         setRecipientResolutionSource("farcaster");
+        setIsRecipientResolving(false);
       }
     };
 
@@ -266,9 +278,13 @@ export function SendToUserDrawer({
 
   const selectedTokenMeta = tokenList.find((t) => t.name === selectedToken);
   const displayRecipientAddress =
-    resolvedRecipientAddress ??
-    (user.verified_addresses?.primary?.eth_address as `0x${string}` | undefined) ??
-    null;
+    isRecipientResolving
+      ? null
+      : resolvedRecipientAddress ??
+        (user.verified_addresses?.primary?.eth_address as
+          | `0x${string}`
+          | undefined) ??
+        null;
 
   return (
     <>
@@ -308,9 +324,13 @@ export function SendToUserDrawer({
                   <span className="text-primary">@{user.username}</span>
                 </span>
                 <p className="text-white/30 text-sm break-all text-center">
-                  {displayRecipientAddress
-                    ? shortAddress(displayRecipientAddress)
-                    : "No address"}
+                  {isRecipientResolving ? (
+                    <span className="text-white/40">Resolving wallet...</span>
+                  ) : displayRecipientAddress ? (
+                    shortAddress(displayRecipientAddress)
+                  ) : (
+                    "No address"
+                  )}
                 </p>
               </div>
             </Drawer.Title>

@@ -32,6 +32,7 @@ const PAGE_TITLES: Record<string, string> = {
   "/": "",
   "/activity": "",
   "/wallet": "",
+  "/settings": "Settings",
   "/split/new": "",
 };
 

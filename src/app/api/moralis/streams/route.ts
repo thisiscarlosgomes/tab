@@ -487,7 +487,10 @@ export async function POST(req: NextRequest) {
           body: notification.body,
           url: `/activity`,
           tag: `token-receive-${txHash}-${logIndex}`,
-          dedupeBase: `erc20log:${expectedChainId}:${txHash}:${logIndex}:${to}`,
+          // Share the same dedupe namespace as erc20Transfers to prevent
+          // double-notifies when two Moralis streams emit the same transfer
+          // via different payload shapes (erc20Transfers vs custom logs).
+          dedupeBase: `erc20:${expectedChainId}:${txHash}:${logIndex}:${to}`,
           chainId: expectedChainId,
           txHash,
           kind: "erc20_received",

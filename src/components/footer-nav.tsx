@@ -3,7 +3,7 @@
 import { usePathname, useRouter } from "next/navigation";
 import clsx from "clsx";
 import { useEffect, useState, type Dispatch, type SetStateAction } from "react";
-import { Home, Bell, ScanLine, QrCode, CreditCard } from "lucide-react";
+import { Home, Bell, QrCode, CreditCard } from "lucide-react";
 import { usePrivy } from "@privy-io/react-auth";
 import { useScanDrawer } from "@/providers/ScanDrawerProvider";
 import Link from "next/link";
@@ -74,13 +74,15 @@ export function FooterNav({
       animate: animateHome,
       setAnimate: setAnimateHome,
     },
-    {
+    ...(isDesktopInline
+      ? [{
       action: "scan",
       label: "Scan",
-      icon: isDesktopInline ? QrCode : ScanLine,
+      icon: QrCode,
       animate: animateScan,
       setAnimate: setAnimateScan,
-    },
+    }]
+      : []),
     {
       href: "/activity",
       label: "Activity",
