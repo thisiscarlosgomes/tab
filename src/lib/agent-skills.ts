@@ -23,7 +23,7 @@ export const AGENT_SKILLS: AgentSkill[] = [
     name: "tab_create_split",
     description:
       "Create an invited Tab split with tagged Farcaster users and return a split confirmation URL.",
-    endpoint: "/api/agent/split/create",
+    endpoint: "https://usetab.app/api/agent/split/create",
     method: "POST",
     headers: ["x-agent-key", "Content-Type: application/json"],
     inputSchema: {
@@ -71,7 +71,7 @@ export const AGENT_SKILLS: AgentSkill[] = [
     name: "tab",
     description:
       "Send a payment from the user's delegated Privy wallet under Agent Access guardrails.",
-    endpoint: "/api/agent/send",
+    endpoint: "https://usetab.app/api/agent/send",
     method: "POST",
     headers: ["x-agent-key", "Content-Type: application/json"],
     inputSchema: {
@@ -129,7 +129,7 @@ export const AGENT_SKILLS: AgentSkill[] = [
     name: "tab_link_account",
     description:
       "Create a one-time claim link so a human can link your agent to their Tab account.",
-    endpoint: "/api/agent/link/start",
+    endpoint: "https://usetab.app/api/agent/link/start",
     method: "POST",
     headers: ["x-agent-key", "Content-Type: application/json"],
     inputSchema: {
@@ -160,7 +160,7 @@ export const AGENT_SKILLS: AgentSkill[] = [
     name: "tab_settle_split",
     description:
       "Pay the caller's share for a Tab split using their delegated Privy wallet under Agent Access guardrails (or auto-select the latest pending split).",
-    endpoint: "/api/agent/settle",
+    endpoint: "https://usetab.app/api/agent/settle",
     method: "POST",
     headers: ["x-agent-key", "Content-Type: application/json"],
     inputSchema: {

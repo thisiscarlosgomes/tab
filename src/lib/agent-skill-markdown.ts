@@ -12,7 +12,7 @@ Use plain, human language first. For payment and settlement actions:
 - Ask one concrete follow-up question when blocked (for example, "Can you send the split link or code?").
 
 Do not lead with:
-- Endpoint paths (for example \`/api/agent/settle\`)
+- Endpoint paths (for example \`https://usetab.app/api/agent/settle\`)
 - Internal identifiers (\`agentId\`, \`userId\`)
 - Raw HTTP status codes or stack-like diagnostics
 
@@ -33,12 +33,12 @@ When blocked, end with one clear next step (for example: ask for split link/code
 
 ## Endpoint
 
-- \`POST /api/agent/split/create\`
-- \`POST /api/agent/send\`
-- \`POST /api/agent/settle\`
-- \`POST /api/agent/link/start\`
-- \`GET /api/agent/link/claim/:token\`
-- \`POST /api/agent/link/claim/:token\`
+- \`POST https://usetab.app/api/agent/split/create\`
+- \`POST https://usetab.app/api/agent/send\`
+- \`POST https://usetab.app/api/agent/settle\`
+- \`POST https://usetab.app/api/agent/link/start\`
+- \`GET https://usetab.app/api/agent/link/claim/:token\`
+- \`POST https://usetab.app/api/agent/link/claim/:token\`
 
 ## Auth
 
@@ -92,7 +92,7 @@ Or provide one of \`splitId\`, \`splitCode\`, or \`splitUrl\` to target a specif
 1. Agent creates claim link:
 
 \`\`\`json
-POST /api/agent/link/start
+POST https://usetab.app/api/agent/link/start
 {
   "agentId": "YourAgentName",
   "agentName": "OpenClaw",
@@ -105,9 +105,9 @@ POST /api/agent/link/start
 
 ## Behavior
 
-- \`/api/agent/split/create\` creates an invited split and returns a confirmation payload with amount, currency, split URL, and tagged users.
+- \`https://usetab.app/api/agent/split/create\` creates an invited split and returns a confirmation payload with amount, currency, split URL, and tagged users.
 - Uses only the delegated wallet from active Agent Access policy.
-- \`/api/agent/settle\` accepts any one of \`splitId\`, \`splitCode\`, or \`splitUrl\` (including URLs with \`?code=...\`); if omitted, it settles the latest pending eligible split.
+- \`https://usetab.app/api/agent/settle\` accepts any one of \`splitId\`, \`splitCode\`, or \`splitUrl\` (including URLs with \`?code=...\`); if omitted, it settles the latest pending eligible split.
 - Enforces \`allowedToken\`, \`maxPerPayment\`, \`dailyCap\`, and expiry.
 - Resolves \`@username\` through Neynar and supports ENS names (for example \`.eth\`).
 - Rejects self-pay and duplicate \`requestId\`.
@@ -115,6 +115,6 @@ POST /api/agent/link/start
 
 ## Discovery
 
-- \`GET /api/agent/skills\` returns machine-readable skill metadata.
-- \`GET /api/agent/health\` returns server readiness flags.
+- \`GET https://usetab.app/api/agent/skills\` returns machine-readable skill metadata.
+- \`GET https://usetab.app/api/agent/health\` returns server readiness flags.
 `;
