@@ -3,6 +3,8 @@ import clientPromise from "@/lib/mongodb";
 import { mapActivity } from "@/lib/mapActivity";
 import { fetchMoralisTransferActivity } from "@/lib/moralis";
 
+export const dynamic = "force-dynamic";
+
 export async function GET(req: NextRequest) {
   const address = req.nextUrl.searchParams
     .get("address")

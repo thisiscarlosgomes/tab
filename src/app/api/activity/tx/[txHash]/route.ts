@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import clientPromise from "@/lib/mongodb";
 
+export const dynamic = "force-dynamic";
+
 function normalizeTxHash(value: string) {
   const txHash = value.trim().toLowerCase();
   return /^0x[a-f0-9]{64}$/.test(txHash) ? txHash : null;

@@ -3,6 +3,8 @@ import { NextRequest } from "next/server";
 import clientPromise from "@/lib/mongodb";
 import { getBearerToken, getPrivyServerClient } from "@/lib/privy-server";
 
+export const dynamic = "force-dynamic";
+
 type LinkedAccountLike = {
   type?: string;
   fid?: number | string;

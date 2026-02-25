@@ -24,7 +24,6 @@ import { getTokenPrices } from "@/lib/getTokenPrices";
 import { useTabIdentity } from "@/lib/useTabIdentity";
 import { PaymentTokenPickerDialog } from "@/components/app/PaymentTokenPickerDialog";
 import { FriendsPickerDialog } from "@/components/app/FriendsPickerDialog";
-import { FriendsPickerDialog } from "@/components/app/FriendsPickerDialog";
 
 type FarcasterUser = {
   fid: number;
