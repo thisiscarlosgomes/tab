@@ -6,6 +6,7 @@ import { useEffect, useMemo, useState } from "react";
 import type { CandlePoint, LivelinePoint } from "liveline";
 import { ChartCandlestick, ChartLine } from "lucide-react";
 import { ReceiveDrawerController } from "@/components/app/ReceiveDrawerController";
+import { useTabIdentity } from "@/lib/useTabIdentity";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
 
@@ -39,6 +40,17 @@ type TokenInsightsResponse = {
   }>;
 };
 
+type WalletPortfolioToken = {
+  tokenAddress?: string | null;
+  symbol?: string | null;
+  name?: string | null;
+  balance?: number | null;
+  balanceUSD?: number | null;
+  price?: number | null;
+  imgUrl?: string | null;
+  networkName?: string | null;
+};
+
 const WINDOW_OPTIONS = [
   { label: "1M", secs: 60, candleWidth: 5 },
   { label: "5M", secs: 300, candleWidth: 15 },
@@ -68,6 +80,22 @@ function num(value: string | null, fallback = 0) {
 function decodeParam(value: string | string[] | undefined) {
   if (Array.isArray(value)) return value[0] ?? "";
   return value ?? "";
+}
+
+function tokenSlugFromNameOrSymbol(value: string | null | undefined) {
+  return String(value ?? "")
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+}
+
+function titleFromSlug(slug: string) {
+  return slug
+    .split("-")
+    .filter(Boolean)
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(" ");
 }
 
 function normalizeTokenAddressForMoralis(value: string | null, symbol: string) {
@@ -169,17 +197,46 @@ function formatCompactUsd(value: number) {
 }
 
 export default function WalletTokenDetailsPage() {
+  const { address } = useTabIdentity();
   const params = useParams();
   const searchParams = useSearchParams();
   const tokenNameParam = decodeParam(params?.tokenName);
+  const [hydratedWalletToken, setHydratedWalletToken] = useState<WalletPortfolioToken | null>(
+    null
+  );
 
-  const symbol = searchParams.get("symbol") || tokenNameParam.replace(/-/g, " ").toUpperCase();
-  const name = searchParams.get("name") || symbol;
-  const tokenAddress = searchParams.get("tokenAddress") || null;
-  const imgUrl = searchParams.get("imgUrl") || null;
-  const balance = num(searchParams.get("balance"));
-  const balanceUSD = num(searchParams.get("balanceUSD"));
-  const priceFromQuery = num(searchParams.get("price"));
+  const querySymbol = searchParams.get("symbol");
+  const queryName = searchParams.get("name");
+  const queryTokenAddress = searchParams.get("tokenAddress");
+  const queryImgUrl = searchParams.get("imgUrl");
+  const queryBalance = num(searchParams.get("balance"));
+  const queryBalanceUSD = num(searchParams.get("balanceUSD"));
+  const queryPrice = num(searchParams.get("price"));
+
+  const symbol =
+    querySymbol ||
+    String(hydratedWalletToken?.symbol ?? "").trim() ||
+    tokenNameParam.replace(/-/g, " ").toUpperCase();
+  const name =
+    queryName ||
+    String(hydratedWalletToken?.name ?? "").trim() ||
+    titleFromSlug(tokenNameParam) ||
+    symbol;
+  const tokenAddress =
+    queryTokenAddress || (hydratedWalletToken?.tokenAddress ? String(hydratedWalletToken.tokenAddress) : null);
+  const imgUrl = queryImgUrl || (hydratedWalletToken?.imgUrl ? String(hydratedWalletToken.imgUrl) : null);
+  const balance =
+    Number.isFinite(queryBalance) && queryBalance > 0
+      ? queryBalance
+      : Number(hydratedWalletToken?.balance ?? 0);
+  const balanceUSD =
+    Number.isFinite(queryBalanceUSD) && queryBalanceUSD > 0
+      ? queryBalanceUSD
+      : Number(hydratedWalletToken?.balanceUSD ?? 0);
+  const priceFromQuery =
+    Number.isFinite(queryPrice) && queryPrice > 0
+      ? queryPrice
+      : Number(hydratedWalletToken?.price ?? 0);
   const marketCap = num(searchParams.get("marketCap"), Number.NaN);
   const volume = num(searchParams.get("volume"), Number.NaN);
 
@@ -212,6 +269,42 @@ export default function WalletTokenDetailsPage() {
     () => normalizeTokenAddressForMoralis(tokenAddress, symbol),
     [symbol, tokenAddress]
   );
+
+  useEffect(() => {
+    if (!address) return;
+    if (queryTokenAddress && querySymbol && queryName) return;
+
+    let cancelled = false;
+    const controller = new AbortController();
+    const slug = tokenSlugFromNameOrSymbol(tokenNameParam);
+
+    const hydrateFromWallet = async () => {
+      try {
+        const res = await fetch(`/api/moralis/portfolio?address=${address}`, {
+          cache: "no-store",
+          signal: controller.signal,
+        });
+        if (!res.ok) return;
+        const data = await res.json();
+        const tokens = Array.isArray(data?.tokens) ? (data.tokens as WalletPortfolioToken[]) : [];
+        const match =
+          tokens.find((t) => tokenSlugFromNameOrSymbol(t.symbol) === slug) ??
+          tokens.find((t) => tokenSlugFromNameOrSymbol(t.name) === slug);
+        if (!cancelled && match) {
+          setHydratedWalletToken(match);
+        }
+      } catch {
+        // best effort; page can still render from symbol fallback + Moralis insights
+      }
+    };
+
+    void hydrateFromWallet();
+
+    return () => {
+      cancelled = true;
+      controller.abort();
+    };
+  }, [address, queryName, querySymbol, queryTokenAddress, tokenNameParam]);
 
   useEffect(() => {
     setEffectiveCandleWidthSecs(selectedConfig.candleWidth);
@@ -547,8 +640,8 @@ export default function WalletTokenDetailsPage() {
               </div>
             )}
             <div className="min-w-0">
-              <p className="text-lg font-semibold text-white truncate">{name}</p>
-              <p className="text-sm text-white/50 truncate">{symbol}</p>
+              <p className="text-lg leading-tight font-semibold text-white truncate">{name}</p>
+              <p className="text-sm leading-tight text-white/50 truncate">{symbol}</p>
             </div>
           </div>
         </div>
@@ -640,14 +733,15 @@ export default function WalletTokenDetailsPage() {
                 lineData={chart.ticks}
                 lineValue={chart.value}
                 window={chartWindowSecs}
+                grid={false}
                 fill={false}
-                badge
+                badge={false}
                 badgeVariant="minimal"
                 pulse
                 scrub={!isTouchDevice}
                 exaggerate={lineMode}
                 formatValue={(v) => `$${formatUsd(v)}`}
-                padding={{ top: 26, right: 74, bottom: 34, left: 8 }}
+                padding={{ top: 26, right: 10, bottom: 34, left: 8 }}
               />
             )}
           </div>

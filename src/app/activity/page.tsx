@@ -2,7 +2,7 @@
 
 export const dynamic = "force-dynamic";
 
-import { useEffect, useState, useMemo } from "react";
+import { useEffect, useState, useMemo, useRef } from "react";
 import {
   differenceInMinutes,
   differenceInHours,
@@ -166,6 +166,12 @@ export default function ActivityPage() {
   const [pushLoading, setPushLoading] = useState(false);
   const [pushStatus, setPushStatus] = useState<string | null>(null);
   const [hidePushPrompt, setHidePushPrompt] = useState(false);
+  const touchStartRef = useRef<{ x: number; y: number } | null>(null);
+  const touchHandledRef = useRef(false);
+  const FILTER_ORDER = useMemo(
+    () => ["all", "payments", "agent", "other"] as const,
+    []
+  );
 
   const getRecipientSourceText = (item: ActivityItem) => {
     if (item.executionMode !== "service_agent") return "";
@@ -436,7 +442,42 @@ export default function ActivityPage() {
 
   /* ---------- RENDER ---------- */
   return (
-    <div className="min-h-screen p-4 pt-[calc(4rem+env(safe-area-inset-top))] pb-[calc(8rem+env(safe-area-inset-bottom))]">
+    <div
+      className="min-h-screen p-4 pt-[calc(4rem+env(safe-area-inset-top))] pb-[calc(8rem+env(safe-area-inset-bottom))]"
+      onTouchStart={(e) => {
+        const t = e.touches[0];
+        if (!t) return;
+        touchStartRef.current = { x: t.clientX, y: t.clientY };
+        touchHandledRef.current = false;
+      }}
+      onTouchMove={(e) => {
+        const start = touchStartRef.current;
+        const t = e.touches[0];
+        if (!start || !t || touchHandledRef.current) return;
+        const dx = t.clientX - start.x;
+        const dy = t.clientY - start.y;
+        if (Math.abs(dy) > Math.abs(dx) || Math.abs(dx) < 48) return;
+
+        const currentIdx = FILTER_ORDER.indexOf(tag);
+        if (currentIdx === -1) return;
+        const nextIdx =
+          dx < 0
+            ? Math.min(FILTER_ORDER.length - 1, currentIdx + 1)
+            : Math.max(0, currentIdx - 1);
+        if (nextIdx !== currentIdx) {
+          setTag(FILTER_ORDER[nextIdx]);
+          touchHandledRef.current = true;
+        }
+      }}
+      onTouchEnd={() => {
+        touchStartRef.current = null;
+        touchHandledRef.current = false;
+      }}
+      onTouchCancel={() => {
+        touchStartRef.current = null;
+        touchHandledRef.current = false;
+      }}
+    >
       <div className="max-w-md mx-auto">
         {/* TAG FILTERS */}
         <div className="flex gap-2 mb-4 mt-6">

@@ -76,6 +76,7 @@ const TRANSACTION_TYPES = new Set([
 ]);
 const WALLET_PORTFOLIO_CACHE_TTL_MS = 60 * 1000;
 const WALLET_TRANSACTIONS_CACHE_TTL_MS = 30 * 1000;
+const EARN_APY_CACHE_TTL_MS = 5 * 60 * 1000;
 const VAULT_ADDRESS = "0xc1256Ae5FF1cf2719D4937adb3bbCCab2E00A2Ca";
 const walletPortfolioCache = new Map<
   string,
@@ -85,6 +86,7 @@ const walletTransactionsCache = new Map<
   string,
   { transactions: ActivityItem[]; ts: number }
 >();
+let earnApyCache: { value: number; ts: number } | null = null;
 
 function getAgentAccessCacheKey(address: string) {
   return `tab:agent-access:${address.toLowerCase()}`;
@@ -126,6 +128,8 @@ export default function WalletPage() {
   const [shakeBalance, setShakeBalance] = useState(false);
   const [earnNetApy, setEarnNetApy] = useState<number | null>(null);
   const [showMorphoDrawer, setShowMorphoDrawer] = useState(false);
+  const walletSwipeTouchStartRef = useRef<{ x: number; y: number } | null>(null);
+  const walletSwipeHandledRef = useRef(false);
 
   const formatUsdNumber = (value: number) =>
     new Intl.NumberFormat("en-US", {
@@ -250,6 +254,11 @@ export default function WalletPage() {
   useEffect(() => {
     let cancelled = false;
 
+    const now = Date.now();
+    if (earnApyCache && now - earnApyCache.ts < EARN_APY_CACHE_TTL_MS) {
+      setEarnNetApy(earnApyCache.value);
+    }
+
     const fetchEarnApy = async () => {
       try {
         const res = await fetch("https://blue-api.morpho.org/graphql", {
@@ -275,6 +284,7 @@ export default function WalletPage() {
         const json = await res.json().catch(() => null);
         const apy = json?.data?.vaultByAddress?.state?.netApy;
         if (!cancelled && typeof apy === "number") {
+          earnApyCache = { value: apy, ts: Date.now() };
           setEarnNetApy(apy);
         }
       } catch {
@@ -282,7 +292,9 @@ export default function WalletPage() {
       }
     };
 
-    void fetchEarnApy();
+    if (!earnApyCache || now - earnApyCache.ts >= EARN_APY_CACHE_TTL_MS) {
+      void fetchEarnApy();
+    }
     return () => {
       cancelled = true;
     };
@@ -384,6 +396,24 @@ export default function WalletPage() {
       setTransactionsLoaded(true);
     }
   }, [address, transactionsLoaded]);
+
+  const handleWalletTabSwipe = useCallback(
+    (direction: "left" | "right") => {
+      const order: ProfileTab[] = ["tokens", "transactions"];
+      const currentIdx = order.indexOf(activeTab);
+      if (currentIdx === -1) return;
+      const nextIdx =
+        direction === "left"
+          ? Math.min(order.length - 1, currentIdx + 1)
+          : Math.max(0, currentIdx - 1);
+      if (nextIdx === currentIdx) return;
+      const nextTab = order[nextIdx];
+      setActiveTab(nextTab);
+      if (nextTab === "tokens") void fetchWallet();
+      if (nextTab === "transactions") void fetchTransactions();
+    },
+    [activeTab, fetchTransactions, fetchWallet]
+  );
 
   useEffect(() => {
     if (!address) return;
@@ -861,20 +891,7 @@ export default function WalletPage() {
                       </button>
                     ) : (
                       <Link
-                        href={{
-                          pathname: `/wallet/tokens/${tokenRouteSlug(token)}`,
-                          query: {
-                            symbol: token.symbol ?? "",
-                            name: token.name ?? "",
-                            tokenAddress: token.tokenAddress ?? "",
-                            balance: String(Number(token.balance ?? 0)),
-                            balanceUSD: String(safeBalanceUsd),
-                            portfolioPercent: String(safePortfolioPercent),
-                            price: String(Number(token.price ?? 0)),
-                            imgUrl: token.imgUrl ?? "",
-                            networkName: token.networkName ?? "",
-                          },
-                        }}
+                        href={`/wallet/tokens/${tokenRouteSlug(token)}`}
                         prefetch
                         className="block py-2 rounded-xl active:scale-[0.99] transition"
                       >
@@ -995,7 +1012,33 @@ export default function WalletPage() {
     <ReceiveDrawerController>
       {({ openReceiveDrawer }) => (
         <>
-          <div className="min-h-screen w-full flex flex-col items-center p-4 pt-[calc(4rem+env(safe-area-inset-top))] pb-[calc(10rem+env(safe-area-inset-bottom))] overflow-y-auto scrollbar-hide">
+          <div
+            className="min-h-screen w-full flex flex-col items-center p-4 pt-[calc(4rem+env(safe-area-inset-top))] pb-[calc(10rem+env(safe-area-inset-bottom))] overflow-y-auto scrollbar-hide"
+            onTouchStart={(e) => {
+              const t = e.touches[0];
+              if (!t) return;
+              walletSwipeTouchStartRef.current = { x: t.clientX, y: t.clientY };
+              walletSwipeHandledRef.current = false;
+            }}
+            onTouchMove={(e) => {
+              const start = walletSwipeTouchStartRef.current;
+              const t = e.touches[0];
+              if (!start || !t || walletSwipeHandledRef.current) return;
+              const dx = t.clientX - start.x;
+              const dy = t.clientY - start.y;
+              if (Math.abs(dy) > Math.abs(dx) || Math.abs(dx) < 48) return;
+              handleWalletTabSwipe(dx < 0 ? "left" : "right");
+              walletSwipeHandledRef.current = true;
+            }}
+            onTouchEnd={() => {
+              walletSwipeTouchStartRef.current = null;
+              walletSwipeHandledRef.current = false;
+            }}
+            onTouchCancel={() => {
+              walletSwipeTouchStartRef.current = null;
+              walletSwipeHandledRef.current = false;
+            }}
+          >
             <div className="w-full max-w-md">
               {(() => {
                 return (

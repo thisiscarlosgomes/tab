@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useMemo, useRef } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useIdentityToken, useToken } from "@privy-io/react-auth";
@@ -89,6 +89,9 @@ export default function ProfilePage() {
   const [agentAuthToken, setAgentAuthToken] = useState<string | null>(null);
   const [farcasterHero, setFarcasterHero] = useState<FarcasterHeroState | null>(null);
   const [farcasterHeroLoading, setFarcasterHeroLoading] = useState(false);
+  const touchStartRef = useRef<{ x: number; y: number } | null>(null);
+  const touchHandledRef = useRef(false);
+  const PROFILE_TABS = useMemo(() => ["splits", "spins"] as const, []);
 
   const formatCompactNumber = (value: number | null | undefined) => {
     if (typeof value !== "number" || !Number.isFinite(value)) return null;
@@ -844,7 +847,44 @@ export default function ProfilePage() {
   };
 
   return (
-    <div className="min-h-screen w-full flex flex-col items-center p-4 pt-[calc(4rem+env(safe-area-inset-top))] pb-[calc(10rem+env(safe-area-inset-bottom))] overflow-y-auto scrollbar-hide">
+    <div
+      className="min-h-screen w-full flex flex-col items-center p-4 pt-[calc(4rem+env(safe-area-inset-top))] pb-[calc(10rem+env(safe-area-inset-bottom))] overflow-y-auto scrollbar-hide"
+      onTouchStart={(e) => {
+        const t = e.touches[0];
+        if (!t) return;
+        touchStartRef.current = { x: t.clientX, y: t.clientY };
+        touchHandledRef.current = false;
+      }}
+      onTouchMove={(e) => {
+        const start = touchStartRef.current;
+        const t = e.touches[0];
+        if (!start || !t || touchHandledRef.current) return;
+        const dx = t.clientX - start.x;
+        const dy = t.clientY - start.y;
+        if (Math.abs(dy) > Math.abs(dx) || Math.abs(dx) < 48) return;
+
+        const currentIdx = PROFILE_TABS.indexOf(activeTab);
+        if (currentIdx === -1) return;
+        const nextIdx =
+          dx < 0
+            ? Math.min(PROFILE_TABS.length - 1, currentIdx + 1)
+            : Math.max(0, currentIdx - 1);
+        if (nextIdx === currentIdx) return;
+        const nextTab = PROFILE_TABS[nextIdx];
+        setActiveTab(nextTab);
+        if (nextTab === "splits") void fetchUserBills();
+        if (nextTab === "spins") void fetchUserRooms();
+        touchHandledRef.current = true;
+      }}
+      onTouchEnd={() => {
+        touchStartRef.current = null;
+        touchHandledRef.current = false;
+      }}
+      onTouchCancel={() => {
+        touchStartRef.current = null;
+        touchHandledRef.current = false;
+      }}
+    >
       <div className="w-full max-w-md">
         <div className="mb-2 mt-4">{renderProfileHero()}</div>
 
