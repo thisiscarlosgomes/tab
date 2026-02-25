@@ -6,6 +6,7 @@ import { useAccount, useConnect } from "wagmi";
 import sdk from "@farcaster/frame-sdk";
 import { QRCode } from "react-qrcode-logo";
 import NumberFlow from "@number-flow/react";
+import { parseUnits } from "viem";
 import {
   differenceInMinutes,
   differenceInHours,
@@ -18,7 +19,7 @@ import { Card } from "@/components/ui/card";
 import { SplitPayButton } from "@/components/app/splitPayButton";
 import { PaymentSuccessDrawer } from "@/components/app/PaymentSuccessDrawer";
 import Tilt from "react-parallax-tilt";
-import { Loader, ReceiptText, Settings, Share, QrCode } from "lucide-react";
+import { Copy, Loader, ReceiptText, Settings, QrCode } from "lucide-react";
 import { tokenList } from "@/lib/tokens";
 import { getTokenPrices } from "@/lib/getTokenPrices";
 import { useFrameSplash } from "@/providers/FrameSplashProvider";
@@ -217,6 +218,36 @@ export default function SplitPage() {
   const myAmount = myInvitedEntry?.amount ?? perPersonAmount;
 
   const eachShare = formatTokenAmount(perPersonAmount, token);
+  const splitPaymentQrValue = (() => {
+    const recipientAddress = bill?.recipient?.address;
+    if (!recipientAddress) return "";
+    const qrAmount = Number.isFinite(myAmount) && myAmount > 0 ? myAmount : null;
+
+    try {
+      if (token === "ETH" || token === "WETH") {
+        const amountValue =
+          qrAmount != null ? parseUnits(String(qrAmount), 18).toString() : null;
+        return amountValue
+          ? `ethereum:${recipientAddress}@8453?value=${amountValue}`
+          : `ethereum:${recipientAddress}@8453`;
+      }
+
+      const erc20Address = tokenInfo?.address;
+      const decimals = tokenInfo?.decimals ?? 18;
+      if (!erc20Address) {
+        return `ethereum:${recipientAddress}@8453`;
+      }
+
+      const amountValue =
+        qrAmount != null ? parseUnits(String(qrAmount), decimals).toString() : null;
+
+      return amountValue
+        ? `ethereum:${erc20Address}@8453/transfer?address=${recipientAddress}&uint256=${amountValue}`
+        : `ethereum:${erc20Address}@8453/transfer?address=${recipientAddress}`;
+    } catch {
+      return `ethereum:${recipientAddress}@8453`;
+    }
+  })();
 
   // const isPaid = paidList.some(
   //   (p) =>
@@ -411,15 +442,10 @@ const paidCount = bill?.paid?.length ?? 0;
     setIsJoining(false);
   };
 
-  const handleShare = async () => {
+  const handleCopyLink = async () => {
     const url = `https://usetab.app/split/${bill?.splitId}`;
 
     try {
-      if (navigator.share) {
-        await navigator.share({ url });
-        return;
-      }
-
       if (navigator.clipboard?.writeText) {
         await navigator.clipboard.writeText(url);
         toast.success("Link copied");
@@ -569,12 +595,12 @@ const paidCount = bill?.paid?.length ?? 0;
               {/* CREATOR ACTIONS */}
               {/* ACTIONS */}
               <div className="flex flex-row space-x-2 mt-3">
-                {/* Share – everyone */}
+                {/* Copy link – everyone */}
                 <Button
-                  onClick={handleShare}
+                  onClick={handleCopyLink}
                   className="w-full bg-secondary text-white"
                 >
-                  <Share className="w-12 h-12" />
+                  <Copy className="w-12 h-12" />
                 </Button>
 
                 {/* QR – everyone */}
@@ -770,7 +796,7 @@ const paidCount = bill?.paid?.length ?? 0;
           <Button
             onClick={notifyUnpaid}
             disabled={unpaidList.length === 0}
-            className="w-full bg-white text-black mt-4"
+            className="w-full bg-white/5 text-white mt-4"
           >
             Send Reminder
           </Button>
@@ -793,6 +819,7 @@ const paidCount = bill?.paid?.length ?? 0;
                 bill?.invitedOnly ? "bg-primary" : "bg-white/20"
               }`}
             >
+              
               <span
                 className={`absolute h-[20px] w-[20px] rounded-full bg-white transition-transform ${
                   bill?.invitedOnly
@@ -805,7 +832,7 @@ const paidCount = bill?.paid?.length ?? 0;
 
           {/* DELETE SPLIT */}
           <Button
-            className="w-full bg-red-500 text-white mt-6"
+            className="w-full bg-red-500 text-white mt-2"
             onClick={async () => {
               if (!address) return;
 
@@ -833,52 +860,47 @@ const paidCount = bill?.paid?.length ?? 0;
         </ResponsiveDialogContent>
       </ResponsiveDialog>
 
-      {/* QR DRAWER */}
-      <Drawer.Root open={showQrDrawer} onOpenChange={setShowQrDrawer}>
-        <Drawer.Portal>
-          <Drawer.Overlay className="fixed inset-0 bg-black/50 backdrop-blur-sm" />
-          <Drawer.Content className="bg-background rounded-t-3xl p-6 fixed bottom-0 w-full z-40">
-            <div className="mx-auto w-12 h-1.5 rounded-full bg-white/10 mb-4" />
+      {/* QR DIALOG / SHEET */}
+      <ResponsiveDialog open={showQrDrawer} onOpenChange={setShowQrDrawer}>
+        <ResponsiveDialogContent className="p-6 md:max-w-md">
+          <ResponsiveDialogTitle className="text-center text-lg">
+            Scan to pay your share
+          </ResponsiveDialogTitle>
 
-            <p className="text-center text-lg">Scan to pay your share</p>
+          {bill && canPay ? (
+            <div className="flex flex-col items-center space-y-3 mt-4 mb-2">
+              <Tilt
+                glareEnable
+                glareMaxOpacity={0.2}
+                glareColor="#ffffff"
+                glarePosition="all"
+                scale={1.02}
+                className="p-2 bg-white rounded-xl"
+              >
+                <QRCode
+                  value={splitPaymentQrValue}
+                  size={200}
+                  logoImage="/newnewapp.png"
+                  logoWidth={48}
+                  logoHeight={48}
+                  removeQrCodeBehindLogo
+                />
+              </Tilt>
 
-            {bill && canPay && (
-              <div className="flex flex-col items-center space-y-3 mt-4 mb-6">
-                <Tilt
-                  glareEnable
-                  glareMaxOpacity={0.2}
-                  glareColor="#ffffff"
-                  glarePosition="all"
-                  scale={1.02}
-                  className="p-2 bg-white rounded-xl"
-                >
-                  <QRCode
-                    value={`https://usetab.app/join-split?splitId=${bill.splitId}&payTo=${bill.recipient.address}&amount=${eachShare}&token=${bill.token}`}
-                    size={200}
-                    logoImage="/newnewnewapp.png"
-                    logoWidth={48}
-                    logoHeight={48}
-                    removeQrCodeBehindLogo
-                  />
-                </Tilt>
-
-                <p className="text-white/50 text-sm">
-                  Scan with Tab mini app to pay.
-                </p>
-
-                {!canPay && (
-                  <div className="text-center py-10 text-white/60">
-                    <p className="text-lg font-medium">Payment unavailable</p>
-                    <p className="text-sm mt-1">
-                      You’re not eligible to pay for this split.
-                    </p>
-                  </div>
-                )}
-              </div>
-            )}
-          </Drawer.Content>
-        </Drawer.Portal>
-      </Drawer.Root>
+              <p className="text-white/50 text-sm">
+                Scan to open a payment request in your wallet.
+              </p>
+            </div>
+          ) : (
+            <div className="text-center py-10 text-white/60">
+              <p className="text-lg font-medium">Payment unavailable</p>
+              <p className="text-sm mt-1">
+                You’re not eligible to pay for this split.
+              </p>
+            </div>
+          )}
+        </ResponsiveDialogContent>
+      </ResponsiveDialog>
 
       <PaymentSuccessDrawer
         isOpen={!!paymentSuccess}

@@ -9,7 +9,7 @@ import { nanoid } from "nanoid";
 import { Drawer } from "vaul";
 import NumberFlow from "@number-flow/react";
 import { NumericFormat } from "react-number-format";
-import { Check, ClipboardCopy } from "lucide-react";
+import { ClipboardCopy } from "lucide-react";
 
 import { LoaderCircle } from "lucide-react";
 
@@ -23,6 +23,8 @@ import { tokenList } from "@/lib/tokens";
 import { getTokenPrices } from "@/lib/getTokenPrices";
 import { useTabIdentity } from "@/lib/useTabIdentity";
 import { PaymentTokenPickerDialog } from "@/components/app/PaymentTokenPickerDialog";
+import { FriendsPickerDialog } from "@/components/app/FriendsPickerDialog";
+import { FriendsPickerDialog } from "@/components/app/FriendsPickerDialog";
 
 type FarcasterUser = {
   fid: number;
@@ -875,164 +877,29 @@ export default function SplitNewPage() {
         onSelect={setTokenType}
       />
 
-      <Drawer.Root
+      <FriendsPickerDialog
         open={followerDrawerOpen}
         onOpenChange={setFollowerDrawerOpen}
-        repositionInputs={false}
-      >
-        <Drawer.Portal>
-          <Drawer.Overlay className="fixed inset-0 bg-[#4E4C52]/60 backdrop-blur-sm z-20" />
-
-          <Drawer.Content className="fixed top-[100px] left-0 right-0 bottom-0 bg-background p-0 rounded-t-3xl flex flex-col z-50 max-h-[calc(100dvh-100px)] overflow-hidden">
-            {/* Handle */}
-            <div className="mx-auto w-12 h-1.5 rounded-full bg-white/10 my-4 shrink-0" />
-
-            {/* Sticky header */}
-            <div className="px-4 sticky top-0 bg-background z-10 shrink-0">
-              <Drawer.Title className="text-lg text-center font-medium">
-                Choose friends
-              </Drawer.Title>
-
-              {/* <p className="text-center opacity-30 mb-4">
-                They’ll receive a notification to join
-              </p> */}
-
-              {/* Search Bar */}
-              <div className="relative w-full mb-4 mt-4 pt-2">
-                <input
-                  type="text"
-                  value={query}
-                  onChange={(e) => setQuery(e.target.value)}
-                  placeholder="Search by username"
-                  className="w-full p-3 pl-6 pr-16 rounded-lg bg-white/5 text-white placeholder-white/20"
-                />
-
-                {query ? (
-                  <button
-                    onClick={() => setQuery("")}
-                    className="font-medium absolute right-4 top-1/2 -translate-y-1/2 text-base mt-1 text-primary hover:text-white transition"
-                  >
-                    Clear
-                  </button>
-                ) : (
-                  <button
-                    onClick={async () => {
-                      const text = await navigator.clipboard.readText();
-                      setQuery(text);
-                    }}
-                    className="font-medium absolute right-4 top-1/2 -translate-y-1/2 text-base mt-1 text-primary hover:text-white transition"
-                  >
-                    Paste
-                  </button>
-                )}
-              </div>
-            </div>
-
-            {/* Selected chips */}
-            {selectedFollowers.length > 0 && (
-              <div className="px-4 mb-2 shrink-0">
-                <div className="bg-white/5 py-4 px-6 rounded-lg">
-                  <div className="flex flex-wrap gap-3">
-                    {selectedFollowers.map((f) => (
-                      <div key={f.fid} className="relative w-12 h-[72px]">
-                        <img
-                          src={f.pfp_url}
-                          alt={f.username}
-                          className="w-12 h-12 rounded-full border-2 border-white/5 object-cover"
-                        />
-
-                        <button
-                          onClick={() =>
-                            setSelectedFollowers((prev) =>
-                              prev.filter((x) => x.fid !== f.fid)
-                            )
-                          }
-                          className="absolute -top-1 -right-1 bg-background text-white rounded-full w-5 h-5 flex items-center justify-center"
-                        >
-                          ×
-                        </button>
-
-                        <span className="block text-xs text-center mt-1 text-white truncate w-12">
-                          @{f.username}
-                        </span>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              </div>
-            )}
-
-            {/* Followers list */}
-            <div className="flex-1 min-h-0 overflow-y-auto px-4 pb-4 space-y-2 overscroll-contain">
-              {filteredFollowers.map((f) => {
-                const payableAddress = getUserEthAddress(f);
-                const isPayable = Boolean(payableAddress);
-                const isSelected = selectedFollowers.some(
-                  (x) => x.fid === f.fid
-                );
-
-                return (
-                  <button
-                    key={f.fid}
-                    disabled={!isPayable}
-                    onClick={() => {
-                      setSelectedFollowers((prev) =>
-                        isSelected
-                          ? prev.filter((x) => x.fid !== f.fid)
-                          : [...prev, f]
-                      );
-                    }}
-                    className={`w-full flex items-center justify-between p-3 rounded-lg ${isPayable
-                      ? "bg-white/5"
-                      : "bg-white/[0.03] opacity-60 cursor-not-allowed"
-                      }`}
-                  >
-                    <div className="flex items-center">
-                      <img
-                        src={
-                          f.pfp_url ||
-                          `https://api.dicebear.com/9.x/fun-emoji/svg?seed=${f.fid}`
-                        }
-                        className="w-8 h-8 rounded-full mr-4 object-cover"
-                        alt={f.username}
-                      />
-                      <div className="text-left">
-                        <div className="text-white">@{f.username}</div>
-                        {!isPayable && (
-                          <div className="text-xs text-white/40">
-                            No linked wallet
-                          </div>
-                        )}
-                      </div>
-                    </div>
-
-                    <div
-                      className={`w-5 h-5 rounded-full border-2 flex items-center justify-center ${isSelected && isPayable
-                        ? "border-primary bg-primary"
-                        : "border-white/10"
-                        }`}
-                    >
-                      {isSelected && isPayable && (
-                        <Check className="w-4 h-4 text-black" />
-                      )}
-                    </div>
-                  </button>
-                );
-              })}
-            </div>
-
-            {/* Bottom CTA */}
-            <div className="shrink-0 px-4 pb-6 pt-3 bg-background border-t border-white/5">
-              <Button
-                onClick={() => setFollowerDrawerOpen(false)}
-                className="w-full bg-primary"
-              >
-                Done
-              </Button>
-            </div>
-          </Drawer.Content>
-        </Drawer.Portal>
-      </Drawer.Root>
+        query={query}
+        onQueryChange={setQuery}
+        onPaste={async () => {
+          const text = await navigator.clipboard.readText();
+          setQuery(text);
+        }}
+        users={filteredFollowers}
+        selectedUsers={selectedFollowers}
+        onToggleUser={(f) => {
+          const isSelected = selectedFollowers.some((x) => x.fid === f.fid);
+          const isPayable = Boolean(getUserEthAddress(f));
+          if (!isPayable) return;
+          setSelectedFollowers((prev) =>
+            isSelected ? prev.filter((x) => x.fid !== f.fid) : [...prev, f]
+          );
+        }}
+        onDone={() => setFollowerDrawerOpen(false)}
+        isUserDisabled={(f) => !Boolean(getUserEthAddress(f))}
+        disabledLabel="No linked wallet"
+      />
 
       {/* Receipt Drawer */}
       <Drawer.Root

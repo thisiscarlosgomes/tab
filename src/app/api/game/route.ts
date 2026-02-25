@@ -6,6 +6,7 @@ import { encrypt } from "@/lib/encryption";
 import { writeActivity } from "@/lib/writeActivity";
 import { requireTrustedRequest } from "@/lib/security";
 import { getCanonicalUserProfileByFid } from "@/lib/user-profile";
+import { sendWebNotificationToUser } from "@/lib/user-notifications";
 
 /* =========================
    Helpers
@@ -54,6 +55,45 @@ async function resolvePreferredGamePlayer(player: any) {
   };
 }
 
+async function resolvePreferredInvitedPlayer(invited: any) {
+  const fallbackAddress = normalizeAddress(invited?.address);
+  const fid = normalizeFid(invited?.fid);
+  const name =
+    typeof invited?.name === "string" && invited.name.trim()
+      ? invited.name.trim()
+      : typeof invited?.username === "string" && invited.username.trim()
+        ? invited.username.trim()
+        : "friend";
+  const pfp =
+    typeof invited?.pfp === "string" && invited.pfp
+      ? invited.pfp
+      : typeof invited?.pfp_url === "string" && invited.pfp_url
+        ? invited.pfp_url
+        : null;
+
+  if (fid) {
+    const profile = await getCanonicalUserProfileByFid(fid).catch(() => null);
+    const tabAddress = normalizeAddress(profile?.primaryAddress);
+    return {
+      fid,
+      name,
+      pfp,
+      address: tabAddress ?? fallbackAddress,
+      payoutAddressSource: tabAddress ? "tab_wallet" : "farcaster_verified",
+      farcasterVerifiedAddress: fallbackAddress,
+    };
+  }
+
+  return {
+    fid: null,
+    name,
+    pfp,
+    address: fallbackAddress,
+    payoutAddressSource: "farcaster_verified",
+    farcasterVerifiedAddress: fallbackAddress,
+  };
+}
+
 /* =========================
    POST – Create room
 ========================= */
@@ -77,7 +117,7 @@ export async function POST(req: NextRequest) {
     return Response.json({ error: "Invalid JSON body" }, { status: 400 });
   }
 
-  const { name, player, amount, spinToken } = body;
+  const { name, player, amount, spinToken, invited } = body;
 
 
   if (!player?.address) {
@@ -121,6 +161,34 @@ export async function POST(req: NextRequest) {
   const games = db.collection("a-split-game");
 
   const createdAt = new Date();
+  const invitedInput = Array.isArray(invited) ? invited : [];
+  const invitedResolvedRaw = await Promise.all(
+    invitedInput.map((entry: any) => resolvePreferredInvitedPlayer(entry).catch(() => null))
+  );
+  const seenInviteKeys = new Set<string>();
+  const creatorAddressLower = address;
+  const creatorFid = normalizeFid(resolvedPlayer.fid);
+  const invitedResolved = invitedResolvedRaw
+    .filter((entry): entry is NonNullable<typeof entry> => Boolean(entry))
+    .filter((entry) => {
+      if (
+        creatorFid != null &&
+        entry.fid != null &&
+        Number(entry.fid) === Number(creatorFid)
+      ) {
+        return false;
+      }
+      if (
+        entry.address &&
+        entry.address.toLowerCase() === creatorAddressLower.toLowerCase()
+      ) {
+        return false;
+      }
+      const key = entry.fid != null ? `fid:${entry.fid}` : `addr:${entry.address ?? entry.name}`;
+      if (seenInviteKeys.has(key)) return false;
+      seenInviteKeys.add(key);
+      return true;
+    });
 
   /* ---------- create game ---------- */
   const game = {
@@ -129,6 +197,7 @@ export async function POST(req: NextRequest) {
 
   admin: address,
   participants: [resolvedPlayer],
+  invited: invitedResolved,
 
   recipient: encryptedRecipient,
   amount: typeof amount === "number" ? amount : 1,
@@ -164,6 +233,29 @@ export async function POST(req: NextRequest) {
   });
 
   console.log("🎉 Room created:", gameId);
+
+  if (invitedResolved.length > 0) {
+    void Promise.all(
+      invitedResolved.map(async (p) => {
+        try {
+          await sendWebNotificationToUser(
+            {
+              fid: p.fid ?? null,
+              address: p.address ?? null,
+            },
+            {
+              title: "Spin invite",
+              body: `@${resolvedPlayer.name} invited you to a spin tab`,
+              url: `https://usetab.app/game/${gameId}`,
+              tag: `spin-invite-${gameId}`,
+            }
+          );
+        } catch {
+          // best-effort
+        }
+      })
+    );
+  }
 
   return Response.json({ gameId });
 }

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useAccount } from "wagmi";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
@@ -9,13 +9,23 @@ import { NumericFormat } from "react-number-format";
 import { tokenList } from "@/lib/tokens";
 import { useTabIdentity } from "@/lib/useTabIdentity";
 import { PaymentTokenPickerDialog } from "@/components/app/PaymentTokenPickerDialog";
-import {
-  ResponsiveDialog,
-  ResponsiveDialogContent,
-  ResponsiveDialogTitle,
-} from "@/components/ui/responsive-dialog";
+import { FriendsPickerDialog } from "@/components/app/FriendsPickerDialog";
+import { ResponsiveDialog, ResponsiveDialogContent, ResponsiveDialogTitle } from "@/components/ui/responsive-dialog";
 
 import { LoaderCircle } from "lucide-react";
+
+type FarcasterUser = {
+  fid: number;
+  username: string;
+  display_name?: string;
+  pfp_url?: string;
+  verified_addresses?: {
+    primary?: {
+      eth_address?: string | null;
+    };
+    eth_addresses?: string[];
+  };
+};
 
 export default function SplitPage() {
   const { address, isConnected } = useAccount();
@@ -34,9 +44,21 @@ export default function SplitPage() {
   const [error, setError] = useState<string | null>(null);
   const [tokenDialogOpen, setTokenDialogOpen] = useState(false);
   const [showSpinCreateIntroDialog, setShowSpinCreateIntroDialog] = useState(false);
+  const [inviteDialogOpen, setInviteDialogOpen] = useState(false);
+  const [inviteQuery, setInviteQuery] = useState("");
+  const [followers, setFollowers] = useState<FarcasterUser[]>([]);
+  const [filteredFollowers, setFilteredFollowers] = useState<FarcasterUser[]>([]);
+  const [selectedInvites, setSelectedInvites] = useState<FarcasterUser[]>([]);
+  const [invitesLoading, setInvitesLoading] = useState(false);
+  const [inviteSearchLoading, setInviteSearchLoading] = useState(false);
 
   const selectedToken = tokenList.find((t) => t.name === tokenType);
   const [showHowItWorks, setShowHowItWorks] = useState(true);
+
+  const friendsCacheKey = useMemo(
+    () => (tabFid ? `fid:${tabFid}` : null) ?? tabUsername ?? address ?? null,
+    [tabFid, tabUsername, address]
+  );
 
   useEffect(() => {
     try {
@@ -46,6 +68,135 @@ export default function SplitPage() {
       setShowSpinCreateIntroDialog(true);
     }
   }, []);
+
+  useEffect(() => {
+    try {
+      if (!friendsCacheKey) return;
+      const cached = localStorage.getItem(`tab_friends_${friendsCacheKey}`);
+      if (!cached) return;
+      const parsed = JSON.parse(cached);
+      if (!Array.isArray(parsed)) return;
+      const next = parsed
+        .map((entry) => entry?.user ?? entry)
+        .filter((u) => u && typeof u.fid === "number") as FarcasterUser[];
+      setFollowers(next);
+      if (!inviteQuery.trim()) setFilteredFollowers(next);
+    } catch {
+      // ignore cache parse errors
+    }
+  }, [friendsCacheKey, inviteQuery]);
+
+  useEffect(() => {
+    let cancelled = false;
+    const q = inviteQuery.trim().toLowerCase().replace(/^@/, "");
+    if (!q) {
+      setInviteSearchLoading(false);
+      setFilteredFollowers(followers);
+      return;
+    }
+
+    setInviteSearchLoading(true);
+    const localMatches = followers.filter((u) => {
+      const username = (u.username ?? "").toLowerCase();
+      const displayName = (u.display_name ?? "").toLowerCase();
+      return username.includes(q) || displayName.includes(q);
+    });
+    // Show local/cached matches immediately so typing feels instant.
+    setFilteredFollowers(localMatches.slice(0, 50));
+    if (q.length < 2) {
+      setInviteSearchLoading(false);
+      return;
+    }
+
+    const timeout = setTimeout(async () => {
+      try {
+        const res = await fetch(`/api/neynar/user/search?q=${encodeURIComponent(inviteQuery)}`);
+        const data = await res.json().catch(() => null);
+        const remoteUsers = Array.isArray(data)
+          ? data
+          : Array.isArray(data?.users)
+            ? data.users
+            : [];
+        const seen = new Set<number>();
+        const merged = [...localMatches, ...remoteUsers]
+          .filter((u): u is FarcasterUser => Boolean(u && typeof u.fid === "number"))
+          .filter((u) => {
+            if (seen.has(u.fid)) return false;
+            seen.add(u.fid);
+            return true;
+          });
+        if (!cancelled) {
+          setFilteredFollowers(merged.slice(0, 50));
+        }
+      } catch {
+        // keep local matches
+        if (!cancelled) {
+          setFilteredFollowers(localMatches.slice(0, 50));
+        }
+      } finally {
+        if (!cancelled) {
+          setInviteSearchLoading(false);
+        }
+      }
+    }, 150);
+
+    return () => {
+      cancelled = true;
+      clearTimeout(timeout);
+      setInviteSearchLoading(false);
+    };
+  }, [inviteQuery, followers]);
+
+  useEffect(() => {
+    const loadFollowers = async () => {
+      if (!inviteDialogOpen && followers.length > 0) return;
+
+      let fid = tabFid ?? null;
+      let username = tabUsername ?? null;
+      let addr = address ?? null;
+
+      if (!fid && !username && !addr) {
+        try {
+          const context = await sdk.context;
+          fid = context?.user?.fid ?? null;
+          username = context?.user?.username ?? null;
+        } catch {
+          // ignore
+        }
+      }
+
+      const query = fid
+        ? `fid=${encodeURIComponent(String(fid))}`
+        : username
+          ? `username=${encodeURIComponent(username)}`
+          : addr
+            ? `address=${encodeURIComponent(addr)}`
+            : null;
+      if (!query) return;
+
+      setInvitesLoading(true);
+      try {
+        const res = await fetch(`/api/neynar/user/following?${query}`);
+        const data = await res.json().catch(() => []);
+        if (!Array.isArray(data)) return;
+        const next = data
+          .map((entry) => entry?.user ?? entry)
+          .filter((u) => u && typeof u.fid === "number")
+          .slice(0, 50) as FarcasterUser[];
+        setFollowers(next);
+        if (!inviteQuery.trim()) setFilteredFollowers(next);
+        if (friendsCacheKey && next.length > 0) {
+          localStorage.setItem(`tab_friends_${friendsCacheKey}`, JSON.stringify(next));
+        }
+      } catch {
+        // best-effort
+      } finally {
+        setInvitesLoading(false);
+      }
+    };
+
+    void loadFollowers();
+  }, [inviteDialogOpen, followers.length, tabFid, tabUsername, address, inviteQuery, friendsCacheKey]);
 
   const buildPlayer = async () => {
     let context: Awaited<typeof sdk.context> | null = null;
@@ -84,6 +235,18 @@ export default function SplitPage() {
           amount: Number(amount),
           spinToken: tokenType,
           player,
+          invited: selectedInvites.map((u) => ({
+            fid: u.fid,
+            username: u.username,
+            name: u.username,
+            pfp: u.pfp_url ?? null,
+            address:
+              u.verified_addresses?.primary?.eth_address ??
+              u.verified_addresses?.eth_addresses?.find(
+                (addr) => typeof addr === "string" && addr.startsWith("0x")
+              ) ??
+              null,
+          })),
         }),
       });
 
@@ -204,6 +367,56 @@ export default function SplitPage() {
             <span className="text-primary">Change</span>
           </button>
 
+          <div className="rounded-lg bg-white/5 p-4">
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <p className="text-white">
+                  Invite friends <span className="text-white/40">(optional)</span>
+                </p>
+                <p className="text-sm text-white/40">
+                  They&apos;ll show as invited until they join.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setInviteDialogOpen(true)}
+                className="shrink-0 text-primary"
+              >
+                {selectedInvites.length === 0 ? "Add" : "Edit"}
+              </button>
+            </div>
+
+            {selectedInvites.length > 0 && (
+              <div className="mt-3 flex flex-wrap gap-2">
+                {selectedInvites.map((u) => (
+                  <div
+                    key={u.fid}
+                    className="flex items-center gap-2 rounded-full bg-white/5 pl-1 pr-2 py-1"
+                  >
+                    <img
+                      src={
+                        u.pfp_url ||
+                        `https://api.dicebear.com/9.x/fun-emoji/svg?seed=${u.username}`
+                      }
+                      className="h-6 w-6 rounded-full object-cover"
+                      alt={u.username}
+                    />
+                    <span className="text-xs text-white">@{u.username}</span>
+                    <button
+                      type="button"
+                      className="text-white/50"
+                      onClick={() =>
+                        setSelectedInvites((prev) => prev.filter((x) => x.fid !== u.fid))
+                      }
+                    >
+                      ×
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
           {/* CTA */}
           <Button
             onClick={handleCreateRoom}
@@ -249,6 +462,31 @@ export default function SplitPage() {
         onOpenChange={setTokenDialogOpen}
         selectedToken={tokenType}
         onSelect={setTokenType}
+      />
+
+      <FriendsPickerDialog
+        open={inviteDialogOpen}
+        onOpenChange={setInviteDialogOpen}
+        query={inviteQuery}
+        onQueryChange={setInviteQuery}
+        onPaste={async () => {
+          try {
+            const text = await navigator.clipboard.readText();
+            setInviteQuery(text);
+          } catch {}
+        }}
+        users={filteredFollowers}
+        selectedUsers={selectedInvites}
+        onToggleUser={(u) =>
+          setSelectedInvites((prev) =>
+            prev.some((x) => x.fid === u.fid)
+              ? prev.filter((x) => x.fid !== u.fid)
+              : [...prev, u]
+          )
+        }
+        onDone={() => setInviteDialogOpen(false)}
+        loading={invitesLoading}
+        searching={inviteSearchLoading}
       />
     </div>
   );

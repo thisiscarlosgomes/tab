@@ -40,6 +40,7 @@ export default function RoomPage() {
   const { game, isLoading, refresh } = useGame(safeRoomId);
 
   const participants = game?.participants ?? [];
+  const invited = game?.invited ?? [];
   const chosen = game?.chosen ?? null;
   const amount = game?.amount ?? 0;
 
@@ -232,6 +233,23 @@ export default function RoomPage() {
   };
 
   const paidAddresses = game?.paid?.map((p) => p.address.toLowerCase()) ?? [];
+  const pendingInvites = invited.filter((invitedUser) => {
+    const invitedAddress = invitedUser.address?.toLowerCase?.() ?? null;
+    return !participants.some((p) => {
+      if (
+        invitedUser.fid != null &&
+        p.fid != null &&
+        Number(invitedUser.fid) === Number(p.fid)
+      ) {
+        return true;
+      }
+      return Boolean(
+        invitedAddress &&
+          p.address?.toLowerCase?.() &&
+          p.address.toLowerCase() === invitedAddress
+      );
+    });
+  });
 
   const isYou =
     !!address &&
@@ -277,6 +295,7 @@ export default function RoomPage() {
         {/* PARTICIPANTS */}
         <ParticipantList
           participants={participants}
+          invitedParticipants={pendingInvites}
           adminAddress={game.admin}
           isAdmin={isAdmin}
           onNotify={notifyUser}

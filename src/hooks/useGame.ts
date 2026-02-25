@@ -7,6 +7,13 @@ interface Player {
   pfp?: string;
 }
 
+interface InvitedPlayer {
+  address?: string | null;
+  name: string;
+  fid?: number | null;
+  pfp?: string | null;
+}
+
 interface Paid {
   address: string;
   name: string;
@@ -16,6 +23,7 @@ interface Paid {
 interface GameState {
   gameId: string;
   participants: Player[];
+  invited?: InvitedPlayer[];
   admin: string;
   recipient: string;
   amount: number;

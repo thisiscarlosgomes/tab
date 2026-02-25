@@ -37,7 +37,12 @@ function Providers({ children }: React.PropsWithChildren) {
           <WalletProvider>
             <ScanDrawerProvider>
               <SendDrawerProvider>
-                <Toaster richColors position="top-center" />
+                <Toaster
+                  richColors
+                  position="top-center"
+                  offset={{ top: "20px" }}
+                  mobileOffset={{ top: "calc(env(safe-area-inset-top) + 72px)" }}
+                />
                 <>
                   {children}
                   <GlobalSendDrawer />

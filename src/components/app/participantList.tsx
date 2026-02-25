@@ -10,9 +10,16 @@ interface Participant {
   fid?: number; // ✅ FIX
 }
 
+interface InvitedParticipant {
+  name: string;
+  address?: string | null;
+  pfp?: string | null;
+  fid?: number | null;
+}
 
 interface ParticipantListProps {
   participants: Participant[];
+  invitedParticipants?: InvitedParticipant[];
   adminAddress: string;
   isAdmin?: boolean;
   onNotify?: (fid: number) => void; // ✅ FIX
@@ -24,14 +31,17 @@ interface ParticipantListProps {
 
 export function ParticipantList({
   participants,
+  invitedParticipants = [],
   adminAddress,
   isAdmin,
   onNotify,
   paidAddresses, // ✅ ADD THIS
 }: ParticipantListProps) {
+  const totalCount = participants.length + invitedParticipants.length;
+
   return (
     <div className="border rounded-lg p-4">
-      <h2 className="text-md text-white/40 mb-3">Members ({participants.length})</h2>
+      <h2 className="text-md text-white/40 mb-3">Members ({totalCount})</h2>
       <ul className="space-y-2">
         {participants.map((p) => (
           <li
@@ -81,6 +91,34 @@ export function ParticipantList({
                   <BellRing className="w-4 h-4" />
                 </button>
               )} */}
+          </li>
+        ))}
+        {invitedParticipants.map((p) => (
+          <li
+            key={`invited-${p.fid ?? p.address ?? p.name}`}
+            className="flex items-center justify-between gap-2 opacity-80"
+          >
+            <div className="flex items-center gap-2">
+              <Avatar className="h-7 w-7 bg-secondary rounded-full">
+                <AvatarImage
+                  src={
+                    p.pfp ||
+                    `https://api.dicebear.com/9.x/fun-emoji/svg?seed=${p.name}`
+                  }
+                  alt={p.name}
+                  width={24}
+                  height={24}
+                />
+              </Avatar>
+              <div>
+                <p className="text-md font-medium flex items-center gap-1">
+                  @{p.name}
+                  <span className="px-1 py-0.5 text-xs rounded-[6px] bg-blue-500/20 text-blue-300 border border-blue-500/30">
+                    Invited
+                  </span>
+                </p>
+              </div>
+            </div>
           </li>
         ))}
       </ul>
