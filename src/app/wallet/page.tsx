@@ -89,6 +89,11 @@ function getAgentAccessCacheKey(address: string) {
   return `tab:agent-access:${address.toLowerCase()}`;
 }
 
+function tokenRouteSlug(token: Pick<WalletToken, "symbol" | "name">) {
+  const base = (token.symbol || token.name || "token").trim().toLowerCase();
+  return base.replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "") || "token";
+}
+
 export default function WalletPage() {
   const { address, isProfileLoading } = useTabIdentity();
   const { identityToken } = useIdentityToken();
@@ -107,6 +112,7 @@ export default function WalletPage() {
   const [walletLoaded, setWalletLoaded] = useState(false);
   const [walletLoading, setWalletLoading] = useState(false);
   const [walletError, setWalletError] = useState<string | null>(null);
+  const [walletNetworkResolvedFor, setWalletNetworkResolvedFor] = useState<string | null>(null);
   const [agentAuthToken, setAgentAuthToken] = useState<string | null>(null);
   const [agentAuthResolved, setAgentAuthResolved] = useState(false);
   const [agentAccessLoading, setAgentAccessLoading] = useState(false);
@@ -137,6 +143,7 @@ export default function WalletPage() {
       setWalletLoaded(false);
       setWalletLoading(false);
       setWalletError(null);
+      setWalletNetworkResolvedFor(null);
       return;
     }
 
@@ -182,6 +189,7 @@ export default function WalletPage() {
       clearTimeout(timeoutId);
       setWalletLoading(false);
       setWalletLoaded(true);
+      setWalletNetworkResolvedFor(address.toLowerCase());
     }
   }, [address, walletLoaded]);
 
@@ -410,6 +418,7 @@ export default function WalletPage() {
       setAgentAccessLoaded(false);
       setAgentAccessLoading(false);
       setWalletLoaded(false);
+      setWalletNetworkResolvedFor(null);
       setTransactions([]);
       setTransactionsLoaded(false);
       setTransactionsLoading(false);
@@ -514,6 +523,14 @@ export default function WalletPage() {
   );
   const isInitialProfileLoading =
     (isProfileLoading && !address) || (!!address && !walletLoaded && !hasFreshWalletCache);
+  const hasWalletNetworkResolutionForCurrentAddress = Boolean(
+    address && walletNetworkResolvedFor === address.toLowerCase()
+  );
+  const shouldDeferFundingStateDecision =
+    walletLoaded &&
+    !hasWalletNetworkResolutionForCurrentAddress &&
+    Number.isFinite(wallet.totalBalanceUSD) &&
+    wallet.totalBalanceUSD <= 0;
   const isAgentLive = Boolean(
     agentAccess?.enabled &&
     agentAccess?.delegated &&
@@ -522,6 +539,7 @@ export default function WalletPage() {
   const isUnfundedWallet =
     walletLoaded &&
     !walletLoading &&
+    !shouldDeferFundingStateDecision &&
     Number.isFinite(wallet.totalBalanceUSD) &&
     wallet.totalBalanceUSD <= 0;
   const isAgentPaused = Boolean(
@@ -775,53 +793,78 @@ export default function WalletPage() {
                 return (
                   <li
                     key={`${token.networkName ?? "unknown"}-${token.tokenAddress}`}
-                    className="px-1 py-2 flex items-center justify-between gap-4"
+                    className="px-1"
                   >
-                    <div className="flex items-center gap-3 min-w-0">
-                      {token.imgUrl ? (
-                        <img
-                          src={token.imgUrl}
-                          alt={token.symbol}
-                          loading="lazy"
-                          decoding="async"
-                          className="w-10 h-10 rounded-full object-cover"
-                        />
-                      ) : (
-                        <div className="w-10 h-10 rounded-full bg-white/10 text-xs flex items-center justify-center text-white/70">
-                          {token.symbol?.slice(0, 3) || "TOK"}
-                        </div>
-                      )}
-                      <div className="min-w-0">
-                        <p className="text-lg font-medium truncate leading-tight">
-                          {token.name || token.symbol}
-                        </p>
-                        <p className="text-md text-white/40 truncate">
-                          {isUsdc && typeof earnNetApy === "number" ? (
-                            <span className="text-emerald-400">
-                              {(earnNetApy * 100).toFixed(2)}% APY
-                            </span>
+                    <Link
+                      href={{
+                        pathname: `/wallet/tokens/${tokenRouteSlug(token)}`,
+                        query: {
+                          symbol: token.symbol ?? "",
+                          name: token.name ?? "",
+                          tokenAddress: token.tokenAddress ?? "",
+                          balance: String(Number(token.balance ?? 0)),
+                          balanceUSD: String(safeBalanceUsd),
+                          portfolioPercent: String(safePortfolioPercent),
+                          price: String(Number(token.price ?? 0)),
+                          imgUrl: token.imgUrl ?? "",
+                          networkName: token.networkName ?? "",
+                          apy:
+                            isUsdc && typeof earnNetApy === "number"
+                              ? String(earnNetApy)
+                              : "",
+                        },
+                      }}
+                      prefetch
+                      className="block py-2 rounded-xl active:scale-[0.99] transition"
+                    >
+                      <div className="flex items-center justify-between gap-4">
+                        <div className="flex items-center gap-3 min-w-0">
+                          {token.imgUrl ? (
+                            <img
+                              src={token.imgUrl}
+                              alt={token.symbol}
+                              loading="lazy"
+                              decoding="async"
+                              className="w-10 h-10 rounded-full object-cover"
+                            />
                           ) : (
-                            <>
-                              {formatTokenAmount(Math.max(0, Number(token.balance ?? 0)))}{" "}
-                              {token.symbol}
-                            </>
+                            <div className="w-10 h-10 rounded-full bg-white/10 text-xs flex items-center justify-center text-white/70">
+                              {token.symbol?.slice(0, 3) || "TOK"}
+                            </div>
                           )}
-                        </p>
-                      </div>
-                    </div>
+                          <div className="min-w-0">
+                            <p className="text-lg font-medium truncate leading-tight">
+                              {token.name || token.symbol}
+                            </p>
+                            <p className="text-md text-white/40 truncate">
+                              {isUsdc && typeof earnNetApy === "number" ? (
+                                <span className="text-emerald-400">
+                                  {(earnNetApy * 100).toFixed(2)}% APY
+                                </span>
+                              ) : (
+                                <>
+                                  {formatTokenAmount(Math.max(0, Number(token.balance ?? 0)))}{" "}
+                                  {token.symbol}
+                                </>
+                              )}
+                            </p>
+                          </div>
+                        </div>
 
-                    <div className="text-right">
-                      <p className="text-lg font-medium leading-tight">
-                        ${formatUsdNumber(safeBalanceUsd)}
-                      </p>
-                      <p className="text-md text-white/40">
-                        {safePortfolioPercent.toLocaleString(undefined, {
-                          minimumFractionDigits: 0,
-                          maximumFractionDigits: 1,
-                        })}
-                        %
-                      </p>
-                    </div>
+                        <div className="text-right">
+                          <p className="text-lg font-medium leading-tight">
+                            ${formatUsdNumber(safeBalanceUsd)}
+                          </p>
+                          <p className="text-md text-white/40">
+                            {safePortfolioPercent.toLocaleString(undefined, {
+                              minimumFractionDigits: 0,
+                              maximumFractionDigits: 1,
+                            })}
+                            %
+                          </p>
+                        </div>
+                      </div>
+                    </Link>
                   </li>
                 );
               })}
@@ -981,7 +1024,7 @@ export default function WalletPage() {
               </Button>
             )}
 
-            {!isUnfundedWallet && (
+            {!isUnfundedWallet && !shouldDeferFundingStateDecision && (
               <>
             <div className="mb-4 mt-3 grid grid-cols-2 border-b border-white/10">
               <button

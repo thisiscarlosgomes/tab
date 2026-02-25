@@ -108,8 +108,8 @@ export function ReceiveDrawer({
 
   return (
     <ResponsiveDialog open={isOpen} onOpenChange={onOpenChange}>
-      <ResponsiveDialogContent className="top-[110px] md:top-1/2 p-4 md:w-[min(92vw,560px)] md:max-w-none">
-        <div className="bg-background p-4 rounded-t-3xl h-full md:mx-auto md:mt-0 md:h-auto md:max-h-[85vh] md:w-full md:rounded-2xl md:border-0 md:p-6 md:overflow-y-auto">
+      <ResponsiveDialogContent className="top-auto bottom-0 h-auto min-h-0 max-h-[calc(100dvh-80px)] overflow-hidden p-4 md:top-1/2 md:bottom-auto md:h-auto md:min-h-0 md:max-h-none md:w-[min(92vw,560px)] md:max-w-none">
+        <div className="bg-background p-4 rounded-t-3xl h-full overflow-y-auto md:mx-auto md:mt-0 md:h-auto md:max-h-[85vh] md:w-full md:rounded-2xl md:border-0 md:p-6 md:overflow-y-auto">
           <ResponsiveDialogHeader className="pt-0 pb-0">
             <ResponsiveDialogTitle className="text-white text-lg text-center font-medium">
               Deposit

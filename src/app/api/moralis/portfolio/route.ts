@@ -106,6 +106,17 @@ function hasMaterialBalance(token: { balance: number; balanceUSD: number }) {
   return token.balanceUSD >= 0.005 || token.balance > 0;
 }
 
+function hasSpamLabelText(value: unknown) {
+  const text = String(value ?? "").trim().toLowerCase();
+  if (!text) return false;
+  return (
+    text.includes("[spam]") ||
+    text.includes("(spam)") ||
+    text.endsWith(" spam") ||
+    text.startsWith("spam ")
+  );
+}
+
 function parseBalance(item: MoralisTokenItem) {
   const formatted = toNumber(item.balance_formatted);
   if (formatted > 0) return formatted;
@@ -122,6 +133,8 @@ function normalizeToken(item: MoralisTokenItem): NormalizedToken | null {
   const isSpam =
     asBoolean(item.possible_spam) || asBoolean(item.is_spam) || asBoolean(item.spam);
   if (isSpam) return null;
+
+  if (hasSpamLabelText(item.symbol) || hasSpamLabelText(item.name)) return null;
 
   const tokenAddress = String(item.token_address ?? "").trim();
   const symbol = String(item.symbol ?? "").trim().toUpperCase();

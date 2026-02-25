@@ -1270,7 +1270,7 @@ export default function Home() {
               {showCodeStep ? (
                 <>
                   <div className="space-y-4">
-                    <div className="h-1 w-full bg-white/15 rounded-full overflow-hidden">
+                    <div className="hidden h-1 w-full bg-white/15 rounded-full overflow-hidden">
                       <div className="h-full w-1/2 bg-primary" />
                     </div>
 

@@ -263,7 +263,7 @@ export function Header() {
                   // Otherwise: normal back
                   router.back();
                 }}
-                className="text-white text-md flex items-center font-medium"
+                className="text-white text-xs flex items-center font-medium"
               >
                 <ArrowLeft className="w-8 h-8" />
               </button>

@@ -41,6 +41,7 @@
     "html2canvas": "^1.4.1",
     "html5-qrcode": "^2.3.8",
     "json2csv": "^6.0.0-alpha.2",
+    "liveline": "^0.0.6",
     "lucide-react": "^0.468.0",
     "mongodb": "^6.15.0",
     "nanoid": "^5.1.5",
