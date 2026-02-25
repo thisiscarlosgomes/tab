@@ -961,7 +961,7 @@ export function GlobalSendDrawer() {
                     <Button
                       onClick={handleSend}
                       disabled={isDisabled}
-                      className="w-full bg-primary"
+                      className="w-full bg-primary disabled:opacity-50 disabled:cursor-not-allowed"
                     >
                       {sendStatus === "confirming" ? (
                         <>

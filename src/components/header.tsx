@@ -213,7 +213,7 @@ export function Header() {
                     setDesktopMenuOpen(false);
                     setAboutOpen(true);
                   }}
-                  className="w-full px-4 py-4 flex items-center justify-between text-left hover:bg-background transition"
+                  className="w-full px-4 py-4 flex items-center justify-between text-left hover:bg-background bg-background transition"
                 >
                   <span className="text-white">About</span>
                   <Info className="w-5 h-5 text-white/80" />
@@ -226,7 +226,7 @@ export function Header() {
                     void handleLogout();
                   }}
                   disabled={loggingOut}
-                  className="w-full px-4 py-4 flex items-center justify-between text-left hover:bg-background transition border-t border-white/5 disabled:opacity-50"
+                  className="w-full px-4 py-4 flex items-center justify-between text-left bg-background hover:bg-background transition border-t border-white/5 disabled:opacity-50"
                 >
                   <span className="text-white">{loggingOut ? "Logging out..." : "Log out"}</span>
                   <LogOut className="w-5 h-5 text-white/80" />
