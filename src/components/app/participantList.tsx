@@ -64,12 +64,12 @@ export function ParticipantList({
                 <p className="text-md font-medium flex items-center gap-1">
                   @{p.name}
                   {p.address.toLowerCase() === adminAddress.toLowerCase() && (
-                    <span className="px-1 py-0.5 text-xs rounded-[6px] bg-yellow-500/20 text-yellow-300 border border-yellow-500/30">
+                    <span className="px-1 py-0.5 text-[13px] leading-none rounded-[6px] bg-yellow-500/20 text-yellow-300 border border-yellow-500/30">
                       Host
                     </span>
                   )}
                   {paidAddresses?.includes(p.address.toLowerCase()) && (
-                    <span className="px-1 py-0.5 text-xs rounded-[6px] bg-green-500/20 text-green-300 border border-green-500/30">
+                    <span className="px-1 py-0.5 text-[13px] leading-none rounded-[6px] bg-green-500/20 text-green-300 border border-green-500/30">
                       Paid
                     </span>
                   )}
@@ -113,7 +113,7 @@ export function ParticipantList({
               <div>
                 <p className="text-md font-medium flex items-center gap-1">
                   @{p.name}
-                  <span className="px-1 py-0.5 text-xs rounded-[6px] bg-blue-500/20 text-blue-300 border border-blue-500/30">
+                  <span className="px-1 py-0.5 text-[13px] leading-none rounded-[6px] bg-blue-500/20 text-blue-300 border border-blue-500/30">
                     Invited
                   </span>
                 </p>

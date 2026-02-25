@@ -488,11 +488,12 @@ export default function ProfilePage() {
       <div className="w-full max-w-md">
         <div className="pt-3 pb-5">
           <div className="flex items-start justify-between gap-4">
-            <div className="min-w-0 flex-1 space-y-2">
+            <Skeleton className="w-16 h-16 rounded-full shrink-0" />
+            <div className="min-w-0 flex-1 space-y-2 pt-1">
               <Skeleton className="h-9 w-40 rounded-md" />
               <Skeleton className="h-4 w-24 rounded-md" />
             </div>
-            <Skeleton className="w-16 h-16 rounded-full shrink-0" />
+            <Skeleton className="h-8 w-20 rounded-lg shrink-0 mt-1" />
           </div>
 
         </div>
@@ -536,13 +537,13 @@ export default function ProfilePage() {
       return (
         <div className="pt-3 pb-5">
           <div className="flex items-start justify-between gap-4">
-            <div className="min-w-0 flex-1 space-y-3">
-              <Skeleton className="h-12 w-40 rounded-md" />
-              <Skeleton className="h-6 w-28 rounded-md" />
+            <Skeleton className="w-16 h-16 rounded-full shrink-0" />
+            <div className="min-w-0 flex-1 space-y-2 pt-1">
+              <Skeleton className="h-8 w-36 rounded-md" />
+              <Skeleton className="h-5 w-28 rounded-md" />
             </div>
-            <Skeleton className="w-24 h-24 rounded-full" />
+            <Skeleton className="h-8 w-20 rounded-lg shrink-0 mt-1" />
           </div>
-         
         </div>
       );
     }
@@ -550,6 +551,22 @@ export default function ProfilePage() {
     return (
       <div className="pt-3 pb-5">
         <div className="flex items-start justify-between gap-4">
+          <div className="shrink-0">
+            <Link
+              href="/settings"
+              aria-label="Open settings"
+              className="block rounded-full border border-transparent hover:border-white/10 transition"
+            >
+              <UserAvatar
+                src={effectivePfp}
+                seed={effectiveName}
+                alt={effectiveName}
+                width={80}
+                className="w-16 h-16 rounded-full object-cover border border-white/10 bg-white/5"
+              />
+            </Link>
+          </div>
+
           <div className="min-w-0 flex-1">
             <h1 className="text-xl sm:text-2xl font-semibold tracking-tight text-white truncate">
               {effectiveName}
@@ -569,16 +586,9 @@ export default function ProfilePage() {
 
           <Link
             href="/settings"
-            aria-label="Open settings"
-            className="shrink-0 rounded-full border border-transparent hover:border-white/10 transition"
+            className="shrink-0 inline-flex items-center rounded-lg border border-white/10 bg-white/[0.03] px-3 py-1.5 text-sm text-white/75 hover:bg-white/10 hover:text-white transition"
           >
-            <UserAvatar
-              src={effectivePfp}
-              seed={effectiveName}
-              alt={effectiveName}
-              width={80}
-              className="w-16 h-16 rounded-full object-cover border border-white/10 bg-white/5"
-            />
+            Settings
           </Link>
         </div>
 

@@ -12,6 +12,11 @@ import { useTabIdentity } from "@/lib/useTabIdentity";
 
 // Placeholder icon type-safe
 const NoIcon = () => null;
+const NOTIFICATIONS_LAST_SEEN_KEY_PREFIX = "tab:notifications:last-seen:";
+
+function getNotificationsLastSeenKey(address: string) {
+  return `${NOTIFICATIONS_LAST_SEEN_KEY_PREFIX}${address.toLowerCase()}`;
+}
 
 export function FooterNav({
   variant = "mobile",
@@ -23,7 +28,7 @@ export function FooterNav({
   const pathname = usePathname();
   const router = useRouter();
   const { open: openScanDrawer } = useScanDrawer();
-  const { pfp, username, fid } = useTabIdentity();
+  const { pfp, username, fid, address } = useTabIdentity();
   const { user } = usePrivy();
 
   const [pfpUrl, setPfpUrl] = useState<string | null>(null);
@@ -34,6 +39,7 @@ export function FooterNav({
   const [animateActivity, setAnimateActivity] = useState(false);
   const [animateWallet, setAnimateWallet] = useState(false);
   const [animateProfile, setAnimateProfile] = useState(false);
+  const [hasUnreadNotifications, setHasUnreadNotifications] = useState(false);
 
   const handleAnimate = (setter: Dispatch<SetStateAction<boolean>>) => {
     setter(true);
@@ -120,6 +126,70 @@ export function FooterNav({
     });
   }, [router]);
 
+  useEffect(() => {
+    if (!address) {
+      setHasUnreadNotifications(false);
+      return;
+    }
+
+    if (pathname === "/activity") {
+      try {
+        window.localStorage.setItem(
+          getNotificationsLastSeenKey(address),
+          new Date().toISOString()
+        );
+      } catch {}
+      setHasUnreadNotifications(false);
+      return;
+    }
+
+    let cancelled = false;
+    const controller = new AbortController();
+
+    const syncUnreadIndicator = async () => {
+      try {
+        const res = await fetch(
+          `/api/activity?address=${encodeURIComponent(address)}&limit=1`,
+          {
+            cache: "no-store",
+            signal: controller.signal,
+          }
+        );
+        if (!res.ok) return;
+
+        const data = await res.json();
+        const latest = Array.isArray(data?.activity) ? data.activity[0] : null;
+        const latestTs = Date.parse(String(latest?.timestamp ?? ""));
+        if (!Number.isFinite(latestTs)) {
+          if (!cancelled) setHasUnreadNotifications(false);
+          return;
+        }
+
+        let seenTs = 0;
+        try {
+          seenTs = Date.parse(
+            window.localStorage.getItem(getNotificationsLastSeenKey(address)) ?? ""
+          );
+          if (!Number.isFinite(seenTs)) seenTs = 0;
+        } catch {
+          seenTs = 0;
+        }
+
+        if (!cancelled) {
+          setHasUnreadNotifications(latestTs > seenTs);
+        }
+      } catch {
+        // keep previous unread indicator on transient failures
+      }
+    };
+
+    void syncUnreadIndicator();
+    return () => {
+      cancelled = true;
+      controller.abort();
+    };
+  }, [address, pathname]);
+
   /* ------------------ RENDER ------------------ */
 
   const renderNavBar = () => (
@@ -161,15 +231,15 @@ export function FooterNav({
               }}
               aria-label={isDesktopInline ? "Open get paid QR" : "Open scanner"}
             >
-              <Icon
-                className={clsx(
-                  "w-6 h-6",
-                  item.animate && "animate-scale-bounce"
-                )}
-              />
-            </button>
-          );
-        }
+            <Icon
+              className={clsx(
+                "w-6 h-6",
+                item.animate && "animate-scale-bounce"
+              )}
+            />
+          </button>
+        );
+      }
 
         if (item.label === "Profile") {
           return (
@@ -206,17 +276,31 @@ export function FooterNav({
             onClick={() => {
               handleAnimate(item.setAnimate);
               triggerHaptics();
+              if (item.label === "Activity" && address) {
+                try {
+                  window.localStorage.setItem(
+                    getNotificationsLastSeenKey(address),
+                    new Date().toISOString()
+                  );
+                } catch {}
+                setHasUnreadNotifications(false);
+              }
             }}
             onMouseEnter={() => prefetchHref(item.href)}
             onTouchStart={() => prefetchHref(item.href)}
             className={pillClasses}
           >
-            <Icon
-              className={clsx(
-                "w-6 h-6",
-                item.animate && "animate-scale-bounce"
-              )}
-            />
+            <span className="relative inline-flex items-center justify-center">
+              <Icon
+                className={clsx(
+                  "w-6 h-6",
+                  item.animate && "animate-scale-bounce"
+                )}
+              />
+              {item.label === "Activity" && hasUnreadNotifications ? (
+                <span className="absolute -top-1.5 -right-1.5 h-2.5 w-2.5 rounded-full bg-red-500 ring-2 ring-background" />
+              ) : null}
+            </span>
           </Link>
         ) : null;
       })}

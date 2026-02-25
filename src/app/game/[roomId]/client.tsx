@@ -264,7 +264,9 @@ export default function RoomPage() {
         {/* HEADER */}
         <div className="flex flex-col items-center">
           <img src="/vpush.png" className="w-14 h-14" />
-          <h1 className="text-xl font-semibold">Spin tab</h1>
+          <h1 className="text-xl font-semibold">
+            {game?.name?.trim() || "Spin tab"}
+          </h1>
           <p
             className={`
     text-sm font-medium

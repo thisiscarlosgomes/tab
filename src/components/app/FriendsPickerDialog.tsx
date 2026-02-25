@@ -2,6 +2,7 @@
 
 import { Check } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Skeleton } from "@/components/ui/skeleton";
 import {
   ResponsiveDialog,
   ResponsiveDialogContent,
@@ -49,7 +50,7 @@ export function FriendsPickerDialog<T extends BaseFriend>({
 }: FriendsPickerDialogProps<T>) {
   return (
     <ResponsiveDialog open={open} onOpenChange={onOpenChange} repositionInputs={false}>
-      <ResponsiveDialogContent className="top-auto h-auto min-h-[520px] max-h-[calc(100dvh-80px)] p-4 pb-6 md:top-1/2 md:-translate-y-1/2 md:max-w-md md:min-h-[520px] md:max-h-[70vh] flex flex-col">
+      <ResponsiveDialogContent className="top-auto bottom-0 h-[calc(100dvh-80px)] min-h-[calc(100dvh-80px)] max-h-[calc(100dvh-80px)] overflow-hidden p-4 pb-6 md:top-1/2 md:-translate-y-1/2 md:max-w-md md:h-[70vh] md:min-h-[70vh] md:max-h-[70vh] md:overflow-hidden flex flex-col">
         <ResponsiveDialogTitle className="text-center text-lg">
           {title}
         </ResponsiveDialogTitle>
@@ -113,18 +114,30 @@ export function FriendsPickerDialog<T extends BaseFriend>({
         )}
 
         <div className="mt-4 flex-1 min-h-0 overflow-y-auto space-y-2">
-          {searching && users.length === 0 ? (
+          {searching && query.trim() !== "" ? (
             Array.from({ length: 5 }).map((_, idx) => (
               <div
                 key={`friends-skel-${idx}`}
-                className="w-full rounded-lg p-3 bg-white/5 flex items-center gap-3 animate-pulse"
+                className="flex items-center p-3 rounded-lg bg-white/5 w-full"
               >
-                <div className="h-10 w-10 rounded-full bg-white/10 shrink-0" />
-                <div className="h-5 w-40 rounded bg-white/10" />
+                <Skeleton className="w-10 h-10 rounded-full mr-3 shrink-0 border-0 bg-white/10" />
+                <div className="flex-1 min-w-0">
+                  <Skeleton className="h-4 w-32 rounded-md border-0 bg-white/10" />
+                </div>
               </div>
             ))
           ) : loading && users.length === 0 ? (
-            <div className="py-8 text-center text-sm text-white/40">Loading friends…</div>
+            Array.from({ length: 5 }).map((_, idx) => (
+              <div
+                key={`friends-load-skel-${idx}`}
+                className="flex items-center p-3 rounded-lg bg-white/5 w-full"
+              >
+                <Skeleton className="w-10 h-10 rounded-full mr-3 shrink-0 border-0 bg-white/10" />
+                <div className="flex-1 min-w-0">
+                  <Skeleton className="h-4 w-32 rounded-md border-0 bg-white/10" />
+                </div>
+              </div>
+            ))
           ) : users.length === 0 ? (
             <div className="py-8 text-center text-sm text-white/40">No results</div>
           ) : (

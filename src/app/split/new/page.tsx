@@ -191,6 +191,7 @@ export default function SplitNewPage() {
   const invitedCount = selectedFollowers.length;
 
   const [query, setQuery] = useState("");
+  const [followerSearchLoading, setFollowerSearchLoading] = useState(false);
   const followerSearchRequestRef = useRef(0);
 
   const [debtorCount, setDebtorCount] = useState<number | string>("");
@@ -261,11 +262,13 @@ export default function SplitNewPage() {
     const delay = setTimeout(async () => {
       const trimmedQuery = query.trim();
       if (!trimmedQuery) {
+        setFollowerSearchLoading(false);
         setFilteredFollowers(followers);
         return;
       }
 
       const q = trimmedQuery.toLowerCase().replace(/^@/, "");
+      setFollowerSearchLoading(true);
       const localMatches = followers.filter((u) => {
         const username = (u.username ?? "").toLowerCase();
         const displayName = (u.display_name ?? "").toLowerCase();
@@ -276,7 +279,10 @@ export default function SplitNewPage() {
       setFilteredFollowers(localMatches.slice(0, 50));
 
       // Avoid remote search for very short queries; local filtering is enough.
-      if (q.length < 2) return;
+      if (q.length < 2) {
+        setFollowerSearchLoading(false);
+        return;
+      }
 
       const requestId = ++followerSearchRequestRef.current;
 
@@ -308,10 +314,17 @@ export default function SplitNewPage() {
         setFilteredFollowers(merged.slice(0, 50));
       } catch {
         // Keep local matches if remote search fails.
+      } finally {
+        if (requestId === followerSearchRequestRef.current) {
+          setFollowerSearchLoading(false);
+        }
       }
     }, 150);
 
-    return () => clearTimeout(delay);
+    return () => {
+      clearTimeout(delay);
+      setFollowerSearchLoading(false);
+    };
   }, [query, followers]);
 
   // --------------------------
@@ -896,6 +909,8 @@ export default function SplitNewPage() {
           );
         }}
         onDone={() => setFollowerDrawerOpen(false)}
+        loading={false}
+        searching={followerSearchLoading}
         isUserDisabled={(f) => !Boolean(getUserEthAddress(f))}
         disabledLabel="No linked wallet"
       />
