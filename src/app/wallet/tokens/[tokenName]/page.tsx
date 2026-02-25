@@ -7,6 +7,7 @@ import type { CandlePoint, LivelinePoint } from "liveline";
 import { ChartCandlestick, ChartLine } from "lucide-react";
 import { ReceiveDrawerController } from "@/components/app/ReceiveDrawerController";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Button } from "@/components/ui/button";
 
 const Liveline = dynamic(
   () => import("liveline").then((mod) => mod.Liveline),
@@ -55,7 +56,7 @@ const BASE_TOKEN_ADDRESS_BY_SYMBOL: Record<string, string> = {
   TAB: "0xc1256ae5ff1cf2719d4937adb3bbccab2e00a2ca",
 };
 
-const APP_POSITIVE_HEX = "#6ee7b7"; // tailwind emerald-300
+const APP_POSITIVE_HEX = "#34d399"; // tailwind emerald-400
 const APP_NEGATIVE_HEX = "#f87171"; // tailwind red-400
 
 function num(value: string | null, fallback = 0) {
@@ -185,6 +186,7 @@ export default function WalletTokenDetailsPage() {
   const [selectedWindow, setSelectedWindow] = useState<number>(WINDOW_OPTIONS[3].secs);
   const [chart, setChart] = useState<ChartState | null>(null);
   const [lineMode, setLineMode] = useState(true);
+  const [isTouchDevice, setIsTouchDevice] = useState(false);
   const [marketCapReal, setMarketCapReal] = useState<number | null>(null);
   const [volume24hReal, setVolume24hReal] = useState<number | null>(null);
   const [change24hPctReal, setChange24hPctReal] = useState<number | null>(null);
@@ -214,6 +216,17 @@ export default function WalletTokenDetailsPage() {
     setEffectiveCandleWidthSecs(selectedConfig.candleWidth);
     setChartLoadedWindowSecs(null);
   }, [selectedConfig.candleWidth]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const media = window.matchMedia("(pointer: coarse)");
+    const update = () => {
+      setIsTouchDevice(media.matches || "ontouchstart" in window);
+    };
+    update();
+    media.addEventListener?.("change", update);
+    return () => media.removeEventListener?.("change", update);
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -577,7 +590,7 @@ export default function WalletTokenDetailsPage() {
               </button>
             </div>
 
-            <div className="h-[260px] sm:h-[280px] w-full">
+            <div className="h-[290px] sm:h-[310px] w-full touch-pan-y">
             {!chart || isChartLoading ? (
               <div className="h-full w-full flex items-center justify-center">
                 <Skeleton className="h-full w-full rounded-sm bg-transparent border-none p-3" />
@@ -600,7 +613,7 @@ export default function WalletTokenDetailsPage() {
                 badge
                 badgeVariant="minimal"
                 pulse
-                scrub
+                scrub={!isTouchDevice}
                 exaggerate={lineMode}
                 formatValue={(v) => `$${formatUsd(v)}`}
                 padding={{ top: 26, right: 74, bottom: 34, left: 8 }}
@@ -609,13 +622,13 @@ export default function WalletTokenDetailsPage() {
           </div>
           </div>
         </div>
-        <button
+        <Button
           type="button"
           onClick={openReceiveDrawer}
-          className="mt-4 w-full rounded-xl bg-primary px-4 py-3 text-sm font-semibold text-black transition hover:opacity-90"
+          className="mt-4 w-full"
         >
           Deposit
-        </button>
+        </Button>
           </div>
         </div>
       )}
