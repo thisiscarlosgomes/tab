@@ -75,6 +75,7 @@ const TRANSACTION_TYPES = new Set([
 ]);
 const WALLET_PORTFOLIO_CACHE_TTL_MS = 60 * 1000;
 const WALLET_TRANSACTIONS_CACHE_TTL_MS = 30 * 1000;
+const VAULT_ADDRESS = "0xc1256Ae5FF1cf2719D4937adb3bbCCab2E00A2Ca";
 const walletPortfolioCache = new Map<
   string,
   { wallet: WalletPortfolioResponse; ts: number }
@@ -113,12 +114,21 @@ export default function WalletPage() {
   const [agentAccess, setAgentAccess] = useState<AgentAccessSummary | null>(null);
   const balanceRefreshTimeoutsRef = useRef<number[]>([]);
   const copyResetTimeoutRef = useRef<number | null>(null);
+  const balanceShakeTimeoutRef = useRef<number | null>(null);
   const [walletAddressCopied, setWalletAddressCopied] = useState(false);
+  const [shakeBalance, setShakeBalance] = useState(false);
+  const [earnNetApy, setEarnNetApy] = useState<number | null>(null);
 
   const formatUsdNumber = (value: number) =>
     new Intl.NumberFormat("en-US", {
       minimumFractionDigits: 2,
       maximumFractionDigits: 2,
+    }).format(value);
+
+  const formatTokenAmount = (value: number) =>
+    new Intl.NumberFormat("en-US", {
+      minimumFractionDigits: value >= 1 ? 2 : 0,
+      maximumFractionDigits: value >= 1 ? 4 : 6,
     }).format(value);
 
   const fetchWallet = useCallback(async () => {
@@ -217,6 +227,56 @@ export default function WalletPage() {
       // ignore bad cache payloads
     }
   }, [address]);
+
+  useEffect(() => {
+    return () => {
+      if (balanceShakeTimeoutRef.current) {
+        window.clearTimeout(balanceShakeTimeoutRef.current);
+        balanceShakeTimeoutRef.current = null;
+      }
+    };
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const fetchEarnApy = async () => {
+      try {
+        const res = await fetch("https://blue-api.morpho.org/graphql", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            query: `
+              query VaultByAddress($address: String!, $chainId: Int) {
+                vaultByAddress(address: $address, chainId: $chainId) {
+                  state {
+                    netApy
+                  }
+                }
+              }
+            `,
+            variables: {
+              address: VAULT_ADDRESS,
+              chainId: 8453,
+            },
+          }),
+        });
+
+        const json = await res.json().catch(() => null);
+        const apy = json?.data?.vaultByAddress?.state?.netApy;
+        if (!cancelled && typeof apy === "number") {
+          setEarnNetApy(apy);
+        }
+      } catch {
+        // best effort
+      }
+    };
+
+    void fetchEarnApy();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const fetchAgentAccess = useCallback(async () => {
     if (!address) {
@@ -599,7 +659,21 @@ export default function WalletPage() {
       {
         label: "Send",
         icon: Send,
-        onClick: () => openSendDrawer(),
+        onClick: () => {
+          if ((wallet.totalBalanceUSD ?? 0) <= 0) {
+            setShakeBalance(false);
+            if (balanceShakeTimeoutRef.current) {
+              window.clearTimeout(balanceShakeTimeoutRef.current);
+            }
+            requestAnimationFrame(() => setShakeBalance(true));
+            balanceShakeTimeoutRef.current = window.setTimeout(() => {
+              setShakeBalance(false);
+              balanceShakeTimeoutRef.current = null;
+            }, 420);
+            return;
+          }
+          openSendDrawer();
+        },
         disabled: false,
         iconClassName: "",
         labelClassName: "",
@@ -626,7 +700,12 @@ export default function WalletPage() {
       <div className="pt-1 pb-4">
         <div className="flex items-start justify-center text-center mb-8 mt-4">
           <span className="hidden text-3xl leading-none mt-3 text-white/90">$</span>
-          <span className="text-[46px] sm:text-[51px] leading-[0.95] font-semibold tracking-tight">
+          <span
+            className={[
+              "text-[46px] sm:text-[51px] leading-[0.95] font-semibold tracking-tight",
+              shakeBalance ? "animate-balance-shake" : "",
+            ].join(" ")}
+          >
             ${formatUsdNumber(wallet.totalBalanceUSD)}
           </span>
         </div>
@@ -692,6 +771,7 @@ export default function WalletPage() {
                   0,
                   Number(token.portfolioPercent ?? 0)
                 );
+                const isUsdc = (token.symbol ?? "").toUpperCase() === "USDC";
                 return (
                   <li
                     key={`${token.networkName ?? "unknown"}-${token.tokenAddress}`}
@@ -716,8 +796,16 @@ export default function WalletPage() {
                           {token.name || token.symbol}
                         </p>
                         <p className="text-md text-white/40 truncate">
-                          {token.symbol}
-                          {token.networkName ? ` • ${token.networkName}` : ""}
+                          {isUsdc && typeof earnNetApy === "number" ? (
+                            <span className="text-emerald-400">
+                              {(earnNetApy * 100).toFixed(2)}% APY
+                            </span>
+                          ) : (
+                            <>
+                              {formatTokenAmount(Math.max(0, Number(token.balance ?? 0)))}{" "}
+                              {token.symbol}
+                            </>
+                          )}
                         </p>
                       </div>
                     </div>

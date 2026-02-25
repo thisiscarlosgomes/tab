@@ -223,6 +223,7 @@ export default function SplitPage() {
 
     setCreating(true);
     setError(null);
+    let shouldResetCreating = true;
 
     try {
       const player = await buildPlayer();
@@ -255,6 +256,7 @@ export default function SplitPage() {
       if (!data?.gameId) throw new Error("Room created but no gameId returned");
 
       const nextUrl = `/game/${data.gameId}`;
+      shouldResetCreating = false;
       router.push(nextUrl);
 
       // Fallback for embedded webviews where Next client navigation can be flaky.
@@ -262,11 +264,13 @@ export default function SplitPage() {
         if (typeof window !== "undefined" && window.location.pathname !== nextUrl) {
           window.location.assign(nextUrl);
         }
-      }, 150);
+      }, 25);
     } catch (err: any) {
       setError(err.message ?? "Something went wrong");
     } finally {
-      setCreating(false);
+      if (shouldResetCreating) {
+        setCreating(false);
+      }
     }
   };
 
@@ -435,7 +439,7 @@ export default function SplitPage() {
 
           {error && <p className="text-sm text-red-400 text-center">{error}</p>}
 
-          <div className="rounded-[16px] bg-card p-4 text-left">
+          <div className="hidden rounded-[16px] bg-card p-4 text-left">
             <button
               onClick={() => setShowHowItWorks(!showHowItWorks)}
               className="w-full flex items-center justify-between text-white/40"

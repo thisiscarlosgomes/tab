@@ -493,7 +493,7 @@ export default function ActivityPage() {
                   type="button"
                   disabled={pushLoading}
                   onClick={() => void enableWebPush()}
-                  className="mt-4 w-full rounded-md bg-primary py-3 font-semibold text-black disabled:opacity-60"
+                  className="mt-4 w-full rounded-md bg-primary py-2 font-semibold text-black disabled:opacity-60"
                 >
                   {pushLoading ? "Turning on..." : "Turn on"}
                 </button>

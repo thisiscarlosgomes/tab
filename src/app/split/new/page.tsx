@@ -439,6 +439,7 @@ export default function SplitNewPage() {
   const handleCreate = async () => {
     if (isCreating) return;
     setIsCreating(true);
+    let shouldResetCreating = true;
 
     try {
       if (!isConnected) {
@@ -533,6 +534,7 @@ export default function SplitNewPage() {
       const targetPath = `/split/${splitId}`;
 
       // Next router navigation can be flaky in embedded webviews; fall back to a hard navigation.
+      shouldResetCreating = false;
       try {
         router.push(targetPath);
       } catch {
@@ -543,11 +545,13 @@ export default function SplitNewPage() {
         if (window.location.pathname !== targetPath) {
           window.location.assign(targetPath);
         }
-      }, 75);
+      }, 25);
     } catch (err) {
       console.error("handleCreate error:", err);
     } finally {
-      setIsCreating(false);
+      if (shouldResetCreating) {
+        setIsCreating(false);
+      }
     }
   };
 
@@ -739,7 +743,7 @@ export default function SplitNewPage() {
               Continue
             </Button>
 
-            <div className="rounded-[16px] bg-white/[3%] p-4 text-left">
+            <div className="hidden rounded-[16px] bg-white/[3%] p-4 text-left">
               <button
                 onClick={() => setShowHowItWorks(!showHowItWorks)}
                 className="w-full flex items-center justify-between text-white/40"

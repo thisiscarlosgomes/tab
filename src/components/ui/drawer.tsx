@@ -51,7 +51,7 @@ const DrawerContent = React.forwardRef<
       <svg
         xmlns="http://www.w3.org/2000/svg"
         width="32"
-        height="4"
+        height="5"
         viewBox="0 0 55 4"
         fill="none"
         className="mx-auto mt-3 mb-3"

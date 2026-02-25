@@ -477,7 +477,7 @@ export default function RoomPage() {
         )}
       </Card>
 
-      <div className="w-full mt-3 max-w-md rounded-[16px] bg-card p-4 text-left">
+      <div className="hidden w-full mt-3 max-w-md rounded-[16px] bg-card p-4 text-left">
         <button
           onClick={() => setShowHowItWorks(!showHowItWorks)}
           className="w-full flex items-center justify-between text-white/40"

@@ -448,7 +448,7 @@ export function MorphoDepositDrawer({
                   Depositing...
                 </>
               ) : !isApproved ? (
-                <>Approve & Deposit ${amount}</>
+                <>Deposit ${amount}</>
               ) : (
                 <>Deposit ${amount}</>
               )}
@@ -523,8 +523,8 @@ export function MorphoDepositDrawer({
               </>
             )}
 
-            <p className="text-white/30 text-xs text-center">
-              Powered by Morpho. Actual yield may vary
+            <p className="text-white/30 text-[13px] text-center">
+              Powered by Morpho.
             </p>
 
             <SuccessShareDrawer
