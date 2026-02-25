@@ -187,6 +187,7 @@ export default function WalletTokenDetailsPage() {
   const [chart, setChart] = useState<ChartState | null>(null);
   const [lineMode, setLineMode] = useState(true);
   const [isTouchDevice, setIsTouchDevice] = useState(false);
+  const [isPageVisible, setIsPageVisible] = useState(true);
   const [marketCapReal, setMarketCapReal] = useState<number | null>(null);
   const [volume24hReal, setVolume24hReal] = useState<number | null>(null);
   const [change24hPctReal, setChange24hPctReal] = useState<number | null>(null);
@@ -226,6 +227,14 @@ export default function WalletTokenDetailsPage() {
     update();
     media.addEventListener?.("change", update);
     return () => media.removeEventListener?.("change", update);
+  }, []);
+
+  useEffect(() => {
+    if (typeof document === "undefined") return;
+    const update = () => setIsPageVisible(document.visibilityState === "visible");
+    update();
+    document.addEventListener("visibilitychange", update);
+    return () => document.removeEventListener("visibilitychange", update);
   }, []);
 
   useEffect(() => {
@@ -353,19 +362,30 @@ export default function WalletTokenDetailsPage() {
     };
 
     void loadInsights(false);
-    const pollId = window.setInterval(() => {
-      void loadInsights(true);
-    }, 45_000);
+    const pollId = isPageVisible
+      ? window.setInterval(() => {
+          void loadInsights(true);
+        }, 45_000)
+      : null;
 
     return () => {
       cancelled = true;
       controller.abort();
-      window.clearInterval(pollId);
+      if (pollId !== null) window.clearInterval(pollId);
     };
-  }, [basePrice, resolvedTokenAddress, seedKey, selectedConfig.candleWidth, selectedConfig.secs]);
+  }, [
+    basePrice,
+    isPageVisible,
+    resolvedTokenAddress,
+    seedKey,
+    selectedConfig.candleWidth,
+    selectedConfig.secs,
+  ]);
 
   useEffect(() => {
     if (!resolvedTokenAddress) return;
+    if (!isPageVisible) return;
+    if (!lineMode) return;
 
     let cancelled = false;
 
@@ -459,10 +479,19 @@ export default function WalletTokenDetailsPage() {
       }
     };
 
+    const quotePollMs =
+      selectedConfig.secs <= 5 * 60
+        ? 2_000
+        : selectedConfig.secs <= 60 * 60
+          ? 5_000
+          : selectedConfig.secs <= 4 * 60 * 60
+            ? 10_000
+            : 15_000;
+
     void fetchQuote();
     const id = window.setInterval(() => {
       void fetchQuote();
-    }, 1000);
+    }, quotePollMs);
 
     return () => {
       cancelled = true;
@@ -472,6 +501,8 @@ export default function WalletTokenDetailsPage() {
     activePairAddress,
     chartLoadedWindowSecs,
     effectiveCandleWidthSecs,
+    isPageVisible,
+    lineMode,
     resolvedTokenAddress,
     selectedConfig.secs,
   ]);

@@ -4,7 +4,7 @@ const MORALIS_BASE_URL = "https://deep-index.moralis.io/api/v2.2";
 const DEFAULT_CHAIN = "base";
 const BASE_WETH_ADDRESS = "0x4200000000000000000000000000000000000006";
 const NATIVE_PLACEHOLDER_ADDRESS = "0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee";
-const CACHE_TTL_MS = 750;
+const CACHE_TTL_MS = 2_000;
 
 const cache = new Map<string, { ts: number; payload: unknown }>();
 

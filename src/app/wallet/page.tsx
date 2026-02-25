@@ -15,6 +15,7 @@ import {
 } from "lucide-react";
 import { useIdentityToken, useToken } from "@privy-io/react-auth";
 import { ReceiveDrawerController } from "@/components/app/ReceiveDrawerController";
+import { MorphoDepositDrawer } from "@/components/app/LendingMorpho";
 import { useSendDrawer } from "@/providers/SendDrawerProvider";
 import { useTabIdentity } from "@/lib/useTabIdentity";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -124,6 +125,7 @@ export default function WalletPage() {
   const [walletAddressCopied, setWalletAddressCopied] = useState(false);
   const [shakeBalance, setShakeBalance] = useState(false);
   const [earnNetApy, setEarnNetApy] = useState<number | null>(null);
+  const [showMorphoDrawer, setShowMorphoDrawer] = useState(false);
 
   const formatUsdNumber = (value: number) =>
     new Intl.NumberFormat("en-US", {
@@ -790,81 +792,95 @@ export default function WalletPage() {
                   Number(token.portfolioPercent ?? 0)
                 );
                 const isUsdc = (token.symbol ?? "").toUpperCase() === "USDC";
+                const rowContent = (
+                  <div className="flex items-center justify-between gap-4">
+                    <div className="flex items-center gap-3 min-w-0">
+                      {token.imgUrl ? (
+                        <img
+                          src={token.imgUrl}
+                          alt={token.symbol}
+                          loading="lazy"
+                          decoding="async"
+                          className="w-10 h-10 rounded-full object-cover"
+                        />
+                      ) : (
+                        <div className="w-10 h-10 rounded-full bg-white/10 text-xs flex items-center justify-center text-white/70">
+                          {token.symbol?.slice(0, 3) || "TOK"}
+                        </div>
+                      )}
+                      <div className="min-w-0">
+                        <p className="text-lg font-medium truncate leading-tight">
+                          {token.name || token.symbol}
+                        </p>
+                        <p className="text-md text-white/40 truncate">
+                          {isUsdc ? (
+                            typeof earnNetApy === "number" ? (
+                              <span className="text-emerald-400">
+                                {(earnNetApy * 100).toFixed(2)}% APY
+                              </span>
+                            ) : (
+                              <span className="text-white/35">APY ...</span>
+                            )
+                          ) : (
+                            <>
+                              {formatTokenAmount(Math.max(0, Number(token.balance ?? 0)))}{" "}
+                              {token.symbol}
+                            </>
+                          )}
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="text-right">
+                      <p className="text-lg font-medium leading-tight">
+                        ${formatUsdNumber(safeBalanceUsd)}
+                      </p>
+                      <p className="text-md text-white/40">
+                        {safePortfolioPercent.toLocaleString(undefined, {
+                          minimumFractionDigits: 0,
+                          maximumFractionDigits: 1,
+                        })}
+                        %
+                      </p>
+                    </div>
+                  </div>
+                );
+
                 return (
                   <li
                     key={`${token.networkName ?? "unknown"}-${token.tokenAddress}`}
                     className="px-1"
                   >
-                    <Link
-                      href={{
-                        pathname: `/wallet/tokens/${tokenRouteSlug(token)}`,
-                        query: {
-                          symbol: token.symbol ?? "",
-                          name: token.name ?? "",
-                          tokenAddress: token.tokenAddress ?? "",
-                          balance: String(Number(token.balance ?? 0)),
-                          balanceUSD: String(safeBalanceUsd),
-                          portfolioPercent: String(safePortfolioPercent),
-                          price: String(Number(token.price ?? 0)),
-                          imgUrl: token.imgUrl ?? "",
-                          networkName: token.networkName ?? "",
-                          apy:
-                            isUsdc && typeof earnNetApy === "number"
-                              ? String(earnNetApy)
-                              : "",
-                        },
-                      }}
-                      prefetch
-                      className="block py-2 rounded-xl active:scale-[0.99] transition"
-                    >
-                      <div className="flex items-center justify-between gap-4">
-                        <div className="flex items-center gap-3 min-w-0">
-                          {token.imgUrl ? (
-                            <img
-                              src={token.imgUrl}
-                              alt={token.symbol}
-                              loading="lazy"
-                              decoding="async"
-                              className="w-10 h-10 rounded-full object-cover"
-                            />
-                          ) : (
-                            <div className="w-10 h-10 rounded-full bg-white/10 text-xs flex items-center justify-center text-white/70">
-                              {token.symbol?.slice(0, 3) || "TOK"}
-                            </div>
-                          )}
-                          <div className="min-w-0">
-                            <p className="text-lg font-medium truncate leading-tight">
-                              {token.name || token.symbol}
-                            </p>
-                            <p className="text-md text-white/40 truncate">
-                              {isUsdc && typeof earnNetApy === "number" ? (
-                                <span className="text-emerald-400">
-                                  {(earnNetApy * 100).toFixed(2)}% APY
-                                </span>
-                              ) : (
-                                <>
-                                  {formatTokenAmount(Math.max(0, Number(token.balance ?? 0)))}{" "}
-                                  {token.symbol}
-                                </>
-                              )}
-                            </p>
-                          </div>
-                        </div>
-
-                        <div className="text-right">
-                          <p className="text-lg font-medium leading-tight">
-                            ${formatUsdNumber(safeBalanceUsd)}
-                          </p>
-                          <p className="text-md text-white/40">
-                            {safePortfolioPercent.toLocaleString(undefined, {
-                              minimumFractionDigits: 0,
-                              maximumFractionDigits: 1,
-                            })}
-                            %
-                          </p>
-                        </div>
-                      </div>
-                    </Link>
+                    {isUsdc ? (
+                      <button
+                        type="button"
+                        onClick={() => setShowMorphoDrawer(true)}
+                        className="block w-full text-left py-2 rounded-xl active:scale-[0.99] transition"
+                      >
+                        {rowContent}
+                      </button>
+                    ) : (
+                      <Link
+                        href={{
+                          pathname: `/wallet/tokens/${tokenRouteSlug(token)}`,
+                          query: {
+                            symbol: token.symbol ?? "",
+                            name: token.name ?? "",
+                            tokenAddress: token.tokenAddress ?? "",
+                            balance: String(Number(token.balance ?? 0)),
+                            balanceUSD: String(safeBalanceUsd),
+                            portfolioPercent: String(safePortfolioPercent),
+                            price: String(Number(token.price ?? 0)),
+                            imgUrl: token.imgUrl ?? "",
+                            networkName: token.networkName ?? "",
+                          },
+                        }}
+                        prefetch
+                        className="block py-2 rounded-xl active:scale-[0.99] transition"
+                      >
+                        {rowContent}
+                      </Link>
+                    )}
                   </li>
                 );
               })}
@@ -978,11 +994,12 @@ export default function WalletPage() {
   return (
     <ReceiveDrawerController>
       {({ openReceiveDrawer }) => (
-        <div className="min-h-screen w-full flex flex-col items-center p-4 pt-[calc(4rem+env(safe-area-inset-top))] pb-[calc(10rem+env(safe-area-inset-bottom))] overflow-y-auto scrollbar-hide">
-          <div className="w-full max-w-md">
-            {(() => {
-              return (
-                <>
+        <>
+          <div className="min-h-screen w-full flex flex-col items-center p-4 pt-[calc(4rem+env(safe-area-inset-top))] pb-[calc(10rem+env(safe-area-inset-bottom))] overflow-y-auto scrollbar-hide">
+            <div className="w-full max-w-md">
+              {(() => {
+                return (
+                  <>
             <div className="mb-2 mt-2">{renderWalletHeader(openReceiveDrawer)}</div>
 
             <Link
@@ -1061,9 +1078,14 @@ export default function WalletPage() {
             )}
                 </>
               );
-            })()}
+              })()}
+            </div>
           </div>
-        </div>
+          <MorphoDepositDrawer
+            isOpen={showMorphoDrawer}
+            onOpenChange={setShowMorphoDrawer}
+          />
+        </>
       )}
     </ReceiveDrawerController>
   );

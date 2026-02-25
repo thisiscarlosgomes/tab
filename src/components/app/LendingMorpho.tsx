@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { NumericFormat } from "react-number-format";
 import sdk from "@farcaster/frame-sdk";
 import { Button } from "../ui/button";
@@ -95,7 +95,7 @@ export function MorphoDepositDrawer({
     },
   });
 
-  const { data: usdcEquivalent } = useReadContract({
+  const { data: usdcEquivalent, refetch: refetchUsdcEquivalent } = useReadContract({
     address: VAULT_ADDRESS,
     abi: erc4626Abi,
     functionName: "convertToAssets",
@@ -155,10 +155,10 @@ export function MorphoDepositDrawer({
     fetchApy();
   }, []);
 
-  useEffect(() => {
-    const fetchBalance = async () => {
-      if (!address) return;
+  const refetchUsdcWalletBalance = useCallback(async () => {
+    if (!address) return;
 
+    try {
       const balance = await client.readContract({
         address: USDC_ADDRESS,
         abi: erc20Abi,
@@ -168,10 +168,14 @@ export function MorphoDepositDrawer({
 
       const formatted = parseFloat(formatUnits(balance, USDC_DECIMALS));
       setUsdcBalance(formatted);
-    };
-
-    fetchBalance();
+    } catch {
+      // best effort
+    }
   }, [address]);
+
+  useEffect(() => {
+    void refetchUsdcWalletBalance();
+  }, [refetchUsdcWalletBalance]);
 
   const rawAmount =
     parsedAmount && !isNaN(parsedAmount)
@@ -187,6 +191,40 @@ export function MorphoDepositDrawer({
       enabled: !!address && rawAmount > 0n,
     },
   });
+
+  useEffect(() => {
+    if (!isOpen) return;
+    let cancelled = false;
+
+    const refreshDrawerBalances = async () => {
+      try {
+        await refetchVaultBalance();
+        await refetchUsdcEquivalent();
+        await refetchAllowance?.();
+        await refetchUsdcWalletBalance();
+      } catch {
+        // best effort
+      }
+    };
+
+    void refreshDrawerBalances();
+
+    const timeoutId = window.setTimeout(() => {
+      if (cancelled) return;
+      void refreshDrawerBalances();
+    }, 1200);
+
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timeoutId);
+    };
+  }, [
+    isOpen,
+    refetchAllowance,
+    refetchUsdcEquivalent,
+    refetchUsdcWalletBalance,
+    refetchVaultBalance,
+  ]);
 
   const [totalDeposited, setTotalDeposited] = useState<number | null>(null);
 
@@ -264,8 +302,15 @@ export function MorphoDepositDrawer({
         })
       );
 
-      // ✅ NOW refetch vault balance
+      // ✅ Refresh drawer balances/position after confirmation.
       await refetchVaultBalance();
+      await refetchUsdcEquivalent();
+      await refetchUsdcWalletBalance();
+      window.setTimeout(() => {
+        void refetchVaultBalance();
+        void refetchUsdcEquivalent();
+        void refetchUsdcWalletBalance();
+      }, 1200);
 
       setTxHash(tx);
       setSuccess(true);
@@ -332,8 +377,15 @@ export function MorphoDepositDrawer({
       setTxHash(tx);
       setSuccess(true);
 
-      // refresh vault position
+      // refresh vault position and wallet balance
       await refetchVaultBalance();
+      await refetchUsdcEquivalent();
+      await refetchUsdcWalletBalance();
+      window.setTimeout(() => {
+        void refetchVaultBalance();
+        void refetchUsdcEquivalent();
+        void refetchUsdcWalletBalance();
+      }, 1200);
 
       toast.success("Withdrawal successful", {
         description: `USDC is back in your wallet`,
