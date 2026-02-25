@@ -13,6 +13,7 @@ import {
 import { shortAddress } from "@/lib/shortAddress";
 import { useRouter } from "next/navigation";
 import { useTabIdentity } from "@/lib/useTabIdentity";
+import { useIdentityToken, useToken } from "@privy-io/react-auth";
 
 import {
   ReceiptText,
@@ -23,6 +24,8 @@ import {
   Gamepad2,
   Ticket,
   Sprout,
+  Bell,
+  X,
 } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
 import { UserAvatar } from "@/components/ui/user-avatar";
@@ -49,6 +52,18 @@ interface ActivityItem {
   agentId?: string | null;
   timestamp: string | Date;
 }
+
+type WebPushState = {
+  configured: boolean;
+  vapidPublicKey: string | null;
+  subscriptions: Array<{
+    endpoint: string;
+    platform: string | null;
+    enabled?: boolean;
+    updatedAt?: string;
+    lastSeenAt?: string;
+  }>;
+};
 
 const ACTIVITY_CACHE_TTL_MS = 30_000;
 const activityCache = new Map<
@@ -115,8 +130,31 @@ const ACTIVITY_VISUALS: Record<string, { icon: React.ReactNode; bg: string }> =
     },
   };
 
+function urlBase64ToUint8Array(base64String: string) {
+  const padding = "=".repeat((4 - (base64String.length % 4)) % 4);
+  const base64 = (base64String + padding).replace(/-/g, "+").replace(/_/g, "/");
+  const rawData = window.atob(base64);
+  const outputArray = new Uint8Array(rawData.length);
+  for (let i = 0; i < rawData.length; ++i) outputArray[i] = rawData.charCodeAt(i);
+  return outputArray;
+}
+
+function detectPushPlatform() {
+  const ua = navigator.userAgent.toLowerCase();
+  const isIOS = /iphone|ipad|ipod/.test(ua);
+  const standalone =
+    window.matchMedia?.("(display-mode: standalone)")?.matches ||
+    // @ts-expect-error safari legacy
+    window.navigator.standalone === true;
+  if (isIOS && standalone) return "ios_home_screen";
+  if (isIOS) return "ios_safari";
+  return "web";
+}
+
 export default function ActivityPage() {
   const { address } = useTabIdentity();
+  const { identityToken } = useIdentityToken();
+  const { getAccessToken } = useToken();
   const router = useRouter();
 
   const [activity, setActivity] = useState<ActivityItem[]>([]);
@@ -124,12 +162,30 @@ export default function ActivityPage() {
   const [tag, setTag] = useState<"all" | "payments" | "agent" | "other">(
     "all"
   );
+  const [pushState, setPushState] = useState<WebPushState | null>(null);
+  const [pushLoading, setPushLoading] = useState(false);
+  const [pushStatus, setPushStatus] = useState<string | null>(null);
+  const [hidePushPrompt, setHidePushPrompt] = useState(false);
 
   const getRecipientSourceText = (item: ActivityItem) => {
     if (item.executionMode !== "service_agent") return "";
     if (item.recipientResolutionSource === "tab") return " on Tab";
     if (item.recipientResolutionSource === "farcaster") return " via Farcaster";
     return "";
+  };
+
+  const getAuthToken = async () => {
+    return identityToken ?? (await getAccessToken().catch(() => null));
+  };
+
+  const fetchWebPushState = async () => {
+    const token = await getAuthToken();
+    if (!token) return;
+    const res = await fetch("/api/webpush/subscriptions", {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    const data = await res.json().catch(() => null);
+    if (res.ok) setPushState(data);
   };
 
   /* ---------- ACTIVITY FETCH ---------- */
@@ -206,6 +262,93 @@ export default function ActivityPage() {
       controller.abort();
     };
   }, [address]);
+
+  useEffect(() => {
+    if (!address) return;
+    try {
+      setHidePushPrompt(
+        localStorage.getItem(`tab:activity:push-prompt-hidden:${address.toLowerCase()}`) === "1"
+      );
+    } catch {
+      setHidePushPrompt(false);
+    }
+  }, [address]);
+
+  useEffect(() => {
+    void fetchWebPushState();
+  }, [identityToken, getAccessToken]);
+
+  const enableWebPush = async () => {
+    setPushStatus(null);
+    if (!("serviceWorker" in navigator) || !("PushManager" in window)) {
+      setPushStatus("This browser does not support web push notifications.");
+      return;
+    }
+
+    const token = await getAuthToken();
+    if (!token) {
+      setPushStatus("Sign in required.");
+      return;
+    }
+
+    setPushLoading(true);
+    try {
+      const statusRes = await fetch("/api/webpush/subscriptions", {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const statusJson = (await statusRes.json().catch(() => null)) as WebPushState | null;
+      if (!statusRes.ok) throw new Error("Failed to load push settings");
+      setPushState(statusJson);
+
+      if (!statusJson?.configured || !statusJson.vapidPublicKey) {
+        throw new Error("Web push is not configured on the server yet.");
+      }
+
+      const permission = await Notification.requestPermission();
+      if (permission !== "granted") {
+        throw new Error("Notification permission was not granted.");
+      }
+
+      const registration = await navigator.serviceWorker.register("/sw.js");
+      const existing = await registration.pushManager.getSubscription();
+      const subscription =
+        existing ??
+        (await registration.pushManager.subscribe({
+          userVisibleOnly: true,
+          applicationServerKey: urlBase64ToUint8Array(statusJson.vapidPublicKey),
+        }));
+
+      const saveRes = await fetch("/api/webpush/subscriptions", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          subscription: subscription.toJSON(),
+          platform: detectPushPlatform(),
+        }),
+      });
+      const saveJson = await saveRes.json().catch(() => null);
+      if (!saveRes.ok) throw new Error(saveJson?.error ?? "Failed to save push subscription");
+
+      setPushStatus("Web notifications enabled.");
+      if (address) {
+        try {
+          localStorage.setItem(
+            `tab:activity:push-prompt-hidden:${address.toLowerCase()}`,
+            "1"
+          );
+        } catch {}
+      }
+      setHidePushPrompt(true);
+      await fetchWebPushState();
+    } catch (error) {
+      setPushStatus(error instanceof Error ? error.message : "Failed to enable notifications");
+    } finally {
+      setPushLoading(false);
+    }
+  };
 
   /* ---------- FILTERING ---------- */
   const now = new Date();
@@ -284,6 +427,13 @@ export default function ActivityPage() {
     </div>
   );
 
+  const showPushPromptCard = Boolean(
+    !hidePushPrompt &&
+      pushState &&
+      pushState.configured &&
+      (pushState.subscriptions?.length ?? 0) === 0
+  );
+
   /* ---------- RENDER ---------- */
   return (
     <div className="min-h-screen p-4 pt-[calc(4rem+env(safe-area-inset-top))] pb-[calc(8rem+env(safe-area-inset-bottom))]">
@@ -311,6 +461,49 @@ export default function ActivityPage() {
             </button>
           ))}
         </div>
+
+        {showPushPromptCard && (
+          <div className="mb-4 rounded-2xl bg-white/5 border border-white/10 p-4">
+            <div className="relative">
+              <button
+                type="button"
+                aria-label="Dismiss notification prompt"
+                className="absolute right-0 top-0 text-white/40 hover:text-white/70"
+                onClick={() => {
+                  setHidePushPrompt(true);
+                  if (!address) return;
+                  try {
+                    localStorage.setItem(
+                      `tab:activity:push-prompt-hidden:${address.toLowerCase()}`,
+                      "1"
+                    );
+                  } catch {}
+                }}
+              >
+                <X className="h-4 w-4" />
+              </button>
+
+              <div className="flex flex-col items-center text-center pt-1">
+               
+                <p className="text-white text-md font-semibold">Never miss a payment</p>
+                <p className="mt-1 text-white/50 text-xs max-w-[22rem]">
+                  Allow notifications for updates and reminders.
+                </p>
+                <button
+                  type="button"
+                  disabled={pushLoading}
+                  onClick={() => void enableWebPush()}
+                  className="mt-4 w-full rounded-md bg-primary py-3 font-semibold text-black disabled:opacity-60"
+                >
+                  {pushLoading ? "Turning on..." : "Turn on"}
+                </button>
+                {pushStatus ? (
+                  <p className="mt-2 text-xs text-white/50">{pushStatus}</p>
+                ) : null}
+              </div>
+            </div>
+          </div>
+        )}
 
         {loading ? (
           renderLoadingSkeleton()
