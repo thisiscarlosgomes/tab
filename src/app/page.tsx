@@ -4,7 +4,13 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { useFrameSplash } from "@/providers/FrameSplashProvider";
-import { useLinkAccount, useLoginWithEmail, usePrivy } from "@privy-io/react-auth";
+import {
+  useIdentityToken,
+  useLinkAccount,
+  useLoginWithEmail,
+  usePrivy,
+  useToken,
+} from "@privy-io/react-auth";
 
 import { useScanDrawer } from "@/providers/ScanDrawerProvider";
 import { useSendDrawer } from "@/providers/SendDrawerProvider";
@@ -53,6 +59,12 @@ type FriendUser = {
 type MultiBalances = {
   base?: number;
   totalPortfolio?: number;
+};
+
+type WebPushState = {
+  configured: boolean;
+  vapidPublicKey: string | null;
+  subscriptions: Array<{ endpoint: string }>;
 };
 
 const AUTH_WELCOME_STEPS = [
@@ -325,11 +337,34 @@ function AuthBrandLockup() {
   );
 }
 
+function urlBase64ToUint8Array(base64String: string) {
+  const padding = "=".repeat((4 - (base64String.length % 4)) % 4);
+  const base64 = (base64String + padding).replace(/-/g, "+").replace(/_/g, "/");
+  const rawData = window.atob(base64);
+  const outputArray = new Uint8Array(rawData.length);
+  for (let i = 0; i < rawData.length; ++i) outputArray[i] = rawData.charCodeAt(i);
+  return outputArray;
+}
+
+function detectPushPlatform() {
+  const ua = navigator.userAgent.toLowerCase();
+  const isIOS = /iphone|ipad|ipod/.test(ua);
+  const standalone =
+    window.matchMedia?.("(display-mode: standalone)")?.matches ||
+    // @ts-expect-error safari legacy
+    window.navigator.standalone === true;
+  if (isIOS && standalone) return "ios_home_screen";
+  if (isIOS) return "ios_safari";
+  return "web";
+}
+
 export default function Home() {
   const router = useRouter();
   const { dismiss } = useFrameSplash();
   const { address, isConnected, username } = useTabIdentity();
   const { ready, authenticated, user } = usePrivy();
+  const { identityToken } = useIdentityToken();
+  const { getAccessToken } = useToken();
   const { sendCode, loginWithCode } = useLoginWithEmail();
   const { linkFarcaster } = useLinkAccount();
   const [isConnecting, setIsConnecting] = useState(false);
@@ -345,6 +380,12 @@ export default function Home() {
   const [farcasterLinkError, setFarcasterLinkError] = useState<string | null>(
     null
   );
+  const [pendingPostOtpNotificationCheck, setPendingPostOtpNotificationCheck] =
+    useState(false);
+  const [showPostOtpNotificationDialog, setShowPostOtpNotificationDialog] =
+    useState(false);
+  const [postOtpNotificationBusy, setPostOtpNotificationBusy] = useState(false);
+  const [postOtpNotificationError, setPostOtpNotificationError] = useState<string | null>(null);
 
   const { open: openScanDrawer } = useScanDrawer();
   const { open, setQuery, setSelectedUser, setSelectedToken, setTokenType } =
@@ -450,6 +491,10 @@ export default function Home() {
       setResendSecondsLeft(0);
       return;
     }
+    setPendingPostOtpNotificationCheck(false);
+    setShowPostOtpNotificationDialog(false);
+    setPostOtpNotificationBusy(false);
+    setPostOtpNotificationError(null);
   }, [authenticated]);
 
   useEffect(() => {
@@ -493,6 +538,66 @@ export default function Home() {
   const shouldShowFarcasterLinkStep = Boolean(
     ready && authenticated && user?.id && !hasLinkedFarcaster
   );
+
+  const getAuthToken = useCallback(async () => {
+    return identityToken ?? (await getAccessToken().catch(() => null));
+  }, [identityToken, getAccessToken]);
+
+  useEffect(() => {
+    if (!pendingPostOtpNotificationCheck) return;
+    if (!authenticated || !user?.id) return;
+
+    let cancelled = false;
+
+    const checkPushStatus = async () => {
+      const promptSeenKey = `tab:post-otp-push-prompt-seen:${user.id}`;
+      try {
+        try {
+          if (localStorage.getItem(promptSeenKey) === "1") {
+            return;
+          }
+        } catch {
+          // ignore
+        }
+
+        if (!("serviceWorker" in navigator) || !("PushManager" in window)) {
+          try {
+            localStorage.setItem(promptSeenKey, "1");
+          } catch {}
+          return;
+        }
+
+        const token = await getAuthToken();
+        if (!token || cancelled) return;
+
+        const res = await fetch("/api/webpush/subscriptions", {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        const data = (await res.json().catch(() => null)) as WebPushState | null;
+        if (cancelled) return;
+
+        const hasEnabledSub = Boolean(data?.subscriptions?.length);
+        if (hasEnabledSub) {
+          try {
+            localStorage.setItem(promptSeenKey, "1");
+          } catch {}
+          return;
+        }
+
+        setPostOtpNotificationError(null);
+        setShowPostOtpNotificationDialog(true);
+      } catch {
+        // If status check fails, don't block onboarding.
+      } finally {
+        if (!cancelled) setPendingPostOtpNotificationCheck(false);
+      }
+    };
+
+    void checkPushStatus();
+    return () => {
+      cancelled = true;
+    };
+  }, [pendingPostOtpNotificationCheck, authenticated, user?.id, getAuthToken]);
 
   useEffect(() => {
     const cached = localStorage.getItem("tab_actives");
@@ -843,6 +948,7 @@ export default function Home() {
     setAuthBusy("verify");
     try {
       await loginWithCode({ code: authCode });
+      setPendingPostOtpNotificationCheck(true);
     } catch (err) {
       console.error("Email code verify failed", err);
       setAuthError("Invalid code. Please try again.");
@@ -914,6 +1020,85 @@ export default function Home() {
     setLastAutoSubmittedCode(authCode);
     void confirmEmailCode();
   }, [authStep, authCode, authBusy, lastAutoSubmittedCode]);
+
+  const dismissPostOtpNotificationDialog = useCallback(() => {
+    if (!user?.id) {
+      setShowPostOtpNotificationDialog(false);
+      return;
+    }
+    try {
+      localStorage.setItem(`tab:post-otp-push-prompt-seen:${user.id}`, "1");
+    } catch {}
+    setShowPostOtpNotificationDialog(false);
+    setPostOtpNotificationError(null);
+  }, [user?.id]);
+
+  const enablePostOtpNotifications = useCallback(async () => {
+    setPostOtpNotificationError(null);
+    if (!("serviceWorker" in navigator) || !("PushManager" in window)) {
+      setPostOtpNotificationError("This browser does not support notifications.");
+      return;
+    }
+
+    const token = await getAuthToken();
+    if (!token) {
+      setPostOtpNotificationError("Sign in required.");
+      return;
+    }
+
+    setPostOtpNotificationBusy(true);
+    try {
+      const statusRes = await fetch("/api/webpush/subscriptions", {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const statusJson = (await statusRes.json().catch(() => null)) as WebPushState | null;
+      if (!statusRes.ok) {
+        throw new Error("Failed to load notification settings.");
+      }
+      if (!statusJson?.configured || !statusJson.vapidPublicKey) {
+        throw new Error("Notifications are not configured on the server yet.");
+      }
+
+      const permission = await Notification.requestPermission();
+      if (permission !== "granted") {
+        throw new Error("Notification permission was not granted.");
+      }
+
+      const registration = await navigator.serviceWorker.register("/sw.js");
+      const existing = await registration.pushManager.getSubscription();
+      const subscription =
+        existing ??
+        (await registration.pushManager.subscribe({
+          userVisibleOnly: true,
+          applicationServerKey: urlBase64ToUint8Array(statusJson.vapidPublicKey),
+        }));
+
+      const saveRes = await fetch("/api/webpush/subscriptions", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          subscription: subscription.toJSON(),
+          platform: detectPushPlatform(),
+        }),
+      });
+
+      const saveJson = await saveRes.json().catch(() => null);
+      if (!saveRes.ok) {
+        throw new Error(saveJson?.error ?? "Failed to save notification subscription.");
+      }
+
+      dismissPostOtpNotificationDialog();
+    } catch (error) {
+      setPostOtpNotificationError(
+        error instanceof Error ? error.message : "Failed to enable notifications."
+      );
+    } finally {
+      setPostOtpNotificationBusy(false);
+    }
+  }, [dismissPostOtpNotificationDialog, getAuthToken]);
 
   if (!ready) {
     return <AuthValidationSplash />;
@@ -1242,6 +1427,60 @@ export default function Home() {
               )}
 
               <p className="hidden text-xs text-white/20 text-center pt-1">2025 © tab tech</p>
+            </div>
+          </ResponsiveDialogContent>
+        </ResponsiveDialog>
+      </main>
+    );
+  }
+
+  if (authenticated && user?.id && showPostOtpNotificationDialog) {
+    return (
+      <main className="relative h-[100dvh] w-full overflow-hidden bg-black text-center text-white overscroll-none">
+        <div className="absolute inset-0 bg-background" />
+        <div className="relative z-10 h-full px-6 mx-auto w-full max-w-md flex flex-col items-center justify-center">
+          <AuthBrandLockup />
+        </div>
+
+        <ResponsiveDialog open onOpenChange={() => {}}>
+          <ResponsiveDialogContent className="p-4 md:w-full md:max-w-md max-h-[calc(100dvh-110px)] md:max-h-[85vh] overflow-hidden [&>svg]:hidden">
+            <div className="rounded-t-3xl md:rounded-2xl bg-background p-4 md:p-5 flex flex-col gap-5 max-h-[calc(100dvh-140px)] md:max-h-[calc(85vh-2rem)] overflow-y-auto">
+              <ResponsiveDialogTitle className="sr-only">
+                Allow notifications
+              </ResponsiveDialogTitle>
+
+              <div className="text-left">
+                <h2 className="text-lg font-semibold leading-tight">
+                  Allow notifications
+                </h2>
+                <p className="mt-2 text-white/50 text-sm">
+                  Get payment alerts and reminders from Tab. You can change this later.
+                </p>
+              </div>
+
+              {postOtpNotificationError ? (
+                <p className="text-red-300/90 text-sm text-left">
+                  {postOtpNotificationError}
+                </p>
+              ) : null}
+
+              <div className="flex flex-col gap-3">
+                <Button
+                  className="w-full bg-primary text-black font-semibold"
+                  disabled={postOtpNotificationBusy}
+                  onClick={() => void enablePostOtpNotifications()}
+                >
+                  {postOtpNotificationBusy ? "Enabling..." : "Allow notifications"}
+                </Button>
+                <Button
+                  variant="ghost"
+                  className="w-full bg-white/5 text-white hover:bg-white/10"
+                  disabled={postOtpNotificationBusy}
+                  onClick={dismissPostOtpNotificationDialog}
+                >
+                  Not now
+                </Button>
+              </div>
             </div>
           </ResponsiveDialogContent>
         </ResponsiveDialog>

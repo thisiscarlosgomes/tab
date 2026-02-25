@@ -471,7 +471,7 @@ export function SendToRawAddressDrawer({
                         setShowTokenDrawer(false);
                         setTokenType(token.name);
                       }}
-                      className="w-full flex items-center justify-between p-3 rounded-lg bg-white/5 hover:bg-white/10"
+                      className="w-full flex items-center justify-between p-3 rounded-lg bg-white/0 hover:bg-white/5"
                     >
                       <div className="flex items-center gap-3">
                         <img

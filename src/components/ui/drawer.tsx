@@ -43,18 +43,18 @@ const DrawerContent = React.forwardRef<
     <DrawerPrimitive.Content
       ref={ref}
       className={cn(
-        'fixed inset-x-0 bottom-0 z-50 mt-24 flex h-auto flex-col rounded-t-[34px] bg-background pb-[env(safe-area-inset-bottom)]',
+        'border-t border-2 border-white/5 fixed inset-x-0 bottom-0 z-50 mt-24 flex h-auto flex-col rounded-t-[34px] bg-background pb-[env(safe-area-inset-bottom)]',
         className,
       )}
       {...props}
     >
       <svg
         xmlns="http://www.w3.org/2000/svg"
-        width="55"
+        width="32"
         height="4"
         viewBox="0 0 55 4"
         fill="none"
-        className="mx-auto mt-3"
+        className="mx-auto mt-3 mb-3"
       >
         <path
           opacity="0.3"
