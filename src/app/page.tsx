@@ -1573,7 +1573,7 @@ export default function Home() {
             onOpenChange={setShowEarnDetailsDialog}
           >
             <ResponsiveDialogContent className="p-4 md:w-full md:max-w-md max-h-[calc(100dvh-110px)] md:max-h-[85vh] overflow-hidden">
-              <div className="rounded-t-3xl md:rounded-2xl bg-background p-4 flex flex-col gap-5 max-h-[calc(100dvh-140px)] md:max-h-[calc(85vh-2rem)] overflow-y-auto">
+              <div className="rounded-t-3xl md:rounded-2xl bg-background p-4 flex flex-col gap-3 max-h-[calc(100dvh-140px)] md:max-h-[calc(85vh-2rem)] overflow-y-auto">
                 <ResponsiveDialogTitle className="text-lg font-semibold text-white text-center">
                   You&apos;re earning
                 </ResponsiveDialogTitle>

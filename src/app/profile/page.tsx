@@ -464,25 +464,6 @@ export default function ProfilePage() {
   /* -------------------------------------- */
 
   const isInitialProfileLoading = isProfileLoading && !address;
-  const unpaidSplitsCount = bills.filter((bill) => {
-    if (bill.userStatus === "creator") {
-      const debtors = Number(bill.debtors ?? 0);
-      const paidCount = Number(bill.paidCount ?? 0);
-      return debtors > 0 && paidCount < debtors;
-    }
-    if (bill.userStatus === "participant" || bill.userStatus === "invited") {
-      return bill.hasPaid !== true && bill.isSettled !== true;
-    }
-    return false;
-  }).length;
-  const unpaidSpinsCount = userRooms.filter((room) => {
-    const chosenAddress = room.chosen?.address?.toLowerCase();
-    if (!chosenAddress) return true;
-
-    return !(room.paid ?? []).some(
-      (payment) => payment.address?.toLowerCase() === chosenAddress
-    );
-  }).length;
   const renderProfileSkeleton = () => (
     <div className="min-h-screen w-full flex flex-col items-center p-4 pt-[calc(4rem+env(safe-area-inset-top))] pb-[calc(10rem+env(safe-area-inset-bottom))] overflow-y-auto scrollbar-hide">
       <div className="w-full max-w-md">
@@ -513,6 +494,20 @@ export default function ProfilePage() {
 
   const renderProfileHero = () => {
     if (!address) {
+      if (isProfileLoading) {
+        return (
+          <div className="pt-3 pb-5">
+            <div className="flex items-start justify-between gap-4">
+              <Skeleton className="w-16 h-16 rounded-full shrink-0" />
+              <div className="min-w-0 flex-1 space-y-2 pt-1">
+                <Skeleton className="h-8 w-36 rounded-md" />
+                <Skeleton className="h-5 w-28 rounded-md" />
+              </div>
+              <Skeleton className="h-8 w-20 rounded-lg shrink-0 mt-1" />
+            </div>
+          </div>
+        );
+      }
       return (
         <div className="text-center text-white/40 py-10">
           Connect an account to view your profile.
@@ -862,7 +857,7 @@ export default function ProfilePage() {
             className={`w-1/2 pb-3 text-lg font-medium transition relative ${activeTab === "splits" ? "text-white" : "text-white/50"
               }`}
           >
-            {`Splits (${unpaidSplitsCount})`}
+            Splits
             {activeTab === "splits" && (
               <span className="absolute left-0 right-0 -bottom-[1px] h-1 bg-primary rounded-full" />
             )}
@@ -875,7 +870,7 @@ export default function ProfilePage() {
             className={`w-1/2 pb-3 text-lg font-medium transition relative ${activeTab === "spins" ? "text-white" : "text-white/50"
               }`}
           >
-            {unpaidSpinsCount > 0 ? `Spins (${unpaidSpinsCount})` : "Spins"}
+            Spins
             {activeTab === "spins" && (
               <span className="absolute left-0 right-0 -bottom-[1px] h-1 bg-primary rounded-full" />
             )}

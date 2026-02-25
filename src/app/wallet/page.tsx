@@ -589,7 +589,7 @@ export default function WalletPage() {
 
     const walletActions = [
       {
-        label: "Request",
+        label: "Deposit",
         icon: QrCode,
         onClick: () => openReceiveDrawer(),
         disabled: false,

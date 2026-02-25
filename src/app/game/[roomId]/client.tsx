@@ -1,19 +1,25 @@
 "use client";
 
-import React, { useEffect, useState } from "react";
+import React, { useCallback, useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { useAccount } from "wagmi";
 import sdk from "@farcaster/frame-sdk";
-import { Drawer } from "vaul";
 import { NumericFormat } from "react-number-format";
 import { useGame } from "@/hooks/useGame";
 import { ParticipantList } from "@/components/app/participantList";
 import { SpinButton } from "@/components/app/spinButton";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { PaymentTokenPickerDialog } from "@/components/app/PaymentTokenPickerDialog";
+import {
+  ResponsiveDialog,
+  ResponsiveDialogContent,
+  ResponsiveDialogTitle,
+} from "@/components/ui/responsive-dialog";
 import { useFrameSplash } from "@/providers/FrameSplashProvider";
 import { toast } from "sonner";
 import { tokenList } from "@/lib/tokens";
+import { useTabIdentity } from "@/lib/useTabIdentity";
 import { Loader, Copy, CopyCheck, Share, Settings } from "lucide-react";
 
 const getTokenPrefix = (token?: string) => {
@@ -32,7 +38,13 @@ const getTokenPrefix = (token?: string) => {
 export default function RoomPage() {
   const { dismiss } = useFrameSplash();
   const router = useRouter();
-  const { address, isConnected } = useAccount();
+  const { address } = useAccount();
+  const {
+    address: identityAddress,
+    username: identityUsername,
+    pfp: identityPfp,
+    fid: identityFid,
+  } = useTabIdentity();
   const { roomId } = useParams();
 
   const safeRoomId = Array.isArray(roomId) ? roomId[0] : (roomId ?? "");
@@ -61,11 +73,56 @@ export default function RoomPage() {
 
   const [closing, setClosing] = useState(false);
   const [showHowItWorks, setShowHowItWorks] = useState(false);
+  const viewerAddress = (address ?? identityAddress ?? "").toLowerCase();
+  const hasJoined = participants.some((p) => {
+    if (viewerAddress && p.address?.toLowerCase?.() === viewerAddress) return true;
+    if (identityFid != null && p.fid != null && Number(p.fid) === Number(identityFid)) {
+      return true;
+    }
+    return false;
+  });
+
+  const joinRoom = useCallback(async () => {
+    if (!game || !viewerAddress) return;
+    if (hasJoined) return;
+
+    let ctx: Awaited<typeof sdk.context> | null = null;
+    try {
+      ctx = await sdk.context;
+    } catch {
+      ctx = null;
+    }
+
+    const player = {
+      name: ctx?.user?.username ?? identityUsername ?? viewerAddress.slice(0, 6),
+      address: viewerAddress,
+      pfp: ctx?.user?.pfpUrl ?? identityPfp ?? undefined,
+      fid: ctx?.user?.fid ?? identityFid ?? undefined,
+    };
+
+    const res = await fetch(`/api/game/${safeRoomId.toLowerCase()}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ player }),
+    });
+
+    if (!res.ok) throw new Error("Join failed");
+    refresh();
+  }, [
+    game,
+    viewerAddress,
+    hasJoined,
+    identityUsername,
+    identityPfp,
+    identityFid,
+    safeRoomId,
+    refresh,
+  ]);
 
   const isAdmin =
-    !!address &&
+    !!viewerAddress &&
     !!game?.admin &&
-    game.admin.toLowerCase() === address.toLowerCase();
+    game.admin.toLowerCase() === viewerAddress;
 
   const hasChosenPaid =
     !!chosen &&
@@ -75,8 +132,8 @@ export default function RoomPage() {
 
   const canCloseTab =
     !!chosen &&
-    !!address &&
-    chosen.address.toLowerCase() === address.toLowerCase() &&
+    !!viewerAddress &&
+    chosen.address.toLowerCase() === viewerAddress &&
     !hasChosenPaid;
 
   const copyUrl = `https://usetab.app/game/${game?.gameId}`;
@@ -104,30 +161,12 @@ export default function RoomPage() {
      AUTO JOIN (EPHEMERAL ROOM LOGIC)
   ---------------------------------- */
   useEffect(() => {
-    if (!game || !address || !isConnected) return;
-
-    const alreadyJoined = participants.some(
-      (p) => p.address.toLowerCase() === address.toLowerCase()
-    );
-
-    if (alreadyJoined) return;
+    if (!game || !viewerAddress) return;
+    if (hasJoined) return;
 
     (async () => {
       try {
-        const ctx = await sdk.context;
-
-        const player = {
-          name: ctx.user?.username ?? address.slice(0, 6),
-          address,
-          pfp: ctx.user?.pfpUrl,
-          fid: ctx.user?.fid,
-        };
-
-        await fetch(`/api/game/${safeRoomId.toLowerCase()}`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ player }),
-        });
+        await joinRoom();
 
         // ✅ HAPTIC (best effort)
         try {
@@ -142,7 +181,7 @@ export default function RoomPage() {
         console.error("Auto-join failed", err);
       }
     })();
-  }, [game, address, isConnected, participants, refresh, safeRoomId]);
+  }, [game, viewerAddress, hasJoined, joinRoom]);
 
   useEffect(() => {
     dismiss();
@@ -252,9 +291,9 @@ export default function RoomPage() {
   });
 
   const isYou =
-    !!address &&
+    !!viewerAddress &&
     !!chosen &&
-    chosen.address.toLowerCase() === address.toLowerCase();
+    chosen.address.toLowerCase() === viewerAddress;
 
   const state = !chosen ? "waiting" : hasChosenPaid ? "settled" : "result";
 
@@ -353,6 +392,20 @@ export default function RoomPage() {
               )}
             </div>
           </>
+        ) : !hasJoined ? (
+          <Button
+            onClick={async () => {
+              try {
+                await joinRoom();
+                toast.success("You joined the tab 🍻");
+              } catch {
+                toast.error("Failed to join");
+              }
+            }}
+            className="w-full bg-primary text-black"
+          >
+            Join group
+          </Button>
         ) : (
           <Button onClick={handleShare} className="w-full bg-white text-black">
             <Share className="mr-2 h-4 w-4" />
@@ -444,21 +497,18 @@ export default function RoomPage() {
         )}
       </div>
 
-      <Drawer.Root
-        open={isAdmin && showDrawer}
-        onOpenChange={setShowDrawer}
+      <ResponsiveDialog
+        open={Boolean(isAdmin && showDrawer)}
+        onOpenChange={(open) => setShowDrawer(open)}
         repositionInputs={false}
       >
-        <Drawer.Portal>
-          <Drawer.Overlay className="fixed inset-0 bg-[#4E4C52]/60 backdrop-blur-[7.5px] z-20" />
-          <Drawer.Content className="z-30 bg-background flex flex-col rounded-t-[32px] mt-24 h-fit fixed bottom-0 left-0 right-0 outline-none pb-6">
-            <div className="mx-auto w-12 h-1.5 rounded-full bg-white/10 mb-4 mt-4" />
-            <Drawer.Title className="text-lg font-normal text-center ">
-              Group Settings
-            </Drawer.Title>
+        <ResponsiveDialogContent className="top-auto bottom-0 p-4 pb-6 md:top-1/2 md:bottom-auto md:-translate-y-1/2 md:max-w-md">
+          <ResponsiveDialogTitle className="text-lg font-normal text-center">
+            Group Settings
+          </ResponsiveDialogTitle>
 
-            <div className="p-6 space-y-4 rounded-t-[10px] flex-1 space-y-4">
-              <div className="max-w-md mx-auto space-y-3">
+          <div className="mt-4 space-y-4">
+            <div className="max-w-md mx-auto space-y-3">
                 <div className="flex flex-col space-y-2">
                   <button
                     onClick={() => setTokenDrawerOpen(true)}
@@ -594,43 +644,18 @@ export default function RoomPage() {
                 >
                   Delete
                 </Button>
-              </div>
             </div>
-          </Drawer.Content>
-          <Drawer.Root open={tokenDrawerOpen} onOpenChange={setTokenDrawerOpen}>
-            <Drawer.Portal>
-              <Drawer.Overlay className="fixed inset-0 bg-[#4E4C52]/60 backdrop-blur-sm z-50" />
-              <Drawer.Content className="pb-16 fixed bottom-0 left-0 right-0 bg-background p-4 rounded-t-3xl max-h-[80vh] overflow-y-auto z-50">
-                <div className="mx-auto w-12 h-1.5 rounded-full bg-white/10 mb-4 mt-4" />
-                <Drawer.Title className="text-lg font-normal text-center mb-4">
-                  Select payment token
-                </Drawer.Title>
-                <div className="space-y-2">
-                  {tokenList.map((token) => (
-                    <button
-                      key={token.name}
-                      onClick={() => {
-                        setTokenType(token.name);
-                        setTokenDrawerOpen(false);
-                      }}
-                      className="w-full flex items-center p-3 rounded-lg bg-white/5 hover:bg-white/10"
-                    >
-                      <img
-                        src={token.icon}
-                        className="w-8 h-8 rounded-full mr-4"
-                        alt={token.name}
-                      />
-                      <div className="text-left">
-                        <p className="text-white font-medium">{token.name}</p>
-                      </div>
-                    </button>
-                  ))}
-                </div>
-              </Drawer.Content>
-            </Drawer.Portal>
-          </Drawer.Root>
-        </Drawer.Portal>
-      </Drawer.Root>
+          </div>
+        </ResponsiveDialogContent>
+      </ResponsiveDialog>
+
+      <PaymentTokenPickerDialog
+        open={tokenDrawerOpen}
+        onOpenChange={setTokenDrawerOpen}
+        selectedToken={tokenType}
+        onSelect={setTokenType}
+        title="Select payment token"
+      />
     </div>
   );
 }

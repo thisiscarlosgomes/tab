@@ -224,8 +224,10 @@ export default function ActivityPage() {
       }
       if (tag === "other") {
         return [
+          "bill_created",
           "bill_invited",
           "bill_joined",
+          "room_created",
           "room_invited",
           "room_joined",
           "jackpot_deposit",
