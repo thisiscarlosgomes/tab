@@ -784,10 +784,10 @@ export default function WalletPage() {
                           alt={token.symbol}
                           loading="lazy"
                           decoding="async"
-                          className="w-12 h-12 rounded-full object-cover"
+                          className="w-10 h-10 rounded-full object-cover"
                         />
                       ) : (
-                        <div className="w-12 h-12 rounded-full bg-white/10 text-xs flex items-center justify-center text-white/70">
+                        <div className="w-10 h-10 rounded-full bg-white/10 text-xs flex items-center justify-center text-white/70">
                           {token.symbol?.slice(0, 3) || "TOK"}
                         </div>
                       )}
