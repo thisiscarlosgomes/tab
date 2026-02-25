@@ -48,7 +48,7 @@ export function FriendsPickerDialog<T extends BaseFriend>({
   disabledLabel = "No linked wallet",
 }: FriendsPickerDialogProps<T>) {
   return (
-    <ResponsiveDialog open={open} onOpenChange={onOpenChange}>
+    <ResponsiveDialog open={open} onOpenChange={onOpenChange} repositionInputs={false}>
       <ResponsiveDialogContent className="top-auto h-auto min-h-[520px] max-h-[calc(100dvh-80px)] p-4 pb-6 md:top-1/2 md:-translate-y-1/2 md:max-w-md md:min-h-[520px] md:max-h-[70vh] flex flex-col">
         <ResponsiveDialogTitle className="text-center text-lg">
           {title}
@@ -177,4 +177,3 @@ export function FriendsPickerDialog<T extends BaseFriend>({
     </ResponsiveDialog>
   );
 }
-

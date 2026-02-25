@@ -394,6 +394,21 @@ export async function POST(req: NextRequest) {
     timestamp: createdAt,
   });
 
+  for (const invitedUser of invitedUsers) {
+    if (!invitedUser.address) continue;
+    void writeActivity({
+      address: invitedUser.address,
+      type: "bill_invited",
+      refType: "bill",
+      refId: splitId,
+      counterparty: {
+        address: sourceWalletAddress,
+        name: creator.name,
+      },
+      timestamp: createdAt,
+    });
+  }
+
   const splitUrl = `${getPublicBaseUrl(req)}/split/${splitId}`;
 
   // Best-effort invite notifications for users who already have web push enabled.

@@ -35,6 +35,19 @@ export function mapActivity(a: ActivityRecord) {
         timestamp: a.timestamp,
       };
 
+    case "bill_invited":
+      return {
+        type: "bill_invited",
+        splitId: a.refId,
+        counterparty: a.counterparty?.name ?? null,
+        pfp: a.counterparty?.pfp ?? null,
+        description:
+          typeof a.summary === "string" && a.summary.trim()
+            ? a.summary.trim()
+            : "Invited to split bill",
+        timestamp: a.timestamp,
+      };
+
     case "bill_joined":
       return {
         type: "bill_joined",
@@ -113,6 +126,19 @@ export function mapActivity(a: ActivityRecord) {
         type: "room_created",
         roomId: a.refId,
         description: `Created spin the tab`,
+        timestamp: a.timestamp,
+      };
+
+    case "room_invited":
+      return {
+        type: "room_invited",
+        roomId: a.refId,
+        counterparty: a.counterparty?.name ?? null,
+        pfp: a.counterparty?.pfp ?? null,
+        description:
+          typeof a.summary === "string" && a.summary.trim()
+            ? a.summary.trim()
+            : "Invited to spin the tab",
         timestamp: a.timestamp,
       };
 

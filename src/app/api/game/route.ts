@@ -232,6 +232,25 @@ export async function POST(req: NextRequest) {
     console.error("⚠️ Activity write failed", err);
   });
 
+  for (const invitedPlayer of invitedResolved) {
+    const invitedAddress = normalizeAddress(invitedPlayer?.address);
+    if (!invitedAddress) continue;
+    void writeActivity({
+      address: invitedAddress,
+      type: "room_invited",
+      refType: "room",
+      refId: gameId,
+      counterparty: {
+        address,
+        name: resolvedPlayer.name,
+        pfp: resolvedPlayer.pfp,
+      },
+      timestamp: createdAt,
+    }).catch(() => {
+      // best-effort
+    });
+  }
+
   console.log("🎉 Room created:", gameId);
 
   if (invitedResolved.length > 0) {

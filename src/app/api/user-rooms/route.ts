@@ -23,6 +23,7 @@ interface GameRoom {
   gameId: string;
   name?: string;
   participants: Participant[];
+  invited?: Participant[];
   admin: string;
   recipient?: string | null;
   amount?: number;
@@ -41,6 +42,8 @@ function ensureRoomIndexes(collection: Collection<GameRoom>) {
     ensureRoomIndexesPromise = (async () => {
       await collection.createIndexes([
         { key: { "participants.address": 1, createdAt: -1 } },
+        { key: { "invited.address": 1, createdAt: -1 } },
+        { key: { "invited.fid": 1, createdAt: -1 } },
         { key: { admin: 1, createdAt: -1 } },
       ]);
     })().catch(() => {
@@ -57,6 +60,8 @@ export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url);
 
   const address = searchParams.get("address")?.toLowerCase();
+  const fidParam = Number(searchParams.get("fid") ?? "");
+  const fid = Number.isFinite(fidParam) && fidParam > 0 ? fidParam : null;
   const limit = Number(searchParams.get("limit") ?? DEFAULT_LIMIT);
   const before = searchParams.get("before");
 
@@ -69,11 +74,21 @@ export async function GET(req: NextRequest) {
   const roomsCol = db.collection<GameRoom>("a-split-game");
   await ensureRoomIndexes(roomsCol);
 
+  const orFilters: Array<Record<string, string | number>> = [
+    { "participants.address": address },
+    { admin: address },
+    { "invited.address": address },
+  ];
+  if (fid) {
+    orFilters.push({ "participants.fid": fid });
+    orFilters.push({ "invited.fid": fid });
+  }
+
   const query: {
-    $or: Array<Record<string, string>>;
+    $or: Array<Record<string, string | number>>;
     createdAt?: { $lt: Date };
   } = {
-    $or: [{ "participants.address": address }, { admin: address }],
+    $or: orFilters,
   };
 
   if (before) {
@@ -86,6 +101,7 @@ export async function GET(req: NextRequest) {
       gameId: 1,
       name: 1,
       participants: 1,
+      invited: 1,
       admin: 1,
       recipient: 1,
       amount: 1,

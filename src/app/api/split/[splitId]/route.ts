@@ -274,6 +274,23 @@ export async function POST(req: NextRequest) {
       ? ` (${perPerson.toFixed(token === "ETH" ? 4 : 2)} ${token} each)`
       : "";
   if (!isReceiptOpen && Array.isArray(doc.invited) && doc.invited.length > 0) {
+    for (const invitedUser of doc.invited) {
+      const invitedAddress = normalizeAddress(invitedUser?.address);
+      if (!invitedAddress) continue;
+      void writeActivity({
+        address: invitedAddress,
+        type: "bill_invited",
+        refType: "bill",
+        refId: splitId,
+        counterparty: {
+          address: normalizedCreator.address,
+          name: normalizedCreator.name,
+          pfp: normalizedCreator.pfp,
+        },
+        timestamp: createdAt,
+      });
+    }
+
     void Promise.allSettled(
       doc.invited.map((invitedUser: any) =>
         sendWebNotificationToUser(

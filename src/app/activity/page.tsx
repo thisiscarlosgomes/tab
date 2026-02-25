@@ -67,6 +67,10 @@ const ACTIVITY_VISUALS: Record<string, { icon: React.ReactNode; bg: string }> =
       icon: <Plus className="w-4 h-4" />,
       bg: "bg-blue-500/20 text-blue-300",
     },
+    bill_invited: {
+      icon: <Plus className="w-4 h-4" />,
+      bg: "bg-cyan-500/20 text-cyan-300",
+    },
     bill_paid: {
       icon: <ArrowUpRight className="w-4 h-4" />,
       bg: "bg-green-500/20 text-green-300",
@@ -84,6 +88,10 @@ const ACTIVITY_VISUALS: Record<string, { icon: React.ReactNode; bg: string }> =
     room_joined: {
       icon: <Gamepad2 className="w-4 h-4" />,
       bg: "bg-purple-500/20 text-purple-300",
+    },
+    room_invited: {
+      icon: <Gamepad2 className="w-4 h-4" />,
+      bg: "bg-fuchsia-500/20 text-fuchsia-300",
     },
     room_paid: {
       icon: <ArrowUpRight className="w-4 h-4" />,
@@ -216,7 +224,9 @@ export default function ActivityPage() {
       }
       if (tag === "other") {
         return [
+          "bill_invited",
           "bill_joined",
+          "room_invited",
           "room_joined",
           "jackpot_deposit",
           "earn_deposit",

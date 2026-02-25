@@ -37,7 +37,7 @@ interface SplitBill {
 
 interface Room {
   gameId: string;
-  members: { name: string; pfp: string }[];
+  members: { address: string; name: string; pfp: string }[];
   admin?: string;
   createdAt: string;
   name: string | null;
@@ -348,7 +348,9 @@ export default function ProfilePage() {
     const controller = new AbortController();
     const timeoutId = window.setTimeout(() => controller.abort(), 6000);
     try {
-      const res = await fetch(`/api/user-rooms?address=${address}`, {
+      const params = new URLSearchParams({ address });
+      if (fid != null) params.set("fid", String(fid));
+      const res = await fetch(`/api/user-rooms?${params.toString()}`, {
         cache: "no-store",
         signal: controller.signal,
       });
@@ -771,6 +773,12 @@ export default function ProfilePage() {
             {userRooms.map((room) => {
               const isAdmin =
                 address?.toLowerCase() === room.admin?.toLowerCase();
+              const hasJoined = Boolean(
+                address &&
+                  room.members.some(
+                    (m) => m.address?.toLowerCase?.() === address.toLowerCase()
+                  )
+              );
 
               return (
                 <li
@@ -784,6 +792,10 @@ export default function ProfilePage() {
                       {isAdmin ? (
                         <span className="px-1.5 py-0.5 text-xs rounded-[6px] bg-yellow-600/20 text-yellow-300 border border-yellow-500/30">
                           Host
+                        </span>
+                      ) : hasJoined ? (
+                        <span className="px-1.5 py-0.5 text-xs rounded-[6px] bg-green-600/20 text-green-300 border border-green-500/30">
+                          Joined
                         </span>
                       ) : (
                         <span className="px-1.5 py-0.5 text-xs rounded-[6px] bg-white/10 text-white/40 border border-white/20">

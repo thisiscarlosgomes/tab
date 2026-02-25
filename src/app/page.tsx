@@ -1374,7 +1374,7 @@ export default function Home() {
               }}
               className={`bg-white/5 text-white  py-3 rounded-lg text-base font-semibold ${tap}`}
             >
-              Request
+              Deposit
             </button>
 
             {/* SPLIT */}

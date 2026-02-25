@@ -51,16 +51,18 @@ type RootProps = {
   defaultOpen?: boolean;
   onOpenChange?: (open: boolean) => void;
   modal?: boolean;
+  repositionInputs?: boolean;
 };
 
 function ResponsiveDialog({ children, ...props }: RootProps) {
   const isDesktop = useIsDesktop();
   const mode: Mode = isDesktop ? "desktop" : "mobile";
+  const { repositionInputs, ...sharedProps } = props;
 
   const shell = isDesktop ? (
-    <Dialog {...props}>{children}</Dialog>
+    <Dialog {...sharedProps}>{children}</Dialog>
   ) : (
-    <Drawer {...props}>{children}</Drawer>
+    <Drawer {...sharedProps} repositionInputs={repositionInputs}>{children}</Drawer>
   );
 
   return (

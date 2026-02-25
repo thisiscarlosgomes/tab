@@ -4,10 +4,12 @@ export interface ActivityInput {
   address: string;
   type:
     | "bill_created"
+    | "bill_invited"
     | "bill_joined"
     | "bill_paid"
     | "bill_received"
     | "room_created"
+    | "room_invited"
     | "room_joined"
     | "room_paid"
     | "room_received"
