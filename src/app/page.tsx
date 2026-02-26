@@ -1110,8 +1110,7 @@ export default function Home() {
     const activeWelcomeSlide = AUTH_WELCOME_STEPS[authWelcomeStep];
 
     return (
-      <main className="relative h-[100dvh] w-full overflow-hidden bg-black text-center text-white overscroll-none">
-        <div className="absolute inset-0 bg-background" />
+      <main className="relative h-[100dvh] w-full overflow-hidden bg-background text-center text-white overscroll-none">
 
         <div className="relative z-10 h-full px-6 mx-auto w-full max-w-md flex flex-col">
           {showWelcomeStep ? (
@@ -1436,8 +1435,7 @@ export default function Home() {
 
   if (authenticated && user?.id && showPostOtpNotificationDialog) {
     return (
-      <main className="relative h-[100dvh] w-full overflow-hidden bg-black text-center text-white overscroll-none">
-        <div className="absolute inset-0 bg-background" />
+      <main className="relative h-[100dvh] w-full overflow-hidden bg-background text-center text-white overscroll-none">
         <div className="relative z-10 h-full px-6 mx-auto w-full max-w-md flex flex-col items-center justify-center">
           <AuthBrandLockup />
         </div>
@@ -1490,8 +1488,7 @@ export default function Home() {
 
   if (shouldShowFarcasterLinkStep) {
     return (
-      <main className="relative h-[100dvh] w-full overflow-hidden bg-black text-center text-white overscroll-none">
-        <div className="absolute inset-0 bg-background" />
+      <main className="relative h-[100dvh] w-full overflow-hidden bg-background text-center text-white overscroll-none">
 
         <div className="relative z-10 h-full px-6 mx-auto w-full max-w-md flex flex-col items-center justify-center">
           <AuthBrandLockup />
