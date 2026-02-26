@@ -302,7 +302,7 @@ export default function RoomPage() {
       <Card className="w-full max-w-md p-4 space-y-3">
         {/* HEADER */}
         <div className="flex flex-col items-center">
-          <img src="/vpush.png" className="w-14 h-14" />
+      
           <h1 className="text-xl font-semibold">
             {game?.name?.trim() || "Spin tab"}
           </h1>

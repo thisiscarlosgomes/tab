@@ -345,7 +345,7 @@ export default function WalletPage() {
       setAgentAccess(next);
       try {
         localStorage.setItem(getAgentAccessCacheKey(address), JSON.stringify(next));
-      } catch {}
+      } catch { }
       setAgentAccessLoaded(true);
     } catch {
       if (!agentAccessLoaded) {
@@ -383,8 +383,8 @@ export default function WalletPage() {
       const data = await res.json();
       const next = Array.isArray(data?.activity)
         ? (data.activity as ActivityItem[]).filter((item) =>
-            TRANSACTION_TYPES.has(String(item?.type ?? ""))
-          )
+          TRANSACTION_TYPES.has(String(item?.type ?? ""))
+        )
         : [];
       setTransactions(next);
       walletTransactionsCache.set(cacheKey, { transactions: next, ts: Date.now() });
@@ -548,10 +548,10 @@ export default function WalletPage() {
 
   const hasFreshWalletCache = Boolean(
     address &&
-      (() => {
-        const cached = walletPortfolioCache.get(address.toLowerCase());
-        return cached && Date.now() - cached.ts < WALLET_PORTFOLIO_CACHE_TTL_MS;
-      })()
+    (() => {
+      const cached = walletPortfolioCache.get(address.toLowerCase());
+      return cached && Date.now() - cached.ts < WALLET_PORTFOLIO_CACHE_TTL_MS;
+    })()
   );
   const isInitialProfileLoading =
     (isProfileLoading && !address) || (!!address && !walletLoaded && !hasFreshWalletCache);
@@ -731,7 +731,7 @@ export default function WalletPage() {
       {
         label: "Buy",
         icon: CreditCard,
-        onClick: () => {},
+        onClick: () => { },
         disabled: true,
         iconClassName: "",
         labelClassName: "",
@@ -916,8 +916,7 @@ export default function WalletPage() {
     if (transactions.length === 0) {
       return (
         <div className="flex flex-col items-center text-center text-white/30 py-10">
-          <ReceiptText className="w-10 h-10 mb-2 text-white/30" />
-          <p>No recent transactions yet.</p>
+          <p>No activity yet...</p>
         </div>
       );
     }
@@ -1043,84 +1042,84 @@ export default function WalletPage() {
               {(() => {
                 return (
                   <>
-            <div className="mb-2 mt-2">{renderWalletHeader(openReceiveDrawer)}</div>
+                    <div className="mb-2 mt-2">{renderWalletHeader(openReceiveDrawer)}</div>
 
-            <Link
-              href="/profile/agent-access"
-              className="block mb-6 py-3 px-4 rounded-lg border border-white/10 bg-white/5 hover:bg-white/10 transition"
-            >
-              <div className="flex items-center gap-2">
-                <span className="relative flex h-2.5 w-2.5">
-                  {isAgentLive && (
-                    <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-80" />
-                  )}
-                  <span
-                    className={[
-                      "relative inline-flex h-2.5 w-2.5 rounded-full",
-                      isAgentLive ? "bg-emerald-400" : "bg-white/40",
-                    ].join(" ")}
-                  />
-                </span>
-                <p className="text-sm text-white/70">Agent Access</p>
-              </div>
-              <p className="text-xs text-white/40 mt-1">
-                {isAgentLive
-                  ? "Agent is live under your guardrails."
-                  : isAgentPaused
-                    ? "Agent Paused."
-                    : agentAccessLoading && !agentAccessLoaded
-                      ? "Checking status..."
-                    : "Configure delegated wallet guardrails."}
-              </p>
-            </Link>
+                    <Link
+                      href="/profile/agent-access"
+                      className="block mb-6 py-3 px-4 rounded-lg border border-white/10 bg-white/5 hover:bg-white/10 transition"
+                    >
+                      <div className="flex items-center gap-2">
+                        <span className="relative flex h-2.5 w-2.5">
+                          {isAgentLive && (
+                            <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-80" />
+                          )}
+                          <span
+                            className={[
+                              "relative inline-flex h-2.5 w-2.5 rounded-full",
+                              isAgentLive ? "bg-emerald-400" : "bg-white/40",
+                            ].join(" ")}
+                          />
+                        </span>
+                        <p className="text-sm text-white/70">Agent Access</p>
+                      </div>
+                      <p className="text-xs text-white/40 mt-1">
+                        {isAgentLive
+                          ? "Agent is live under your guardrails."
+                          : isAgentPaused
+                            ? "Agent Paused."
+                            : agentAccessLoading && !agentAccessLoaded
+                              ? "Checking status..."
+                              : "Configure delegated wallet guardrails."}
+                      </p>
+                    </Link>
 
-            {isUnfundedWallet && (
-              <Button
-                type="button"
-                onClick={() => openReceiveDrawer()}
-                className="w-full mb-6 bg-primary text-black font-semibold"
-              >
-                Deposit
-              </Button>
-            )}
+                    {isUnfundedWallet && (
+                      <Button
+                        type="button"
+                        onClick={() => openReceiveDrawer()}
+                        className="w-full mb-6 bg-primary text-black font-semibold"
+                      >
+                        Deposit
+                      </Button>
+                    )}
 
-            {!isUnfundedWallet && !shouldDeferFundingStateDecision && (
-              <>
-            <div className="mb-4 mt-3 grid grid-cols-2 border-b border-white/10">
-              <button
-                onClick={() => {
-                  setActiveTab("tokens");
-                  void fetchWallet();
-                }}
-                className={`pb-3 text-sm sm:text-base font-medium transition relative ${activeTab === "tokens" ? "text-white" : "text-white/50"
-                  }`}
-              >
-                Tokens
-                {activeTab === "tokens" && (
-                  <span className="absolute left-0 right-0 -bottom-[1px] h-1 bg-primary rounded-full" />
-                )}
-              </button>
-              <button
-                onClick={() => {
-                  setActiveTab("transactions");
-                  void fetchTransactions();
-                }}
-                className={`pb-3 text-sm sm:text-base font-medium transition relative ${activeTab === "transactions" ? "text-white" : "text-white/50"
-                  }`}
-              >
-                Transactions
-                {activeTab === "transactions" && (
-                  <span className="absolute left-0 right-0 -bottom-[1px] h-1 bg-primary rounded-full" />
-                )}
-              </button>
-            </div>
+                    {!isUnfundedWallet && !shouldDeferFundingStateDecision && (
+                      <>
+                        <div className="mb-4 mt-3 grid grid-cols-2 border-b border-white/10">
+                          <button
+                            onClick={() => {
+                              setActiveTab("tokens");
+                              void fetchWallet();
+                            }}
+                            className={`pb-3 text-sm sm:text-base font-medium transition relative ${activeTab === "tokens" ? "text-white" : "text-white/50"
+                              }`}
+                          >
+                            Tokens
+                            {activeTab === "tokens" && (
+                              <span className="absolute left-0 right-0 -bottom-[1px] h-1 bg-primary rounded-full" />
+                            )}
+                          </button>
+                          <button
+                            onClick={() => {
+                              setActiveTab("transactions");
+                              void fetchTransactions();
+                            }}
+                            className={`pb-3 text-sm sm:text-base font-medium transition relative ${activeTab === "transactions" ? "text-white" : "text-white/50"
+                              }`}
+                          >
+                            Transactions
+                            {activeTab === "transactions" && (
+                              <span className="absolute left-0 right-0 -bottom-[1px] h-1 bg-primary rounded-full" />
+                            )}
+                          </button>
+                        </div>
 
-            {activeTab === "tokens" && renderTokensTab()}
-            {activeTab === "transactions" && renderTransactionsTab()}
-              </>
-            )}
-                </>
-              );
+                        {activeTab === "tokens" && renderTokensTab()}
+                        {activeTab === "transactions" && renderTransactionsTab()}
+                      </>
+                    )}
+                  </>
+                );
               })()}
             </div>
           </div>
