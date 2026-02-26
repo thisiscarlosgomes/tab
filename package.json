@@ -11,6 +11,8 @@
     "lint": "next lint"
   },
   "dependencies": {
+    "@ai-sdk/openai": "^3.0.36",
+    "@ai-sdk/react": "^3.0.105",
     "@farcaster/frame-core": "^0.1.4",
     "@farcaster/frame-node": "^0.0.34",
     "@farcaster/frame-sdk": "^0.0.59",
@@ -48,6 +50,7 @@
     "next": "^15.5.12",
     "node-fetch": "^3.3.2",
     "openai": "^6.15.0",
+    "ai": "^6.0.103",
     "qrcode": "^1.5.4",
     "qrcode-svg": "^1.1.0",
     "react": "^18.2.0",
@@ -66,7 +69,8 @@
     "vaul": "^1.1.2",
     "viem": "^2.46.2",
     "wagmi": "^2.19.5",
-    "web-push": "^3.6.7"
+    "web-push": "^3.6.7",
+    "zod": "^3.24.2"
   },
   "devDependencies": {
     "@types/canvas-confetti": "^1.9.0",

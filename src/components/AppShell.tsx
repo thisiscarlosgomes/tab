@@ -6,6 +6,7 @@ import { useIdentityToken, usePrivy, useToken } from "@privy-io/react-auth";
 import { Header } from "@/components/header";
 import { FooterNav } from "@/components/footer-nav";
 import { InstallQrCard } from "@/components/InstallQrCard";
+import { InlineTabAssistant } from "@/components/app/InlineTabAssistant";
 
 export function AppShell({ children }: { children: React.ReactNode }) {
   const router = useRouter();
@@ -26,7 +27,10 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     pathname.startsWith("/join-split") ||
     pathname.startsWith("/agent/claim/");
   const hideHeaderOnRoute =
-    pathname === "/rooms";
+    pathname === "/rooms" || pathname.startsWith("/assistant");
+  const hideFooterOnRoute = pathname.startsWith("/assistant");
+  const hideAssistantLauncherOnRoute = pathname.startsWith("/assistant");
+  const hideInstallQrOnRoute = pathname.startsWith("/assistant");
   const showDesktopHeaderOnly = pathname.startsWith("/game");
   const hasLinkedFarcaster = useMemo(
     () =>
@@ -99,7 +103,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     return (
       <div className="bg-background min-h-screen w-full overflow-x-hidden scrollbar-hide">
         {children}
-        <InstallQrCard />
+        {!hideInstallQrOnRoute ? <InstallQrCard /> : null}
       </div>
     );
   }
@@ -114,7 +118,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     return (
       <div className="bg-background min-h-screen w-full overflow-x-hidden scrollbar-hide">
         {children}
-        <InstallQrCard />
+        {!hideInstallQrOnRoute ? <InstallQrCard /> : null}
       </div>
     );
   }
@@ -128,8 +132,9 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         </div>
       ) : null}
       {children}
-      <InstallQrCard />
-      {isAuthed ? <div className="md:hidden"><FooterNav /></div> : null}
+      {!hideInstallQrOnRoute ? <InstallQrCard /> : null}
+      {isAuthed && !hideAssistantLauncherOnRoute ? <InlineTabAssistant /> : null}
+      {isAuthed && !hideFooterOnRoute ? <div className="md:hidden"><FooterNav /></div> : null}
     </div>
   );
 }
