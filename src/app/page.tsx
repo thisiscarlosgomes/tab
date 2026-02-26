@@ -1114,7 +1114,7 @@ export default function Home() {
 
         <div className="relative z-10 h-full px-6 mx-auto w-full max-w-md flex flex-col">
           {showWelcomeStep ? (
-            <div className="flex-1 min-h-0 pt-[max(6rem,env(safe-area-inset-top))] pb-44 flex flex-col">
+            <div className="bg-background flex-1 min-h-0 pt-[max(6rem,env(safe-area-inset-top))] pb-44 flex flex-col">
               <div
                 onTouchStart={(e) => {
                   authWelcomeTouchStartXRef.current = e.touches[0]?.clientX ?? null;
