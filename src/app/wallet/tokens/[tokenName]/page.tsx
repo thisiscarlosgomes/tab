@@ -455,7 +455,7 @@ export default function WalletTokenDetailsPage() {
     const pollId = isPageVisible
       ? window.setInterval(() => {
           void loadInsights(true);
-        }, 45_000)
+        }, 300_000)
       : null;
 
     return () => {

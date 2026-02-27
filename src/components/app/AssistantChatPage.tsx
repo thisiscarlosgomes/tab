@@ -242,13 +242,13 @@ export function AssistantChatPage() {
         const paid = quickStats.splitPaidCount;
         const pendingCopy =
           pending > 0
-            ? `${pending} split${pending === 1 ? "" : "s"} still pending.`
-            : "No pending splits.";
+            ? `${pending} pending payment${pending === 1 ? "" : "s"}.`
+            : "No pending payments.";
         return {
           ...item,
           eyebrow: pending > 0 ? "Needs attention" : "Splits on track",
-          title: `${pendingCopy} ${paid} paid. See latest?`,
-          prompt: "Show my latest splits with paid and pending status.",
+          title: `${pendingCopy} ${paid} paid. Open latest split?`,
+          prompt: "Show my pending payments and link the latest split.",
         };
       }
       if (item.key === "earn" && quickStats.earnBalanceUsd !== null) {
@@ -616,17 +616,12 @@ export function AssistantChatPage() {
         }
 
         return (
-          <div
-            key={idxKey}
-            className="rounded-[24px] border border-white/10 bg-white/5 p-4 shadow-sm"
-          >
-            <div className="min-w-0 flex-1 space-y-3">
-              <Skeleton className="h-3 w-28 border-white/0 bg-white/10" />
-              <Skeleton className="h-10 w-36 border-white/0 bg-white/10" />
-              <div className="grid grid-cols-2 gap-3">
-                <Skeleton className="h-6 w-full border-white/0 bg-white/10" />
-                <Skeleton className="h-6 w-full border-white/0 bg-white/10" />
-              </div>
+          <div key={idxKey} className="min-w-0 flex-1 space-y-3">
+            <Skeleton className="h-3 w-28 border-white/0 bg-white/10" />
+            <Skeleton className="h-10 w-36 border-white/0 bg-white/10" />
+            <div className="grid grid-cols-2 gap-3">
+              <Skeleton className="h-6 w-full border-white/0 bg-white/10" />
+              <Skeleton className="h-6 w-full border-white/0 bg-white/10" />
             </div>
           </div>
         );
@@ -686,7 +681,7 @@ export function AssistantChatPage() {
             return (
               <div
                 key={`${idxKey}-token-${i}`}
-                className="min-w-[88%] max-w-[88%] snap-start rounded-[24px] border border-white/10 bg-white/5 p-4 md:min-w-[31%] md:max-w-[31%] shadow-sm"
+                className="min-w-[88%] max-w-[88%] snap-start rounded-[24px] border border-[#a78bfa]/25 bg-[#7c3aed]/[0.14] p-4 md:min-w-[31%] md:max-w-[31%] shadow-sm"
               >
                 <div className="min-w-0 flex-1">
                   <div className="text-xs text-white/45">{symbol}</div>
@@ -763,9 +758,15 @@ export function AssistantChatPage() {
       const totalSplits = Number(output.totalSplits ?? 0);
       const paid = Number(output.paidSplitCount ?? 0);
       const pending = Number(output.pendingSplitCount ?? 0);
+      const pendingPayments = Array.isArray(output.pendingPayments)
+        ? (output.pendingPayments as Array<Record<string, unknown>>)
+        : [];
       return (
-        <div key={idxKey} className="rounded-[20px] border border-white/10 bg-white/5 p-4">
-          <div className="text-xs text-white/50">Split overview</div>
+        <div
+          key={idxKey}
+          className="rounded-[20px] border border-[#a78bfa]/25 bg-[#7c3aed]/[0.14] p-4"
+        >
+          <div className="text-xs text-white/50">Pending payments</div>
           <div className="mt-2 grid grid-cols-3 gap-3 text-sm">
             <div>
               <div className="text-white/55">Total</div>
@@ -780,6 +781,42 @@ export function AssistantChatPage() {
               <div className="mt-1 text-xl font-semibold text-white">{pending}</div>
             </div>
           </div>
+          {pendingPayments.length > 0 ? (
+            <div className="mt-3 space-y-2">
+              {pendingPayments.slice(0, 2).map((item, itemIndex) => {
+                const href = String(item.href ?? "");
+                const splitId = String(item.splitId ?? "");
+                const description = String(item.description ?? "Pending split");
+                const amount = Number(item.amount ?? 0);
+                const token = String(item.token ?? "USDC");
+                if (!href || !splitId) return null;
+                return (
+                  <Link
+                    key={`${splitId}-${itemIndex}`}
+                    href={href}
+                    className="flex items-center justify-between rounded-xl border border-[#a78bfa]/25 bg-[#7c3aed]/[0.12] px-3 py-2"
+                  >
+                    <div className="min-w-0">
+                      <div className="truncate text-sm font-medium text-white">
+                        {description}
+                      </div>
+                      <div className="text-xs text-white/55">Pending payment</div>
+                    </div>
+                    <div className="pl-3 text-right">
+                      <div className="text-sm font-semibold text-white">
+                        {amount > 0 ? `$${amount.toFixed(2)} ${token}` : token}
+                      </div>
+                      <div className="text-xs text-[#a69ff8]">Open split</div>
+                    </div>
+                  </Link>
+                );
+              })}
+            </div>
+          ) : pending > 0 ? (
+            <div className="mt-3 text-xs text-white/55">
+              Pending payments found, open your profile splits to review details.
+            </div>
+          ) : null}
         </div>
       );
     }
@@ -787,7 +824,10 @@ export function AssistantChatPage() {
     if (String(part.type ?? "").includes("get_jackpot_status")) return null;
 
     return (
-      <div key={idxKey} className="rounded-[20px] border border-white/10 bg-white/5 p-3 text-xs text-white/70">
+      <div
+        key={idxKey}
+        className="rounded-[20px] border border-[#a78bfa]/25 bg-[#7c3aed]/[0.14] p-3 text-xs text-white/70"
+      >
         <div className="font-medium text-white">{toolName}</div>
         <pre className="mt-1 whitespace-pre-wrap break-all text-[11px] text-white/55">
           {JSON.stringify(output, null, 2)}

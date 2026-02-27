@@ -565,6 +565,19 @@ export async function POST(req: NextRequest) {
         const latestSplits = bills.slice(0, 5);
         const paidSplits = bills.filter((b) => b.hasPaid === true);
         const pendingSplits = bills.filter((b) => b.hasPaid === false);
+        const pendingPayments = pendingSplits.slice(0, 3).map((bill) => ({
+          splitId: String(bill.splitId ?? ""),
+          description: String(bill.description ?? "Untitled split"),
+          token: String(bill.token ?? "USDC"),
+          amount:
+            Number.isFinite(Number(bill.perPersonAmount)) && Number(bill.perPersonAmount) > 0
+              ? Number(bill.perPersonAmount)
+              : Number.isFinite(Number(bill.totalAmount))
+                ? Number(bill.totalAmount)
+                : 0,
+          createdAt: bill.createdAt ?? null,
+          href: `/split/${String(bill.splitId ?? "")}`,
+        }));
 
         return {
           ok: true,
@@ -572,6 +585,7 @@ export async function POST(req: NextRequest) {
           totalSplits: bills.length,
           paidSplitCount: paidSplits.length,
           pendingSplitCount: pendingSplits.length,
+          pendingPayments,
           latestPaidSplit: paidSplits[0] ?? null,
           preferToolCardOnly: true,
         };
@@ -673,30 +687,83 @@ export async function POST(req: NextRequest) {
         };
 
         const deposits = Array.isArray(payload.deposits) ? payload.deposits : [];
-        const total = Number(payload.total ?? 0);
+        const apiTotal = Number(payload.total ?? 0);
+        let total = Number.isFinite(apiTotal) ? apiTotal : 0;
         let netApy: number | null = null;
         let yearlyAtCurrentRateUsd: number | null = null;
 
         try {
-          const apyRes = await fetch(MORPHO_GRAPHQL_URL, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              query: `
-                query VaultByAddress($address: String!, $chainId: Int) {
-                  vaultByAddress(address: $address, chainId: $chainId) {
-                    state {
-                      netApy
+          const [apyRes, positionRes] = await Promise.all([
+            fetch(MORPHO_GRAPHQL_URL, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                query: `
+                  query VaultByAddress($address: String!, $chainId: Int) {
+                    vaultByAddress(address: $address, chainId: $chainId) {
+                      state {
+                        netApy
+                      }
                     }
                   }
-                }
-              `,
-              variables: {
-                address: MORPHO_VAULT_ADDRESS,
-                chainId: MORPHO_CHAIN_ID,
-              },
+                `,
+                variables: {
+                  address: MORPHO_VAULT_ADDRESS,
+                  chainId: MORPHO_CHAIN_ID,
+                },
+              }),
             }),
-          });
+            fetch(MORPHO_GRAPHQL_URL, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                query: `
+                  query UserByAddress($address: String!, $chainId: Int) {
+                    userByAddress(address: $address, chainId: $chainId) {
+                      vaultPositions {
+                        vault {
+                          address
+                        }
+                        state {
+                          assetsUsd
+                        }
+                      }
+                    }
+                  }
+                `,
+                variables: {
+                  address: primaryAddress,
+                  chainId: MORPHO_CHAIN_ID,
+                },
+              }),
+            }),
+          ]);
+
+          const positionJson = (await positionRes.json().catch(() => null)) as
+            | {
+                data?: {
+                  userByAddress?: {
+                    vaultPositions?: Array<{
+                      vault?: { address?: string | null } | null;
+                      state?: { assetsUsd?: number | string | null } | null;
+                    }> | null;
+                  } | null;
+                };
+              }
+            | null;
+          const positions = positionJson?.data?.userByAddress?.vaultPositions ?? [];
+          const morphoPosition = Array.isArray(positions)
+            ? positions.find(
+                (p) =>
+                  String(p?.vault?.address ?? "").toLowerCase() ===
+                  MORPHO_VAULT_ADDRESS.toLowerCase()
+              )
+            : null;
+          const liveAssetsUsd = Number(morphoPosition?.state?.assetsUsd ?? Number.NaN);
+          if (Number.isFinite(liveAssetsUsd) && liveAssetsUsd >= 0) {
+            total = liveAssetsUsd;
+          }
+
           const apyJson = (await apyRes.json().catch(() => null)) as
             | { data?: { vaultByAddress?: { state?: { netApy?: number } } } }
             | null;
@@ -856,6 +923,13 @@ export async function POST(req: NextRequest) {
       "If user asks to perform a write action, say read-only mode and offer to show relevant data instead.",
       "Primary goals: answer wallet analytics questions with tools: portfolio, portfolio change, spending today/week/all-time, top sent wallet, latest/paid splits, jackpot status, earnings.",
       "Use tools instead of guessing outcomes.",
+      "Use the minimum number of tools needed. For most requests, call exactly one tool.",
+      "Do not call unrelated tools.",
+      "If user asks about splits/pending payments, call only get_split_overview.",
+      "If user asks about earnings/APY/deposit yield, call only get_earnings_overview.",
+      "If user asks about spending, call only get_spending_overview.",
+      "If user asks about portfolio balance/tokens, call only check_portfolio_balance.",
+      "Call get_account_overview only when user explicitly asks for a combined overview across multiple sections.",
       "For portfolio questions: default to summary mode (show total in USD, no cards).",
       "Use breakdown=true only if user explicitly asks for breakdown/by token/cards/top tokens.",
       "When summary mode is used and UI shows big number, keep text minimal.",
