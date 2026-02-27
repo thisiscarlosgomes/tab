@@ -15,7 +15,7 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { type FormEvent, type ComponentType, useMemo, useState } from "react";
+import { type FormEvent, type ComponentType, useEffect, useMemo, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { useIdentityToken, usePrivy, useToken } from "@privy-io/react-auth";
 import { cn } from "@/lib/cn";
@@ -35,12 +35,13 @@ type StarterPrompt = {
   key: string;
   eyebrow: string;
   title: string;
+  detail?: string;
   prompt: string;
   icon: ComponentType<{ className?: string }>;
   iconTone: string;
 };
 
-const STARTER_PROMPTS: StarterPrompt[] = [
+const BASE_STARTER_PROMPTS: StarterPrompt[] = [
   {
     key: "portfolio",
     eyebrow: "Portfolio",
@@ -137,6 +138,16 @@ function renderInlineMarkdown(text: string) {
   return nodes.length ? nodes : text;
 }
 
+function shortWallet(value: string) {
+  if (!/^0x[a-fA-F0-9]{40}$/.test(value)) return value;
+  return `${value.slice(0, 6)}...${value.slice(-4)}`;
+}
+
+function normalizeAddress(value: unknown) {
+  const v = String(value ?? "").trim().toLowerCase();
+  return /^0x[a-f0-9]{40}$/.test(v) ? v : null;
+}
+
 export function AssistantChatPage() {
   const pathname = usePathname();
   const { user } = usePrivy();
@@ -144,6 +155,10 @@ export function AssistantChatPage() {
   const { getAccessToken } = useToken();
 
   const [input, setInput] = useState("");
+  const [quickStats, setQuickStats] = useState<{ portfolioUsd: number | null; weekSentUsd: number | null }>({
+    portfolioUsd: null,
+    weekSentUsd: null,
+  });
 
   const context = useMemo(
     () => ({
@@ -164,9 +179,101 @@ export function AssistantChatPage() {
     return first;
   }, [user]);
 
+  const primaryAddress = useMemo(() => {
+    const linked = user?.linkedAccounts ?? [];
+    for (const account of linked) {
+      if (account.type !== "wallet") continue;
+      const walletClientType = String(account.walletClientType ?? "").toLowerCase();
+      if (!walletClientType.includes("privy")) continue;
+      const address = normalizeAddress(account.address);
+      if (address) return address;
+    }
+    return null;
+  }, [user?.linkedAccounts]);
+
+  const starterPrompts = useMemo(() => {
+    return BASE_STARTER_PROMPTS.map((item) => {
+      if (item.key === "portfolio" && quickStats.portfolioUsd !== null) {
+        return { ...item, detail: `You currently hold $${quickStats.portfolioUsd.toFixed(2)}.` };
+      }
+      if (item.key === "spending" && quickStats.weekSentUsd !== null) {
+        return { ...item, detail: `This week you sent $${quickStats.weekSentUsd.toFixed(2)}.` };
+      }
+      return item;
+    });
+  }, [quickStats.portfolioUsd, quickStats.weekSentUsd]);
+
   const { messages, sendMessage, status, error, setMessages } = useChat({
     transport: new DefaultChatTransport({ api: "/api/chat" }),
   });
+
+  useEffect(() => {
+    let cancelled = false;
+    if (!primaryAddress) return;
+
+    const weekStart = (() => {
+      const now = new Date();
+      const day = now.getUTCDay();
+      const diff = (day + 6) % 7;
+      const d = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
+      d.setUTCDate(d.getUTCDate() - diff);
+      return d;
+    })();
+
+    const isOutgoing = (type?: unknown) => {
+      const t = String(type ?? "").toLowerCase();
+      return t === "bill_paid" || t === "room_paid";
+    };
+
+    const usdAmountFromActivity = (activity: { amount?: unknown; token?: unknown }) => {
+      const amount = Number(activity.amount ?? 0);
+      if (!Number.isFinite(amount) || amount <= 0) return 0;
+      const token = String(activity.token ?? "").trim().toUpperCase();
+      return ["USDC", "USDC.E", "USDT", "DAI", "EURC", "USD"].includes(token) ? amount : 0;
+    };
+
+    const loadStats = async () => {
+      try {
+        const [portfolioRes, activityRes] = await Promise.all([
+          fetch(`/api/moralis/portfolio?address=${primaryAddress}`),
+          fetch(`/api/activity?address=${primaryAddress}&limit=100`),
+        ]);
+
+        const portfolioJson = (await portfolioRes.json().catch(() => null)) as
+          | { totalBalanceUSD?: number }
+          | null;
+        const activityJson = (await activityRes.json().catch(() => null)) as
+          | { activity?: Array<{ type?: string; timestamp?: string; amount?: number; token?: string }> }
+          | null;
+
+        const portfolioUsd = Number(portfolioJson?.totalBalanceUSD ?? 0);
+        const activity = Array.isArray(activityJson?.activity) ? activityJson!.activity! : [];
+        const weekSentUsd = activity
+          .filter((a) => isOutgoing(a.type))
+          .filter((a) => {
+            const ts = new Date(String(a.timestamp ?? ""));
+            return !Number.isNaN(ts.getTime()) && ts >= weekStart;
+          })
+          .reduce((sum, a) => sum + usdAmountFromActivity(a), 0);
+
+        if (!cancelled) {
+          setQuickStats({
+            portfolioUsd: portfolioUsd,
+            weekSentUsd: weekSentUsd,
+          });
+        }
+      } catch {
+        if (!cancelled) {
+          setQuickStats((prev) => prev);
+        }
+      }
+    };
+
+    void loadStats();
+    return () => {
+      cancelled = true;
+    };
+  }, [primaryAddress]);
 
   const isStreaming = status === "submitted" || status === "streaming";
   const lastAssistantMessage = [...messages].reverse().find((m) => m.role === "assistant");
@@ -364,7 +471,9 @@ export function AssistantChatPage() {
             ${total.toFixed(2)}
           </div>
           {top?.target ? (
-            <div className="mt-2 text-sm text-white/60">Top sent wallet: {String(top.target)}</div>
+            <div className="mt-2 text-sm text-white/60">
+              Top sent wallet: {shortWallet(String(top.target))}
+            </div>
           ) : null}
         </div>
       );
@@ -465,7 +574,7 @@ export function AssistantChatPage() {
                 </h2>
               </div>
               <div className="space-y-2">
-                {STARTER_PROMPTS.map((item) => {
+                {starterPrompts.map((item) => {
                   const Icon = item.icon;
                   return (
                     <button
@@ -489,6 +598,9 @@ export function AssistantChatPage() {
                           <div className="mt-0.5 text-[15px] font-medium leading-tight text-white">
                             {item.title}
                           </div>
+                          {item.detail ? (
+                            <div className="mt-1 text-[13px] text-white/55">{item.detail}</div>
+                          ) : null}
                         </div>
                         <div className="h-8 w-8 rounded-full bg-white text-black inline-flex items-center justify-center shrink-0">
                           <ArrowUp className="h-4 w-4" />
@@ -597,7 +709,7 @@ export function AssistantChatPage() {
               }}
               placeholder="I want to..."
               rows={1}
-              className="h-11 w-full resize-none bg-transparent pr-16 pt-[9px] text-[17px] leading-6 text-white outline-none placeholder:text-white/35"
+              className="h-11 w-full resize-none bg-white/5 pr-16 pt-[9px] text-[17px] leading-6 text-white outline-none placeholder:text-white/35"
             />
             <button
               type="submit"

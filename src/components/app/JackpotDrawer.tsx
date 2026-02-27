@@ -293,7 +293,7 @@ export function JackpotDrawer({
                   setAmount(val.toString());
                   setIsCustomInput(false);
                 }}
-                className={`p-4 text-[#a9a0ed]/70 text-base rounded-md bg-[#a9a0ed]/10 border-2 transition ${
+                className={`px-4 py-2 text-[#a9a0ed]/70 text-base rounded-md bg-[#a9a0ed]/10 border-2 transition ${
                   amount === val.toString() && !isCustomInput
                     ? "border-[#a9a0ed]"
                     : "border-white/10"

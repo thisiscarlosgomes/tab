@@ -204,10 +204,11 @@ async function fetchActivity(req: NextRequest, address: string, limit = 100) {
   };
 }
 
-function computeSpendingInsights(activity: ActivityRecord[]) {
+function computeSpendingInsights(activity: ActivityRecord[], selfAddress?: string | null) {
   const outgoing = activity.filter(isOutgoingActivity);
   const todayStart = startOfTodayUtc();
   const weekStart = startOfWeekUtc();
+  const normalizedSelf = normalizeAddress(selfAddress);
 
   let todayUsd = 0;
   let weekUsd = 0;
@@ -216,14 +217,22 @@ function computeSpendingInsights(activity: ActivityRecord[]) {
   let weekCount = 0;
   let allTimeCount = 0;
 
-  const sentCounterparty = new Map<string, { txCount: number; totalUsd: number }>();
+  const sentCounterpartyAll = new Map<string, { txCount: number; totalUsd: number; address?: string | null }>();
+  const sentCounterpartyWeek = new Map<string, { txCount: number; totalUsd: number; address?: string | null }>();
+  const sentCounterpartyToday = new Map<string, { txCount: number; totalUsd: number; address?: string | null }>();
 
   for (const item of outgoing) {
     const ts = parseTimestamp(item.timestamp);
     const usd = usdAmountFromActivity(item);
+    const recipientAddress =
+      normalizeAddress(item.recipient) || normalizeAddress(item.counterpartyAddress);
     const labelRaw =
       item.recipientUsername || item.counterparty || item.recipient || item.counterpartyAddress;
     const label = String(labelRaw ?? "").trim();
+    const recipientKey = recipientAddress || (label ? `label:${label.toLowerCase()}` : "");
+    const isSelfRecipient = Boolean(
+      normalizedSelf && recipientAddress && recipientAddress === normalizedSelf
+    );
 
     if (usd > 0) {
       allTimeUsd += usd;
@@ -237,18 +246,57 @@ function computeSpendingInsights(activity: ActivityRecord[]) {
         todayCount += 1;
       }
 
-      if (label) {
-        const prev = sentCounterparty.get(label) ?? { txCount: 0, totalUsd: 0 };
+      if (recipientKey && !isSelfRecipient) {
+        const prev = sentCounterpartyAll.get(recipientKey) ?? {
+          txCount: 0,
+          totalUsd: 0,
+          address: recipientAddress,
+        };
         prev.txCount += 1;
         prev.totalUsd += usd;
-        sentCounterparty.set(label, prev);
+        sentCounterpartyAll.set(recipientKey, prev);
+
+        if (ts && ts >= weekStart) {
+          const weekPrev = sentCounterpartyWeek.get(recipientKey) ?? {
+            txCount: 0,
+            totalUsd: 0,
+            address: recipientAddress,
+          };
+          weekPrev.txCount += 1;
+          weekPrev.totalUsd += usd;
+          sentCounterpartyWeek.set(recipientKey, weekPrev);
+        }
+
+        if (ts && ts >= todayStart) {
+          const todayPrev = sentCounterpartyToday.get(recipientKey) ?? {
+            txCount: 0,
+            totalUsd: 0,
+            address: recipientAddress,
+          };
+          todayPrev.txCount += 1;
+          todayPrev.totalUsd += usd;
+          sentCounterpartyToday.set(recipientKey, todayPrev);
+        }
       }
     }
   }
 
-  const topSentWallet = [...sentCounterparty.entries()]
-    .map(([target, value]) => ({ target, ...value }))
-    .sort((a, b) => b.totalUsd - a.totalUsd)[0] ?? null;
+  const toTop = (
+    map: Map<string, { txCount: number; totalUsd: number; address?: string | null }>
+  ) =>
+    [...map.entries()]
+      .map(([target, value]) => ({
+        target: value.address || target.replace(/^label:/, ""),
+        txCount: value.txCount,
+        totalUsd: value.totalUsd,
+      }))
+      .sort((a, b) => b.totalUsd - a.totalUsd)[0] ?? null;
+
+  const topSentWalletByPeriod = {
+    today: toTop(sentCounterpartyToday),
+    week: toTop(sentCounterpartyWeek),
+    all: toTop(sentCounterpartyAll),
+  };
 
   return {
     todayUsd,
@@ -257,7 +305,8 @@ function computeSpendingInsights(activity: ActivityRecord[]) {
     todayCount,
     weekCount,
     allTimeCount,
-    topSentWallet,
+    topSentWallet: topSentWalletByPeriod.all,
+    topSentWalletByPeriod,
   };
 }
 
@@ -389,7 +438,7 @@ export async function POST(req: NextRequest) {
         }
 
         const activity = ((activityResult.data as { activity?: ActivityRecord[] })?.activity ?? []) as ActivityRecord[];
-        const insights = computeSpendingInsights(activity);
+        const insights = computeSpendingInsights(activity, primaryAddress);
         const period = input?.period ?? "today";
         const periodTotalUsd =
           period === "today"
@@ -397,6 +446,12 @@ export async function POST(req: NextRequest) {
             : period === "week"
               ? insights.weekUsd
               : insights.allTimeUsd;
+        const periodTopSentWallet =
+          period === "today"
+            ? insights.topSentWalletByPeriod.today
+            : period === "week"
+              ? insights.topSentWalletByPeriod.week
+              : insights.topSentWalletByPeriod.all;
 
         return {
           ok: true,
@@ -413,7 +468,8 @@ export async function POST(req: NextRequest) {
             week: insights.weekCount,
             all: insights.allTimeCount,
           },
-          topSentWallet: input?.includeTopSentWallet ? insights.topSentWallet : insights.topSentWallet,
+          topSentWallet: input?.includeTopSentWallet ? periodTopSentWallet : periodTopSentWallet,
+          topSentWalletByPeriod: insights.topSentWalletByPeriod,
           preferToolCardOnly: true,
         };
       },
@@ -649,7 +705,7 @@ export async function POST(req: NextRequest) {
         const activity = activityResult.ok
           ? (((activityResult.data as { activity?: ActivityRecord[] })?.activity ?? []) as ActivityRecord[])
           : [];
-        const spending = computeSpendingInsights(activity);
+        const spending = computeSpendingInsights(activity, primaryAddress);
 
         const bills = splitResult.ok && splitResult.data && typeof splitResult.data === "object"
           ? Array.isArray((splitResult.data as { bills?: unknown[] }).bills)

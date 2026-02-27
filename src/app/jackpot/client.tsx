@@ -883,7 +883,7 @@ export default function JackpotPage() {
         </div>
 
         {recentUsers.length > 0 && (
-          <div className="flex flex-col items-center w-full mt-6 mb-2">
+          <div className="hidden flex flex-col items-center w-full mt-6 mb-2">
             {/* Avatars */}
             <div className="flex -space-x-3 mb-1">
               {recentUsers.map((u, i) => (
