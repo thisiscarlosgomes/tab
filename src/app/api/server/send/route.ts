@@ -10,8 +10,9 @@ import {
 } from "viem";
 import { base } from "viem/chains";
 import clientPromise from "@/lib/mongodb";
-import { requireTrustedRequest } from "@/lib/security";
-import { getBearerToken, getPrivyServerClient } from "@/lib/privy-server";
+import { hasValidInternalSecret, requireTrustedRequest } from "@/lib/security";
+import { getPrivyServerClient } from "@/lib/privy-server";
+import { getPrivyAuthedUserFromAuthorization } from "@/lib/user-profile";
 import { getNextDayUtc, getStartOfDayUtc } from "@/lib/agent-access";
 import { tokenList } from "@/lib/tokens";
 import { resolveRecipient } from "@/lib/recipient-resolver";
@@ -39,12 +40,6 @@ type AgentPolicyDoc = {
   allowedToken?: string;
   maxPerPayment?: number;
   dailyCap?: number;
-};
-
-type AgentLinkDoc = {
-  userId?: string;
-  agentId?: string;
-  status?: string;
 };
 
 function normalizeAddress(value?: string | null) {
@@ -90,13 +85,6 @@ function getLinkedEthereumAddresses(accounts: LinkedAccountLike[]) {
   );
 }
 
-function getServiceAgentKey(req: NextRequest) {
-  const provided = req.headers.get("x-agent-key")?.trim();
-  const expected = process.env.AGENT_EXECUTOR_KEY?.trim();
-  if (!provided || !expected) return false;
-  return provided === expected;
-}
-
 function getTokenMeta(token: string) {
   return tokenList.find((entry) => entry.name.toUpperCase() === token.toUpperCase());
 }
@@ -117,8 +105,8 @@ function formatAmountForDecimals(amount: number, decimals: number) {
 async function getDailyUsedTotal(userId: string) {
   const client = await clientPromise;
   const db = client.db();
-  const settlements = db.collection("a-agent-settlement");
-  const transfers = db.collection("a-agent-transfer");
+  const settlements = db.collection("a-server-settlement");
+  const transfers = db.collection("a-server-transfer");
   const start = getStartOfDayUtc();
   const end = getNextDayUtc();
 
@@ -150,88 +138,45 @@ async function getDailyUsedTotal(userId: string) {
 
 export async function POST(req: NextRequest) {
   const denied = requireTrustedRequest(req, {
-    bucket: "agent-send",
+    bucket: "server-send",
     limit: 20,
     windowMs: 60_000,
+    allowBearerAuthorization: true,
   });
-  if (denied && !(denied.status === 403 && getServiceAgentKey(req))) {
-    return denied;
-  }
+  if (denied) return denied;
 
   try {
   const body = await req.json().catch(() => ({}));
-  const identityToken = getBearerToken(req.headers.get("authorization"));
-  const isServiceAgentRequest = !identityToken && getServiceAgentKey(req);
-  const serviceAgentId = isServiceAgentRequest
-    ? String(body?.agentId ?? "").trim()
-    : null;
-
-  if (!identityToken && !isServiceAgentRequest) {
-    return Response.json(
-      { error: "Missing identity token or agent credentials" },
-      { status: 401 }
-    );
-  }
-
-  let userId = "";
-  let linkedAccounts: LinkedAccountLike[] = [];
+  let authed = await getPrivyAuthedUserFromAuthorization(
+    req.headers.get("authorization")
+  );
 
   const privy = getPrivyServerClient();
+  let identityToken: string | null = authed.ok ? authed.token : null;
+  let userId = authed.ok ? String(authed.user.id ?? "").trim() : "";
+  let linkedAccounts = authed.ok
+    ? (authed.linkedAccounts as LinkedAccountLike[])
+    : [];
 
-  if (identityToken) {
-    let user: unknown;
-    try {
-      user = await privy.users().get({ id_token: identityToken });
-    } catch {
+  if (!authed.ok && hasValidInternalSecret(req)) {
+    const forwardedUserId = String(req.headers.get("x-tab-user-id") ?? "").trim();
+    if (forwardedUserId) {
       try {
-        const verified = await privy.utils().auth().verifyAccessToken(identityToken);
-        user = await privy.users()._get(verified.user_id);
+        const user = await privy.users()._get(forwardedUserId);
+        userId = String((user as { id?: string }).id ?? "").trim();
+        linkedAccounts = toLinkedAccounts(user);
       } catch {
-        return Response.json({ error: "Invalid auth token" }, { status: 401 });
+        // fall through and return original auth error below
       }
     }
-
-    userId = String((user as { id?: string }).id ?? "").trim();
-    if (!userId) {
-      return Response.json({ error: "Invalid user" }, { status: 401 });
-    }
-    linkedAccounts = toLinkedAccounts(user);
-  } else {
-    userId = String(body?.userId ?? "").trim();
-    if (!userId) {
-      return Response.json(
-        { error: "Missing userId for service agent request" },
-        { status: 400 }
-      );
-    }
   }
+
+  if (!userId) return authed.ok ? Response.json({ error: "Invalid user" }, { status: 401 }) : authed.response;
 
   const client = await clientPromise;
   const db = client.db();
-  const policies = db.collection<AgentPolicyDoc>("a-agent-access");
-  const links = db.collection<AgentLinkDoc>("a-agent-links");
-  const transfers = db.collection("a-agent-transfer");
-
-  if (isServiceAgentRequest) {
-    if (!serviceAgentId) {
-      return Response.json(
-        { error: "Missing agentId for service agent request" },
-        { status: 400 }
-      );
-    }
-
-    const link = await links.findOne({
-      userId,
-      agentId: serviceAgentId,
-      status: "ACTIVE",
-    });
-    if (!link) {
-      return Response.json(
-        { error: "Agent is not linked to this Tab account" },
-        { status: 403 }
-      );
-    }
-  }
+  const policies = db.collection<AgentPolicyDoc>("a-server-access");
+  const transfers = db.collection("a-server-transfer");
 
   const policy = await policies.findOne(
     {
@@ -243,13 +188,13 @@ export async function POST(req: NextRequest) {
   );
 
   if (!policy) {
-    return Response.json({ error: "Agent Access is not active" }, { status: 403 });
+    return Response.json({ error: "Server access is not active" }, { status: 403 });
   }
 
   const sourceWalletAddress = normalizeAddress(policy.address);
   if (!sourceWalletAddress || !isAddress(sourceWalletAddress)) {
     return Response.json(
-      { error: "Delegated wallet is invalid. Re-enable Agent Access." },
+      { error: "Delegated wallet is invalid. Re-enable server access." },
       { status: 400 }
     );
   }
@@ -258,61 +203,28 @@ export async function POST(req: NextRequest) {
     typeof policy.walletId === "string" && policy.walletId ? policy.walletId : null;
   const linkedAddresses = getLinkedEthereumAddresses(linkedAccounts);
 
-  if (identityToken) {
-    const delegatedWallet = findEmbeddedEthereumWallet(
-      linkedAccounts,
-      sourceWalletAddress
+  const delegatedWallet = findEmbeddedEthereumWallet(
+    linkedAccounts,
+    sourceWalletAddress
+  );
+  if (!delegatedWallet || !delegatedWallet.delegated) {
+    return Response.json(
+      { error: "Delegated wallet not found. Re-enable server access." },
+      { status: 403 }
     );
+  }
 
-    if (!delegatedWallet || !delegatedWallet.delegated) {
-      return Response.json(
-        { error: "Delegated wallet not found. Re-enable Agent Access." },
-        { status: 403 }
-      );
-    }
-
-    delegatedWalletId = delegatedWalletId ?? delegatedWallet.id ?? null;
-    if (!delegatedWalletId) {
-      return Response.json({ error: "Missing delegated wallet id" }, { status: 400 });
-    }
-  } else if (!delegatedWalletId) {
-    let refreshedWalletId: string | null = null;
-    try {
-      const serviceUser = await privy.users()._get(userId);
-      const serviceLinkedAccounts = toLinkedAccounts(serviceUser);
-      const delegatedWallet = findEmbeddedEthereumWallet(
-        serviceLinkedAccounts,
-        sourceWalletAddress
-      );
-      if (delegatedWallet?.delegated && delegatedWallet.id) {
-        refreshedWalletId = delegatedWallet.id;
-        await policies.updateOne(
-          { _id: policy._id },
-          {
-            $set: {
-              walletId: delegatedWallet.id,
-              delegated: true,
-              updatedAt: new Date(),
-            },
-          }
-        );
-      }
-    } catch {
-      // fall through to error response
-    }
-
-    delegatedWalletId = refreshedWalletId;
-    if (!delegatedWalletId) {
-      return Response.json(
-        { error: "Missing delegated wallet id. Re-enable Agent Access." },
-        { status: 400 }
-      );
-    }
+  delegatedWalletId = delegatedWalletId ?? delegatedWallet.id ?? null;
+  if (!delegatedWalletId) {
+    return Response.json(
+      { error: "Missing delegated wallet id. Re-enable server access." },
+      { status: 400 }
+    );
   }
 
   if (policy.expiresAt && new Date(policy.expiresAt).getTime() < Date.now()) {
     return Response.json(
-      { error: "Agent Access expired. Renew permissions in Profile." },
+      { error: "Server access expired. Renew permissions in Profile." },
       { status: 403 }
     );
   }
@@ -412,16 +324,10 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  const authorizationPrivateKey = process.env.PRIVY_AUTHORIZATION_PRIVATE_KEY?.trim();
-  if (!identityToken && !authorizationPrivateKey) {
-    return Response.json(
-      {
-        error:
-          "Missing PRIVY_AUTHORIZATION_PRIVATE_KEY for autonomous agent execution",
-      },
-      { status: 500 }
-    );
-  }
+  // Prefer the existing working app key first to avoid mismatched signer setups.
+  const authorizationPrivateKey =
+    process.env.PRIVY_AUTHORIZATION_PRIVATE_KEY?.trim() ||
+    process.env.PRIVY_SERVER_AUTHORIZATION_PRIVATE_KEY?.trim();
 
   const authorizationContext =
     authorizationPrivateKey || identityToken
@@ -437,7 +343,6 @@ export async function POST(req: NextRequest) {
   const day = getStartOfDayUtc();
   const transferInsert = await transfers.insertOne({
     userId,
-    agentId: serviceAgentId,
     requestId,
     sourceWalletAddress,
     recipientAddress,
@@ -451,7 +356,7 @@ export async function POST(req: NextRequest) {
     day,
     createdAt: now,
     updatedAt: now,
-    executionMode: identityToken ? "user_session" : "service_agent",
+    executionMode: "user_session",
   });
 
   const amountForChain = formatAmountForDecimals(
@@ -459,7 +364,7 @@ export async function POST(req: NextRequest) {
     tokenMeta.decimals ?? 18
   );
   const rawAmount = parseUnits(amountForChain, tokenMeta.decimals ?? 18);
-  const idempotencyKey = `agent-send:${userId}:${requestId}`;
+  const idempotencyKey = `server-send:${userId}:${requestId}`;
 
   try {
     const txData =
@@ -524,7 +429,7 @@ export async function POST(req: NextRequest) {
       }
     );
 
-    const executionMode = identityToken ? "user_session" : "service_agent";
+    const executionMode = "user_session";
     const activityTimestamp = new Date();
 
     // Sender-side activity record for activity/notifications feed.
@@ -537,7 +442,6 @@ export async function POST(req: NextRequest) {
       token: tokenSymbol,
       txHash: hash,
       executionMode,
-      agentId: serviceAgentId,
       recipientResolutionSource: recipientResolved.source,
       note: typeof body?.note === "string" ? body.note.trim() || null : null,
       counterparty: {
@@ -557,7 +461,6 @@ export async function POST(req: NextRequest) {
       token: tokenSymbol,
       txHash: hash,
       executionMode,
-      agentId: serviceAgentId,
       note: typeof body?.note === "string" ? body.note.trim() || null : null,
       counterparty: {
         address: sourceWalletAddress,
@@ -578,27 +481,45 @@ export async function POST(req: NextRequest) {
       executionMode,
     });
   } catch (error) {
+    const message = error instanceof Error ? error.message : "Transfer failed";
+    const needsDelegation =
+      /key quorum|authorized entity|not part of a key quorum|user key|session signer/i.test(
+        message
+      );
+
     await transfers.updateOne(
       { _id: transferInsert.insertedId },
       {
         $set: {
           status: "failed",
-          error: error instanceof Error ? error.message : "Transfer failed",
+          error: message,
           updatedAt: new Date(),
         },
       }
     );
 
+    if (needsDelegation) {
+      return Response.json(
+        {
+          error:
+            "Delegated wallet authorization is missing. Enable server access and try again.",
+          code: "DELEGATION_REQUIRED",
+          requestId,
+        },
+        { status: 403 }
+      );
+    }
+
     return Response.json(
       {
-        error: error instanceof Error ? error.message : "Agent transfer failed",
+        error: message || "Server transfer failed",
         requestId,
       },
       { status: 500 }
     );
   }
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Agent send failed";
+    const message = error instanceof Error ? error.message : "Server send failed";
     const isMongoInfraError =
       /Mongo|ReplicaSetNoPrimary|server selection timed out|ECONN|topology/i.test(message);
 

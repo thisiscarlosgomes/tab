@@ -9,12 +9,13 @@ import {
 } from "viem";
 import { base } from "viem/chains";
 import clientPromise from "@/lib/mongodb";
-import { requireTrustedRequest } from "@/lib/security";
-import { getBearerToken, getPrivyServerClient } from "@/lib/privy-server";
+import { hasValidInternalSecret, requireTrustedRequest } from "@/lib/security";
+import { getPrivyServerClient } from "@/lib/privy-server";
 import { buildUserKey } from "@/lib/identity";
 import { tokenList } from "@/lib/tokens";
 import { writeActivity } from "@/lib/writeActivity";
 import { getNextDayUtc, getStartOfDayUtc } from "@/lib/agent-access";
+import { getPrivyAuthedUserFromAuthorization } from "@/lib/user-profile";
 
 type LinkedAccountLike = {
   type?: string;
@@ -66,12 +67,6 @@ type AgentPolicyDoc = {
   maxPerPayment?: number;
   dailyCap?: number;
   farcasterFid?: number | string | null;
-};
-
-type AgentLinkDoc = {
-  userId?: string;
-  agentId?: string;
-  status?: string;
 };
 
 function normalizeAddress(value?: string | null) {
@@ -173,13 +168,6 @@ function getLinkedEthereumAddresses(accounts: LinkedAccountLike[]) {
   );
 }
 
-function getServiceAgentKey(req: NextRequest) {
-  const provided = req.headers.get("x-agent-key")?.trim();
-  const expected = process.env.AGENT_EXECUTOR_KEY?.trim();
-  if (!provided || !expected) return false;
-  return provided === expected;
-}
-
 function extractSplitIdFromUrl(raw: unknown) {
   if (typeof raw !== "string") return "";
   const value = raw.trim();
@@ -224,11 +212,12 @@ function extractSplitCodeFromUrl(raw: unknown) {
 
 export async function POST(req: NextRequest) {
   const denied = requireTrustedRequest(req, {
-    bucket: "agent-settle",
+    bucket: "server-settle",
     limit: 20,
     windowMs: 60_000,
+    allowBearerAuthorization: true,
   });
-  if (denied && !(denied.status === 403 && getServiceAgentKey(req))) return denied;
+  if (denied) return denied;
 
   const body = await req.json().catch(() => ({}));
   const splitIdInput = String(body?.splitId ?? "").toLowerCase().trim();
@@ -239,56 +228,35 @@ export async function POST(req: NextRequest) {
   let splitId = splitIdInput || splitIdFromUrl;
   const effectiveSplitCode = splitCodeInput || splitCodeFromUrl;
 
-  const identityToken = getBearerToken(req.headers.get("authorization"));
-  const isServiceAgentRequest = !identityToken && getServiceAgentKey(req);
-  const serviceAgentId = isServiceAgentRequest
-    ? String(body?.agentId ?? "").trim()
-    : null;
-
-  if (!identityToken && !isServiceAgentRequest) {
-    return Response.json(
-      { error: "Missing identity token or agent credentials" },
-      { status: 401 }
-    );
-  }
-
-  let userId = "";
-  let linkedAccounts: LinkedAccountLike[] = [];
-
+  let authed = await getPrivyAuthedUserFromAuthorization(
+    req.headers.get("authorization")
+  );
   const privy = getPrivyServerClient();
-  if (identityToken) {
-    let user: unknown;
-    try {
-      user = await privy.users().get({ id_token: identityToken });
-    } catch {
+  let identityToken: string | null = authed.ok ? authed.token : null;
+  let userId = authed.ok ? String(authed.user.id ?? "").trim() : "";
+  let linkedAccounts = authed.ok
+    ? (authed.linkedAccounts as LinkedAccountLike[])
+    : [];
+
+  if (!authed.ok && hasValidInternalSecret(req)) {
+    const forwardedUserId = String(req.headers.get("x-tab-user-id") ?? "").trim();
+    if (forwardedUserId) {
       try {
-        const verified = await privy.utils().auth().verifyAccessToken(identityToken);
-        user = await privy.users()._get(verified.user_id);
+        const user = await privy.users()._get(forwardedUserId);
+        userId = String((user as { id?: string }).id ?? "").trim();
+        linkedAccounts = toLinkedAccounts(user);
       } catch {
-        return Response.json({ error: "Invalid auth token" }, { status: 401 });
+        // fall through and return original auth error below
       }
     }
-
-    userId = String((user as { id?: string }).id ?? "").trim();
-    if (!userId) {
-      return Response.json({ error: "Invalid user" }, { status: 401 });
-    }
-    linkedAccounts = toLinkedAccounts(user);
-  } else {
-    userId = String(body?.userId ?? "").trim();
-    if (!userId) {
-      return Response.json(
-        { error: "Missing userId for service agent request" },
-        { status: 400 }
-      );
-    }
   }
+
+  if (!userId) return authed.ok ? Response.json({ error: "Invalid user" }, { status: 401 }) : authed.response;
 
   const client = await clientPromise;
   const db = client.db();
-  const links = db.collection<AgentLinkDoc>("a-agent-links");
-  const policies = db.collection<AgentPolicyDoc>("a-agent-access");
-  const settlements = db.collection("a-agent-settlement");
+  const policies = db.collection<AgentPolicyDoc>("a-server-access");
+  const settlements = db.collection("a-server-settlement");
   const splitCollection = db.collection<SplitBillDoc>("a-split-bill");
 
   if (!splitId && effectiveSplitCode) {
@@ -306,27 +274,6 @@ export async function POST(req: NextRequest) {
     }
   }
 
-  if (isServiceAgentRequest) {
-    if (!serviceAgentId) {
-      return Response.json(
-        { error: "Missing agentId for service agent request" },
-        { status: 400 }
-      );
-    }
-
-    const link = await links.findOne({
-      userId,
-      agentId: serviceAgentId,
-      status: "ACTIVE",
-    });
-    if (!link) {
-      return Response.json(
-        { error: "Agent is not linked to this Tab account" },
-        { status: 403 }
-      );
-    }
-  }
-
   const policy = await policies.findOne(
     {
       userId,
@@ -337,13 +284,13 @@ export async function POST(req: NextRequest) {
   );
 
   if (!policy) {
-    return Response.json({ error: "Agent Access is not active" }, { status: 403 });
+    return Response.json({ error: "Server access is not active" }, { status: 403 });
   }
 
   const sourceWalletAddress = normalizeAddress(policy.address);
   if (!sourceWalletAddress || !isAddress(sourceWalletAddress)) {
     return Response.json(
-      { error: "Agent Access wallet is invalid. Re-enable in Profile." },
+      { error: "Server access wallet is invalid. Re-enable in Profile." },
       { status: 400 }
     );
   }
@@ -362,7 +309,7 @@ export async function POST(req: NextRequest) {
 
     if (!delegatedWallet || !delegatedWallet.delegated) {
       return Response.json(
-        { error: "Delegated wallet not found. Re-enable Agent Access." },
+        { error: "Delegated wallet not found. Re-enable server access." },
         { status: 403 }
       );
     }
@@ -376,7 +323,7 @@ export async function POST(req: NextRequest) {
     actorFid = normalizeFid(farcaster?.fid);
     if (actorFid === null) {
       return Response.json(
-        { error: "Link Farcaster before using Agent Access" },
+        { error: "Link Farcaster before using server access" },
         { status: 403 }
       );
     }
@@ -398,59 +345,11 @@ export async function POST(req: NextRequest) {
         }
       );
     }
-  } else {
-    if (!delegatedWalletId) {
-      try {
-        const serviceUser = await privy.users()._get(userId);
-        const serviceLinkedAccounts = toLinkedAccounts(serviceUser);
-        const delegatedWallet = findEmbeddedEthereumWallet(
-          serviceLinkedAccounts,
-          sourceWalletAddress
-        );
-        const farcaster = findFarcasterAccount(serviceLinkedAccounts);
-        const refreshedFid = normalizeFid(farcaster?.fid);
-
-        if (delegatedWallet?.delegated && delegatedWallet.id) {
-          delegatedWalletId = delegatedWallet.id;
-          actorFid = refreshedFid ?? actorFid;
-          await policies.updateOne(
-            { _id: policy._id },
-            {
-              $set: {
-                walletId: delegatedWallet.id,
-                delegated: true,
-                ...(refreshedFid !== null ? { farcasterFid: refreshedFid } : {}),
-                updatedAt: new Date(),
-              },
-            }
-          );
-        }
-      } catch {
-        // fall through to existing validation errors
-      }
-
-      if (!delegatedWalletId) {
-        return Response.json(
-          { error: "Missing delegated wallet id. Re-enable Agent Access." },
-          { status: 400 }
-        );
-      }
-    }
-
-    if (actorFid === null) {
-      return Response.json(
-        {
-          error:
-            "Farcaster link missing for this policy. Re-save Agent Access from user session.",
-        },
-        { status: 403 }
-      );
-    }
   }
 
   if (policy.expiresAt && new Date(policy.expiresAt).getTime() < Date.now()) {
     return Response.json(
-      { error: "Agent Access expired. Renew permissions in Profile." },
+      { error: "Server access expired. Renew permissions in Profile." },
       { status: 403 }
     );
   }
@@ -651,16 +550,10 @@ export async function POST(req: NextRequest) {
     return Response.json({ error: "Unsupported split token" }, { status: 400 });
   }
 
-  const authorizationPrivateKey = process.env.PRIVY_AUTHORIZATION_PRIVATE_KEY?.trim();
-  if (!identityToken && !authorizationPrivateKey) {
-    return Response.json(
-      {
-        error:
-          "Missing PRIVY_AUTHORIZATION_PRIVATE_KEY for autonomous agent execution",
-      },
-      { status: 500 }
-    );
-  }
+  // Prefer the existing working app key first to avoid mismatched signer setups.
+  const authorizationPrivateKey =
+    process.env.PRIVY_AUTHORIZATION_PRIVATE_KEY?.trim() ||
+    process.env.PRIVY_SERVER_AUTHORIZATION_PRIVATE_KEY?.trim();
 
   const authorizationContext =
     authorizationPrivateKey || identityToken
@@ -674,7 +567,6 @@ export async function POST(req: NextRequest) {
 
   const settlementInsert = await settlements.insertOne({
     userId,
-    agentId: serviceAgentId,
     splitId,
     payerAddress: debtorAddress,
     sourceWalletAddress,
@@ -685,10 +577,10 @@ export async function POST(req: NextRequest) {
     status: "pending",
     createdAt: new Date(),
     updatedAt: new Date(),
-    executionMode: identityToken ? "user_session" : "service_agent",
+    executionMode: "user_session",
   });
 
-  const idempotencyKey = `agent-settle:${splitId}:${userId}`;
+  const idempotencyKey = `server-settle:${splitId}:${userId}`;
 
   try {
     const rawAmount = parseUnits(amount.toString(), tokenMeta.decimals ?? 18);
@@ -771,8 +663,7 @@ export async function POST(req: NextRequest) {
       amount,
       token: tokenSymbol,
       txHash: hash,
-      executionMode: identityToken ? "user_session" : "service_agent",
-      agentId: serviceAgentId,
+      executionMode: "user_session",
       counterparty: {
         address: recipientAddress,
         name: split.recipient?.name,
@@ -789,8 +680,7 @@ export async function POST(req: NextRequest) {
       amount,
       token: tokenSymbol,
       txHash: hash,
-      executionMode: identityToken ? "user_session" : "service_agent",
-      agentId: serviceAgentId,
+      executionMode: "user_session",
       counterparty: {
         address: debtorAddress,
         name: debtorIdentity.name,
@@ -816,24 +706,40 @@ export async function POST(req: NextRequest) {
       token: tokenSymbol,
       payerAddress: debtorAddress,
       settledFrom: sourceWalletAddress,
-      executionMode: identityToken ? "user_session" : "service_agent",
+      executionMode: "user_session",
     });
   } catch (error) {
+    const message = error instanceof Error ? error.message : "Settlement failed";
+    const needsDelegation =
+      /key quorum|authorized entity|not part of a key quorum|user key|session signer/i.test(
+        message
+      );
+
     await settlements.updateOne(
       { _id: settlementInsert.insertedId },
       {
         $set: {
           status: "failed",
-          error: error instanceof Error ? error.message : "Settlement failed",
+          error: message,
           updatedAt: new Date(),
         },
       }
     );
 
+    if (needsDelegation) {
+      return Response.json(
+        {
+          error:
+            "Delegated wallet authorization is missing. Enable server access and try again.",
+          code: "DELEGATION_REQUIRED",
+        },
+        { status: 403 }
+      );
+    }
+
     return Response.json(
       {
-        error:
-          error instanceof Error ? error.message : "Agent settlement failed",
+        error: message || "Server settlement failed",
       },
       { status: 500 }
     );

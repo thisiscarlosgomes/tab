@@ -18,7 +18,13 @@ import Link from "next/link";
 import { usePathname, useSearchParams } from "next/navigation";
 import { type FormEvent, type ComponentType, useEffect, useMemo, useRef, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
-import { useIdentityToken, usePrivy, useToken } from "@privy-io/react-auth";
+import {
+  useDelegatedActions,
+  useIdentityToken,
+  usePrivy,
+  useToken,
+  useWallets,
+} from "@privy-io/react-auth";
 import { cn } from "@/lib/cn";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
@@ -56,6 +62,18 @@ type ActionSuccessDialog = {
   title: string;
   subtitle: string;
   detail?: string;
+};
+
+type DelegationDialog = {
+  key: string;
+  message: string;
+};
+
+type WalletLike = {
+  type?: string;
+  address?: string;
+  walletClientType?: string;
+  delegated?: boolean;
 };
 
 const STARTER_PROMPTS: StarterPrompt[] = [
@@ -232,12 +250,18 @@ export function AssistantChatPage() {
   const { user } = usePrivy();
   const { identityToken } = useIdentityToken();
   const { getAccessToken } = useToken();
+  const { wallets, ready: walletsReady } = useWallets();
+  const { delegateWallet } = useDelegatedActions();
 
   const [input, setInput] = useState("");
   const [confirmSheetOpen, setConfirmSheetOpen] = useState(false);
   const [actionSuccessDialog, setActionSuccessDialog] = useState<ActionSuccessDialog | null>(null);
+  const [delegationDialog, setDelegationDialog] = useState<DelegationDialog | null>(null);
+  const [delegatingFromDialog, setDelegatingFromDialog] = useState(false);
+  const [delegationError, setDelegationError] = useState<string | null>(null);
   const lastConfirmationKeyRef = useRef<string | null>(null);
   const lastActionSuccessKeyRef = useRef<string | null>(null);
+  const lastDelegationDialogKeyRef = useRef<string | null>(null);
 
   const context = useMemo(
     () => ({
@@ -299,6 +323,15 @@ export function AssistantChatPage() {
 
     return !hasAssistantText && !hasToolOutput;
   }, [isStreaming, hasToolLoading, lastAssistantMessage]);
+  const delegateWalletTarget = useMemo(() => {
+    const candidates = (wallets as unknown as WalletLike[]).filter(
+      (entry) =>
+        typeof entry.address === "string" &&
+        (entry.walletClientType ?? "").toLowerCase().includes("privy")
+    );
+    const firstUndelegated = candidates.find((entry) => !entry.delegated);
+    return firstUndelegated ?? candidates[0] ?? null;
+  }, [wallets]);
 
   useEffect(() => {
     if (!confirmationKey) return;
@@ -315,8 +348,41 @@ export function AssistantChatPage() {
     setActionSuccessDialog(latest);
   }, [messages]);
 
+  useEffect(() => {
+    for (let i = messages.length - 1; i >= 0; i -= 1) {
+      const message = messages[i];
+      if (!message || typeof message !== "object") continue;
+      if ((message as { role?: string }).role !== "assistant") continue;
+      const parts = getToolParts(message);
+      for (let j = parts.length - 1; j >= 0; j -= 1) {
+        const part = parts[j];
+        const output = getToolOutput(part);
+        const code = String(output.errorCode ?? "").trim().toUpperCase();
+        const errorText = String(output.error ?? part.errorText ?? "").toLowerCase();
+        const shouldPromptDelegation =
+          code === "DELEGATION_REQUIRED" ||
+          errorText.includes("delegated wallet authorization is missing") ||
+          errorText.includes("enable server access") ||
+          errorText.includes("key quorum") ||
+          errorText.includes("authorized entity");
+        if (!shouldPromptDelegation) continue;
+
+        const key = `${String((message as { id?: string }).id ?? i)}:${j}:${code || "delegation"}`;
+        if (key === lastDelegationDialogKeyRef.current) return;
+        lastDelegationDialogKeyRef.current = key;
+        setDelegationDialog({
+          key,
+          message: "Enable server access so assistant can complete write actions.",
+        });
+        return;
+      }
+    }
+  }, [messages]);
+
   async function getBearer() {
-    return identityToken ?? (await getAccessToken().catch(() => null));
+    const accessToken = await getAccessToken().catch(() => null);
+    if (accessToken) return accessToken;
+    return identityToken ?? null;
   }
 
   async function submitMessage(text: string, allowMutations = false) {
@@ -359,8 +425,107 @@ export function AssistantChatPage() {
     setInput("");
     setConfirmSheetOpen(false);
     setActionSuccessDialog(null);
+    setDelegationDialog(null);
     lastConfirmationKeyRef.current = null;
     lastActionSuccessKeyRef.current = null;
+    lastDelegationDialogKeyRef.current = null;
+  }
+
+  async function onDelegateFromDialog() {
+    if (delegatingFromDialog || !delegateWalletTarget?.address || !walletsReady) return;
+    try {
+      setDelegationError(null);
+      setDelegatingFromDialog(true);
+      await delegateWallet({
+        address: delegateWalletTarget.address,
+        chainType: "ethereum",
+      });
+
+      const bearer = await getBearer();
+      if (!bearer) {
+        setDelegationError("Missing auth session. Please re-login and try again.");
+        return;
+      }
+
+      if (bearer) {
+        const target = delegateWalletTarget.address.toLowerCase();
+        const headers = {
+          Authorization: `Bearer ${bearer}`,
+          "Content-Type": "application/json",
+        };
+
+        // Finalize server-access policy/signer setup after Privy delegation consent.
+        let delegateConfigured = false;
+        for (let attempt = 0; attempt < 3; attempt += 1) {
+          const res = await fetch(`/api/server-access/${target}`, {
+            method: "POST",
+            headers,
+            body: JSON.stringify({ action: "delegate" }),
+          });
+          if (res.ok) {
+            delegateConfigured = true;
+            break;
+          }
+          await new Promise((resolve) => setTimeout(resolve, 450));
+        }
+
+        if (!delegateConfigured) {
+          setDelegationError(
+            "Delegation approved, but server setup failed. Open setup page to finish."
+          );
+          return;
+        }
+
+        const activateRes = await fetch(`/api/server-access/${target}`, {
+          method: "PUT",
+          headers,
+          body: JSON.stringify({ status: "ACTIVE" }),
+        });
+        if (!activateRes.ok) {
+          const activateJson = (await activateRes.json().catch(() => null)) as
+            | { error?: string }
+            | null;
+          setDelegationError(
+            activateJson?.error ??
+              "Delegation approved, but activation failed. Open setup page to finish."
+          );
+          return;
+        }
+
+        const stateRes = await fetch("/api/server-access/me", { headers });
+        const stateJson = (await stateRes.json().catch(() => null)) as
+          | { enabled?: boolean; delegated?: boolean; status?: string; error?: string }
+          | null;
+        if (
+          !stateRes.ok ||
+          stateJson?.enabled !== true ||
+          stateJson?.delegated !== true ||
+          String(stateJson?.status ?? "") !== "ACTIVE"
+        ) {
+          setDelegationError(
+            stateJson?.error ??
+              "Server access is still not active. Open setup page to complete configuration."
+          );
+          return;
+        }
+      }
+
+      setDelegationDialog(null);
+      await submitMessage("Confirm and execute the last proposed action.", true);
+    } catch (error) {
+      setDelegationError(
+        error instanceof Error ? error.message : "Delegation failed. Please try again."
+      );
+    } finally {
+      setDelegatingFromDialog(false);
+    }
+  }
+
+  function onOpenServerSetup() {
+    setDelegationDialog(null);
+    if (typeof window !== "undefined") {
+      window.location.href = "/profile/server-access";
+    }
   }
 
   function renderToolCard(part: ToolPreviewPart, idxKey: string) {
@@ -552,9 +717,9 @@ export function AssistantChatPage() {
 
   return (
     <main className="min-h-[100dvh] bg-background text-white pb-48 md:pb-44">
-      <div className="fixed inset-x-0 top-0 z-30 px-4 pt-[calc(env(safe-area-inset-top)+10px)] pb-3 bg-gradient-to-b from-background via-background/95 to-transparent">
+      <div className="fixed inset-x-0 top-0 z-30 px-4 pt-[calc(env(safe-area-inset-top)+12px)] pb-3 bg-background">
         <div className="mx-auto w-full max-w-3xl flex items-center justify-between gap-3">
-          <div className="text-sm font-medium text-white/80">Tab Assistant</div>
+          <div className="text-md font-medium text-white/80">Tab Assistant</div>
           <div className="flex items-center gap-2">
             <button
               type="button"
@@ -577,12 +742,12 @@ export function AssistantChatPage() {
         </div>
       </div>
 
-      <div className="mx-auto w-full max-w-3xl px-4 pt-20 md:pt-24">
+      <div className="mx-auto w-full px-3 max-w-3xl pt-[calc(env(safe-area-inset-top)+78px)] md:pt-24">
           <div className="px-1 pt-3 pb-24">
             {messages.length === 0 ? (
               <div className="pt-1">
                 <div className="px-1 pb-4">
-                  <h2 className="max-w-[12ch] text-[34px] leading-[0.98] tracking-tight font-medium text-white">
+                  <h2 className="text-[34px] leading-[0.98] tracking-tight font-medium text-white">
                     {`Hi ${greetingName}! A few ideas to start your day.`}
                   </h2>
                 </div>
@@ -831,6 +996,62 @@ export function AssistantChatPage() {
             >
               Done
             </button>
+          </div>
+        </ResponsiveDialogContent>
+      </ResponsiveDialog>
+
+      <ResponsiveDialog
+        open={Boolean(delegationDialog)}
+        onOpenChange={(next) => {
+          if (!next) setDelegationDialog(null);
+        }}
+        repositionInputs
+      >
+        <ResponsiveDialogContent className="border-white/10 bg-background p-0 overflow-hidden text-white">
+          <ResponsiveDialogHeader className="px-5 pt-4 pb-2 text-left">
+            <ResponsiveDialogTitle className="text-white">Enable Server Access</ResponsiveDialogTitle>
+            <ResponsiveDialogDescription className="text-white/55">
+              {delegationDialog?.message ?? ""}
+            </ResponsiveDialogDescription>
+          </ResponsiveDialogHeader>
+          <div className="px-5 pb-5">
+            <div className="mt-2 text-sm text-white/70">
+              This is required once to allow Tab assistant to send, split, and settle from your wallet.
+            </div>
+            {delegationError ? (
+              <div className="mt-3 rounded-xl border border-red-400/30 bg-red-500/10 px-3 py-2 text-xs text-red-200">
+                {delegationError}
+              </div>
+            ) : null}
+            <div className="mt-6 grid grid-cols-2 gap-3">
+              <button
+                type="button"
+                onClick={() => setDelegationDialog(null)}
+                className="h-12 rounded-full bg-white/10 text-white font-medium inline-flex items-center justify-center"
+              >
+                Not now
+              </button>
+              {delegateWalletTarget?.address ? (
+                <button
+                  type="button"
+                  onClick={() => {
+                    void onDelegateFromDialog();
+                  }}
+                  disabled={delegatingFromDialog || !walletsReady}
+                  className="h-12 rounded-full bg-white text-black font-medium inline-flex items-center justify-center disabled:opacity-60"
+                >
+                  {delegatingFromDialog ? "Delegating..." : "Delegate wallet"}
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  onClick={onOpenServerSetup}
+                  className="h-12 rounded-full bg-white text-black font-medium inline-flex items-center justify-center"
+                >
+                  Open setup
+                </button>
+              )}
+            </div>
           </div>
         </ResponsiveDialogContent>
       </ResponsiveDialog>

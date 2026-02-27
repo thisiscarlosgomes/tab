@@ -113,6 +113,12 @@ function asErrorMessage(data: unknown, fallback: string) {
   return fallback;
 }
 
+function asErrorCode(data: unknown) {
+  if (!data || typeof data !== "object") return null;
+  const code = (data as { code?: unknown }).code;
+  return typeof code === "string" && code.trim() ? code.trim() : null;
+}
+
 function classifyToolError(status: number | undefined, message: string) {
   const m = message.toLowerCase();
   const mentionsCredentials =
@@ -135,10 +141,12 @@ function toolFailure(
   fallback: string
 ) {
   const message = asErrorMessage(data, fallback);
+  const errorCode = asErrorCode(data);
   return {
     ok: false,
     source,
     status: status ?? null,
+    errorCode,
     errorCategory: classifyToolError(status, message),
     error: message,
     // Strong hint for the model to avoid inventing causes.
@@ -207,6 +215,7 @@ export async function POST(req: NextRequest) {
   const allowMutations = body.allowMutations === true;
   const commonAgentHeaders = {
     Authorization: `Bearer ${authed.token}`,
+    "x-tab-user-id": String(authed.user.id ?? ""),
     "Content-Type": "application/json",
     ...getInternalRequestHeaders(),
   };
@@ -285,7 +294,7 @@ export async function POST(req: NextRequest) {
 
     send_payment: tool({
       description:
-        "Send a token payment from the user's delegated Tab wallet using Agent Access guardrails.",
+        "Send a token payment from the user's delegated wallet under server access guardrails.",
       inputSchema: z.object({
         recipient: z.string().min(1),
         amount: z.string().min(1),
@@ -305,7 +314,7 @@ export async function POST(req: NextRequest) {
           );
         }
 
-        const result = await callJson(req, "/api/agent/send", {
+        const result = await callJson(req, "/api/server/send", {
           method: "POST",
           headers: commonAgentHeaders,
           body: JSON.stringify({
@@ -343,7 +352,7 @@ export async function POST(req: NextRequest) {
           );
         }
 
-        const result = await callJson(req, "/api/agent/split/create", {
+        const result = await callJson(req, "/api/server/split/create", {
           method: "POST",
           headers: commonAgentHeaders,
           body: JSON.stringify(payload),
@@ -381,7 +390,7 @@ export async function POST(req: NextRequest) {
           );
         }
 
-        const result = await callJson(req, "/api/agent/settle", {
+        const result = await callJson(req, "/api/server/settle", {
           method: "POST",
           headers: commonAgentHeaders,
           body: JSON.stringify(input),

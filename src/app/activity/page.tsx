@@ -653,7 +653,7 @@ export default function ActivityPage() {
                             <div className="text-white font-medium text-sm flex items-center gap-2">
                               {label}
                               {item.executionMode === "service_agent" && (
-                                <span className="text-[10px] px-1.5 py-0.5 rounded border border-primary/40 text-primary/90">
+                                <span className="px-1.5 text-[13px] rounded-[6px] bg-green-600/20 text-green-300 border border-green-500/30">
                                   Agent
                                 </span>
                               )}

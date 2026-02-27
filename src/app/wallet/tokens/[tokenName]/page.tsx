@@ -52,9 +52,6 @@ type WalletPortfolioToken = {
 };
 
 const WINDOW_OPTIONS = [
-  { label: "1M", secs: 60, candleWidth: 5 },
-  { label: "5M", secs: 300, candleWidth: 15 },
-  { label: "15M", secs: 900, candleWidth: 60 },
   { label: "1H", secs: 3600, candleWidth: 300 },
   { label: "4H", secs: 14_400, candleWidth: 900 },
   { label: "1D", secs: 86_400, candleWidth: 3600 },
@@ -240,7 +237,7 @@ export default function WalletTokenDetailsPage() {
   const marketCap = num(searchParams.get("marketCap"), Number.NaN);
   const volume = num(searchParams.get("volume"), Number.NaN);
 
-  const [selectedWindow, setSelectedWindow] = useState<number>(WINDOW_OPTIONS[3].secs);
+  const [selectedWindow, setSelectedWindow] = useState<number>(WINDOW_OPTIONS[0].secs);
   const [chart, setChart] = useState<ChartState | null>(null);
   const [lineMode, setLineMode] = useState(true);
   const [isTouchDevice, setIsTouchDevice] = useState(false);
@@ -250,13 +247,13 @@ export default function WalletTokenDetailsPage() {
   const [change24hPctReal, setChange24hPctReal] = useState<number | null>(null);
   const [isChartLoading, setIsChartLoading] = useState(false);
   const [effectiveCandleWidthSecs, setEffectiveCandleWidthSecs] = useState<number>(
-    WINDOW_OPTIONS[3].candleWidth
+    WINDOW_OPTIONS[0].candleWidth
   );
   const [activePairAddress, setActivePairAddress] = useState<string | null>(null);
   const [chartLoadedWindowSecs, setChartLoadedWindowSecs] = useState<number | null>(null);
 
   const selectedConfig =
-    WINDOW_OPTIONS.find((opt) => opt.secs === selectedWindow) ?? WINDOW_OPTIONS[3];
+    WINDOW_OPTIONS.find((opt) => opt.secs === selectedWindow) ?? WINDOW_OPTIONS[0];
 
   const basePrice = useMemo(() => {
     if (priceFromQuery > 0) return priceFromQuery;

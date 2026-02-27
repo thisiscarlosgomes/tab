@@ -87,12 +87,12 @@ function parsePolicyIds(raw: string | undefined) {
 function buildSignerConfigs() {
   const pairs = [
     {
-      signerId: process.env.PRIVY_AGENT_SIGNER_ID?.trim(),
-      policyIds: parsePolicyIds(process.env.PRIVY_AGENT_POLICY_IDS),
-    },
-    {
       signerId: process.env.PRIVY_SERVER_SIGNER_ID?.trim(),
       policyIds: parsePolicyIds(process.env.PRIVY_SERVER_POLICY_IDS),
+    },
+    {
+      signerId: process.env.PRIVY_AGENT_SIGNER_ID?.trim(),
+      policyIds: parsePolicyIds(process.env.PRIVY_AGENT_POLICY_IDS),
     },
   ].filter((entry): entry is { signerId: string; policyIds: string[] } => Boolean(entry.signerId));
 
@@ -172,7 +172,7 @@ function toNumber(value: unknown, fallback: number) {
 async function getDailyUsed(userId: string) {
   const client = await clientPromise;
   const db = client.db();
-  const settlements = db.collection("a-agent-settlement");
+  const settlements = db.collection("a-server-settlement");
   const start = getStartOfDayUtc();
   const end = getNextDayUtc();
   const result = await settlements
@@ -193,7 +193,7 @@ async function getDailyUsed(userId: string) {
 
 export async function GET(req: NextRequest) {
   const denied = requireTrustedRequest(req, {
-    bucket: "agent-access-get",
+    bucket: "server-access-get",
     limit: 80,
     windowMs: 60_000,
     allowBearerAuthorization: true,
@@ -215,7 +215,7 @@ export async function GET(req: NextRequest) {
 
   const client = await clientPromise;
   const db = client.db();
-  const collection = db.collection("a-agent-access");
+  const collection = db.collection("a-server-access");
 
   if (rawAddress === "me") {
     const activePolicy = await collection.findOne(
@@ -322,7 +322,7 @@ export async function GET(req: NextRequest) {
 
 export async function PUT(req: NextRequest) {
   const denied = requireTrustedRequest(req, {
-    bucket: "agent-access-put",
+    bucket: "server-access-put",
     limit: 40,
     windowMs: 60_000,
     allowBearerAuthorization: true,
@@ -381,7 +381,7 @@ export async function PUT(req: NextRequest) {
 
   const client = await clientPromise;
   const db = client.db();
-  const collection = db.collection("a-agent-access");
+  const collection = db.collection("a-server-access");
   const now = new Date();
 
   await collection.updateOne(
@@ -413,7 +413,7 @@ export async function PUT(req: NextRequest) {
 
 export async function POST(req: NextRequest) {
   const denied = requireTrustedRequest(req, {
-    bucket: "agent-access-post",
+    bucket: "server-access-post",
     limit: 30,
     windowMs: 60_000,
     allowBearerAuthorization: true,
@@ -446,7 +446,7 @@ export async function POST(req: NextRequest) {
 
   const client = await clientPromise;
   const db = client.db();
-  const collection = db.collection("a-agent-access");
+  const collection = db.collection("a-server-access");
   const now = new Date();
 
   if (action === "delegate") {
