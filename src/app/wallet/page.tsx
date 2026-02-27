@@ -662,11 +662,22 @@ export default function WalletPage() {
         void fetchWallet();
         const retryId = window.setTimeout(() => void fetchWallet(), 2200);
         balanceRefreshTimeoutsRef.current.push(retryId);
+        return;
+      }
+      if (result?.status === "cancelled") {
+        setBuyError(null);
       }
     } catch (error) {
       const message =
         error instanceof Error ? error.message : "Could not start MoonPay checkout.";
-      setBuyError(message);
+      if (
+        /unable to initialize flow/i.test(message) ||
+        /externalTransactionId/i.test(message)
+      ) {
+        setBuyError(null);
+      } else {
+        setBuyError(message);
+      }
     } finally {
       setBuyBusy(false);
     }
@@ -1227,7 +1238,7 @@ export default function WalletPage() {
               </ResponsiveDialogTitle>
 
               {buyStep === "amount" ? (
-                <div className="flex h-full flex-col">
+                <div className="flex h-full flex-col md:h-auto">
                   <h2 className="text-center text-lg font-semibold mt-2">Buy crypto</h2>
                   <div className="mt-4 flex flex-col items-center">
                     <NumericFormat
@@ -1273,7 +1284,7 @@ export default function WalletPage() {
                   <button
                     type="button"
                     onClick={() => setBuyTokenPickerOpen(true)}
-                    className="mb-4 mt-8 flex w-full items-center justify-between rounded-3xl bg-white/5 px-4 py-4"
+                    className="mt-8 flex w-full items-center justify-between rounded-3xl bg-white/5 px-4 py-4"
                   >
                     <div className="flex items-center gap-2">
                       <img
@@ -1297,7 +1308,7 @@ export default function WalletPage() {
                       setBuyStep("payment");
                     }}
                     disabled={!canContinueBuy}
-                    className="mt-4 md:mt-auto w-full bg-primary text-black font-semibold disabled:bg-white/20 disabled:text-white/50"
+                    className="mt-4 w-full bg-primary text-black font-semibold disabled:bg-white/20 disabled:text-white/50"
                   >
                     Continue
                   </Button>
@@ -1337,7 +1348,7 @@ export default function WalletPage() {
 
                   <button
                     type="button"
-                    className="w-full rounded-3xl border border-white/15 bg-white/[0.02] p-4 text-left"
+                    className="mb-4 w-full rounded-3xl border border-white/15 bg-white/[0.02] p-4 text-left"
                   >
                     <div className="flex items-center gap-3">
                       <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-gradient-to-br from-violet-500 to-fuchsia-500 text-white font-semibold">
@@ -1345,12 +1356,12 @@ export default function WalletPage() {
                       </div>
                       <div>
                         <p className="text-lg leading-none">MoonPay</p>
-                        <p className="mt-1 text-white/60">Debit Card, Apple Pay</p>
+                        <p className="mt-1 text-white/60 text-sm">Debit Card, Apple Pay</p>
                       </div>
                     </div>
                   </button>
 
-                  <p className="mt-auto mb-4 text-center text-white/50">
+                  <p className="hidden mt-auto mb-4 text-center text-white/50 md:text-xs text-xs">
                     You&apos;ll continue to MoonPay to review fees and complete checkout.
                   </p>
 

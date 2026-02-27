@@ -548,6 +548,9 @@ export function AssistantChatPage() {
 
     return !hasAssistantText && !hasToolOutput;
   }, [isStreaming, hasToolLoading, lastAssistantMessage]);
+  const starterCardsLoading = Boolean(
+    messages.length === 0 && primaryAddress && starterPrompts.length === 0
+  );
 
   async function getBearer() {
     const accessToken = await getAccessToken().catch(() => null);
@@ -830,6 +833,18 @@ export function AssistantChatPage() {
                   {`Hi ${greetingName}! A few ideas to start your day.`}
                 </h2>
               </div>
+              {starterCardsLoading ? (
+                <div className="px-1 py-2">
+                  <div className="flex items-center gap-3">
+                    <Skeleton className="h-11 w-11 rounded-2xl border-white/0 bg-white/10" />
+                    <div className="min-w-0 flex-1 space-y-2">
+                      <Skeleton className="h-3 w-24 border-white/0 bg-white/10" />
+                      <Skeleton className="h-5 w-[80%] border-white/0 bg-white/10" />
+                    </div>
+                    
+                  </div>
+                </div>
+              ) : null}
               <div className="space-y-2">
                 {starterPrompts.map((item) => {
                   const Icon = item.icon;
@@ -975,8 +990,8 @@ export function AssistantChatPage() {
               type="submit"
               disabled={isStreaming || !input.trim()}
               className={cn(
-                "absolute right-2 top-1/2 -translate-y-1/2 h-11 w-11 shrink-0 rounded-full inline-flex items-center justify-center",
-                "bg-white text-black transition disabled:bg-white/20 disabled:text-white/70"
+                "absolute right-2 top-1/2 -translate-y-1/2 h-9 w-9 shrink-0 rounded-full inline-flex items-center justify-center",
+                "bg-white text-black transition disabled:bg-white/15 disabled:text-white/70"
               )}
             >
               {isStreaming ? <Loader2 className="h-4 w-4 animate-spin" /> : <SendHorizonal className="h-5 w-5" />}

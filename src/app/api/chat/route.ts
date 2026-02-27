@@ -18,6 +18,7 @@ export const maxDuration = 30;
 const MORPHO_GRAPHQL_URL = "https://blue-api.morpho.org/graphql";
 const MORPHO_CHAIN_ID = 8453;
 const MORPHO_VAULT_ADDRESS = "0xc1256Ae5FF1cf2719D4937adb3bbCCab2E00A2Ca";
+const MIN_VISIBLE_TOKEN_USD = 0.005;
 
 type LinkedAccountLike = {
   type?: string;
@@ -342,6 +343,10 @@ function computeSpendingInsights(activity: ActivityRecord[], selfAddress?: strin
   };
 }
 
+function filterVisibleWalletTokens<T extends { balanceUSD?: number | null }>(tokens: T[]) {
+  return tokens.filter((token) => Number(token.balanceUSD ?? 0) >= MIN_VISIBLE_TOKEN_USD);
+}
+
 export async function POST(req: NextRequest) {
   const denied = requireTrustedRequest(req, {
     bucket: "chat-post",
@@ -419,14 +424,15 @@ export async function POST(req: NextRequest) {
         };
 
         const tokens = Array.isArray(payload.tokens) ? payload.tokens : [];
+        const visibleTokens = filterVisibleWalletTokens(tokens);
         const symbol = input?.symbol?.trim().toUpperCase();
         const wantsBreakdown = input?.breakdown === true;
         const topTokens = Number.isFinite(input?.topTokens)
           ? Math.min(Math.max(Number(input?.topTokens ?? 3), 1), 10)
           : 3;
         const filtered = symbol
-          ? tokens.filter((t) => String(t.symbol ?? "").toUpperCase() === symbol)
-          : tokens;
+          ? visibleTokens.filter((t) => String(t.symbol ?? "").toUpperCase() === symbol)
+          : visibleTokens;
         const totalUsd = Number(payload.totalBalanceUSD ?? 0);
 
         return {
@@ -790,13 +796,14 @@ export async function POST(req: NextRequest) {
           | null;
 
         const tokens = Array.isArray(portfolio.tokens) ? portfolio.tokens : [];
+        const visibleTokens = filterVisibleWalletTokens(tokens);
 
         return {
           ok: true,
           portfolio: {
             totalUsd: Number(portfolio.totalBalanceUSD ?? 0),
             showCards: Boolean(input?.includeBreakdown),
-            tokens: input?.includeBreakdown ? tokens.slice(0, 5) : [],
+            tokens: input?.includeBreakdown ? visibleTokens.slice(0, 5) : [],
           },
           spending: {
             todayUsd: spending.todayUsd,

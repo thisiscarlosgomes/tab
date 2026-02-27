@@ -75,6 +75,11 @@ function Providers({ children }: React.PropsWithChildren) {
           theme: "#19191E",
           landingHeader: "Welcome to tab",
         },
+        fundingMethodConfig: {
+          moonpay: {
+            paymentMethod: "credit_debit_card",
+          },
+        },
         defaultChain: base,
         supportedChains: [base],
       }}
