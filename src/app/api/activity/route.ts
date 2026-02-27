@@ -11,6 +11,7 @@ export async function GET(req: NextRequest) {
     ?.toLowerCase();
   const requestedLimit = Number(req.nextUrl.searchParams.get("limit") ?? "50");
   const limit = Math.min(Math.max(Number.isFinite(requestedLimit) ? requestedLimit : 50, 1), 100);
+  const skipExternal = req.nextUrl.searchParams.get("skipExternal") === "1";
   const beforeParam = req.nextUrl.searchParams.get("before");
   const beforeDate =
     beforeParam && !Number.isNaN(new Date(beforeParam).getTime())
@@ -85,7 +86,8 @@ export async function GET(req: NextRequest) {
     );
 
     const shouldFetchMoralis =
-      beforeDate !== null || rawActivity.length + syntheticFromAgentTransfers.length < limit;
+      !skipExternal &&
+      (beforeDate !== null || rawActivity.length + syntheticFromAgentTransfers.length < limit);
 
     const syntheticFromMoralis = shouldFetchMoralis
       ? (await fetchMoralisTransferActivity(address, {
