@@ -31,12 +31,18 @@ type ChatRouteBody = {
   messages?: UIMessage[];
   context?: {
     pathname?: string;
-    draftRecipient?: string;
-    draftAmount?: string;
-    draftToken?: string;
-    splitUrl?: string;
   };
-  allowMutations?: boolean;
+};
+
+type ActivityRecord = {
+  type?: string;
+  amount?: number;
+  token?: string;
+  timestamp?: string | Date;
+  recipient?: string;
+  recipientUsername?: string;
+  counterparty?: string;
+  counterpartyAddress?: string;
 };
 
 function toLinkedAccounts(input: unknown): LinkedAccountLike[] {
@@ -94,8 +100,6 @@ function findFarcasterIdentity(user: unknown, accounts: LinkedAccountLike[]) {
 }
 
 function getBaseUrl(req: NextRequest) {
-  // Use request origin for internal API hops to avoid cross-origin redirects
-  // that can strip Authorization headers.
   return req.nextUrl.origin.replace(/\/$/, "");
 }
 
@@ -111,12 +115,6 @@ function asErrorMessage(data: unknown, fallback: string) {
     if (typeof err === "string" && err.trim()) return err.trim();
   }
   return fallback;
-}
-
-function asErrorCode(data: unknown) {
-  if (!data || typeof data !== "object") return null;
-  const code = (data as { code?: unknown }).code;
-  return typeof code === "string" && code.trim() ? code.trim() : null;
 }
 
 function classifyToolError(status: number | undefined, message: string) {
@@ -141,45 +139,126 @@ function toolFailure(
   fallback: string
 ) {
   const message = asErrorMessage(data, fallback);
-  const errorCode = asErrorCode(data);
   return {
     ok: false,
     source,
     status: status ?? null,
-    errorCode,
     errorCategory: classifyToolError(status, message),
     error: message,
-    // Strong hint for the model to avoid inventing causes.
     assistantHandlingHint:
       "Use the exact error text. Do not say 'missing credentials' unless the error explicitly mentions auth/token/credentials.",
   };
 }
 
-function makePreviewResult(
-  action: string,
-  summary: string,
-  payload: Record<string, unknown>
-) {
+function isOutgoingActivity(activity: ActivityRecord) {
+  const t = String(activity.type ?? "").toLowerCase();
+  return t === "bill_paid" || t === "room_paid";
+}
+
+function usdAmountFromActivity(activity: ActivityRecord) {
+  const amount = Number(activity.amount ?? 0);
+  if (!Number.isFinite(amount) || amount <= 0) return 0;
+  const token = String(activity.token ?? "").trim().toUpperCase();
+  if (["USDC", "USDC.E", "USDT", "DAI", "EURC", "USD"].includes(token)) {
+    return amount;
+  }
+  return 0;
+}
+
+function startOfTodayUtc() {
+  const now = new Date();
+  return new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
+}
+
+function startOfWeekUtc() {
+  const now = new Date();
+  const day = now.getUTCDay();
+  const diff = (day + 6) % 7;
+  const d = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
+  d.setUTCDate(d.getUTCDate() - diff);
+  return d;
+}
+
+function parseTimestamp(value: unknown) {
+  const d = new Date(String(value ?? ""));
+  return Number.isNaN(d.getTime()) ? null : d;
+}
+
+async function fetchActivity(req: NextRequest, address: string, limit = 100) {
+  const params = new URLSearchParams({ address, limit: String(limit) });
+  const result = await callJson(req, `/api/activity?${params.toString()}`, {
+    headers: { ...getInternalRequestHeaders() },
+  });
+  if (!result.ok) return result;
+
+  const payload = (result.data ?? {}) as {
+    activity?: ActivityRecord[];
+  };
+
   return {
     ok: true,
-    requiresConfirmation: true,
-    action,
-    summary,
-    payload,
-    confirmInstruction:
-      "Ask the user to confirm. After they confirm, run the same action again.",
+    status: result.status,
+    data: {
+      activity: Array.isArray(payload.activity) ? payload.activity : [],
+    },
   };
 }
 
-function resolveTokenSymbol(inputToken: unknown, amount: unknown) {
-  const token = String(inputToken ?? "").trim().toUpperCase();
-  const amountText = String(amount ?? "").trim();
+function computeSpendingInsights(activity: ActivityRecord[]) {
+  const outgoing = activity.filter(isOutgoingActivity);
+  const todayStart = startOfTodayUtc();
+  const weekStart = startOfWeekUtc();
 
-  if (!token) return "USDC";
-  if (token === "$" || token === "USD") return "USDC";
-  if (amountText.includes("$") && (token === "USDT" || token === "DAI")) return token;
-  if (amountText.includes("$") && token === "USDC.E") return "USDC";
-  return token;
+  let todayUsd = 0;
+  let weekUsd = 0;
+  let allTimeUsd = 0;
+  let todayCount = 0;
+  let weekCount = 0;
+  let allTimeCount = 0;
+
+  const sentCounterparty = new Map<string, { txCount: number; totalUsd: number }>();
+
+  for (const item of outgoing) {
+    const ts = parseTimestamp(item.timestamp);
+    const usd = usdAmountFromActivity(item);
+    const labelRaw =
+      item.recipientUsername || item.counterparty || item.recipient || item.counterpartyAddress;
+    const label = String(labelRaw ?? "").trim();
+
+    if (usd > 0) {
+      allTimeUsd += usd;
+      allTimeCount += 1;
+      if (ts && ts >= weekStart) {
+        weekUsd += usd;
+        weekCount += 1;
+      }
+      if (ts && ts >= todayStart) {
+        todayUsd += usd;
+        todayCount += 1;
+      }
+
+      if (label) {
+        const prev = sentCounterparty.get(label) ?? { txCount: 0, totalUsd: 0 };
+        prev.txCount += 1;
+        prev.totalUsd += usd;
+        sentCounterparty.set(label, prev);
+      }
+    }
+  }
+
+  const topSentWallet = [...sentCounterparty.entries()]
+    .map(([target, value]) => ({ target, ...value }))
+    .sort((a, b) => b.totalUsd - a.totalUsd)[0] ?? null;
+
+  return {
+    todayUsd,
+    weekUsd,
+    allTimeUsd,
+    todayCount,
+    weekCount,
+    allTimeCount,
+    topSentWallet,
+  };
 }
 
 export async function POST(req: NextRequest) {
@@ -212,13 +291,6 @@ export async function POST(req: NextRequest) {
   const linkedAccounts = toLinkedAccounts(authed.user);
   const primaryAddress = findPrimaryPrivyAddress(linkedAccounts);
   const farcaster = findFarcasterIdentity(authed.user, linkedAccounts);
-  const allowMutations = body.allowMutations === true;
-  const commonAgentHeaders = {
-    Authorization: `Bearer ${authed.token}`,
-    "x-tab-user-id": String(authed.user.id ?? ""),
-    "Content-Type": "application/json",
-    ...getInternalRequestHeaders(),
-  };
 
   const tools = {
     check_portfolio_balance: tool({
@@ -243,11 +315,9 @@ export async function POST(req: NextRequest) {
 
         const params = new URLSearchParams({ address: primaryAddress });
         if (input?.forceRefresh) params.set("force", "1");
-        const result = await callJson(
-          req,
-          `/api/moralis/portfolio?${params.toString()}`,
-          { headers: { ...getInternalRequestHeaders() } }
-        );
+        const result = await callJson(req, `/api/moralis/portfolio?${params.toString()}`, {
+          headers: { ...getInternalRequestHeaders() },
+        });
         if (!result.ok) {
           return toolFailure(
             "check_portfolio_balance",
@@ -288,180 +358,349 @@ export async function POST(req: NextRequest) {
           tokens: wantsBreakdown ? filtered.slice(0, topTokens) : [],
           requestedSymbol: symbol ?? null,
           portfolioMode: wantsBreakdown ? "breakdown" : "summary",
+          preferToolCardOnly: true,
         };
       },
     }),
 
-    send_payment: tool({
+    get_spending_overview: tool({
       description:
-        "Send a token payment from the user's delegated wallet under server access guardrails.",
+        "Get spending for today, this week, or all-time and identify top sent wallet based on outgoing activity.",
       inputSchema: z.object({
-        recipient: z.string().min(1),
-        amount: z.string().min(1),
-        token: z.string().optional(),
-        note: z.string().optional(),
-        requestId: z.string().optional(),
+        period: z.enum(["today", "week", "all"]).optional(),
+        includeTopSentWallet: z.boolean().optional(),
       }),
       execute: async (input) => {
-        const token = resolveTokenSymbol(input?.token, input?.amount);
-        const payload = { ...input, token };
-
-        if (!allowMutations) {
-          return makePreviewResult(
-            "send_payment",
-            `Send ${input.amount} ${token} to ${input.recipient}`,
-            payload
-          );
-        }
-
-        const result = await callJson(req, "/api/server/send", {
-          method: "POST",
-          headers: commonAgentHeaders,
-          body: JSON.stringify({
-            ...payload,
-            requestId: input.requestId ?? crypto.randomUUID(),
-          }),
-        });
-
-        if (!result.ok) {
-          return toolFailure("send_payment", result.status, result.data, "Send failed");
-        }
-
-        return result.data;
-      },
-    }),
-
-    create_split: tool({
-      description:
-        "Create an invited split with Farcaster usernames and return a Tab split URL.",
-      inputSchema: z.object({
-        amount: z.string().min(1),
-        users: z.array(z.string().min(1)).min(1).max(20),
-        token: z.string().optional(),
-        description: z.string().optional(),
-      }),
-      execute: async (input) => {
-        const token = resolveTokenSymbol(input?.token, input?.amount);
-        const payload = { ...input, token };
-
-        if (!allowMutations) {
-          return makePreviewResult(
-            "create_split",
-            `Create a split for ${input.amount} ${token} with ${input.users.join(", ")}`,
-            payload
-          );
-        }
-
-        const result = await callJson(req, "/api/server/split/create", {
-          method: "POST",
-          headers: commonAgentHeaders,
-          body: JSON.stringify(payload),
-        });
-
-        if (!result.ok) {
-          return toolFailure(
-            "create_split",
-            result.status,
-            result.data,
-            "Split creation failed"
-          );
-        }
-
-        return result.data;
-      },
-    }),
-
-    settle_split: tool({
-      description:
-        "Settle the user's split share for a specific split (id/code/url) or the latest eligible pending split.",
-      inputSchema: z.object({
-        splitId: z.string().optional(),
-        splitCode: z.string().optional(),
-        splitUrl: z.string().url().optional(),
-      }),
-      execute: async (input) => {
-        if (!allowMutations) {
-          return makePreviewResult(
-            "settle_split",
-            input.splitUrl || input.splitCode || input.splitId
-              ? "Settle the specified split share"
-              : "Settle the latest eligible split share",
-            input
-          );
-        }
-
-        const result = await callJson(req, "/api/server/settle", {
-          method: "POST",
-          headers: commonAgentHeaders,
-          body: JSON.stringify(input),
-        });
-
-        if (!result.ok) {
-          return toolFailure(
-            "settle_split",
-            result.status,
-            result.data,
-            "Settlement failed"
-          );
-        }
-
-        return result.data;
-      },
-    }),
-
-    enter_jackpot: tool({
-      description:
-        "Record a jackpot/spin entry in Tab for the authenticated user (requires explicit user confirmation).",
-      inputSchema: z.object({
-        amount: z.number().positive(),
-        ticketCount: z.number().int().positive().optional(),
-      }),
-      execute: async (input) => {
-        if (!primaryAddress || !farcaster.fid) {
+        if (!primaryAddress) {
           return {
             ok: false,
-            error: "Missing wallet address or Farcaster account required for jackpot entry.",
+            error: "No Privy wallet address found for this account.",
           };
         }
 
-        if (!allowMutations) {
-          return makePreviewResult(
-            "enter_jackpot",
-            `Record jackpot entry for $${input.amount} (${input.ticketCount ?? 0} tickets)`,
-            input
+        const activityResult = await fetchActivity(req, primaryAddress, 100);
+        if (!activityResult.ok) {
+          return toolFailure(
+            "get_spending_overview",
+            activityResult.status,
+            activityResult.data,
+            "Failed to fetch activity"
           );
         }
 
-        const result = await callJson(req, "/api/jackpot", {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            ...getInternalRequestHeaders(),
+        const activity = ((activityResult.data as { activity?: ActivityRecord[] })?.activity ?? []) as ActivityRecord[];
+        const insights = computeSpendingInsights(activity);
+        const period = input?.period ?? "today";
+        const periodTotalUsd =
+          period === "today"
+            ? insights.todayUsd
+            : period === "week"
+              ? insights.weekUsd
+              : insights.allTimeUsd;
+
+        return {
+          ok: true,
+          address: primaryAddress,
+          period,
+          periodTotalUsd,
+          totals: {
+            todayUsd: insights.todayUsd,
+            weekUsd: insights.weekUsd,
+            allTimeUsd: insights.allTimeUsd,
           },
-          body: JSON.stringify({
-            address: primaryAddress,
-            fid: farcaster.fid,
-            amount: input.amount,
-            ticketCount: input.ticketCount ?? 0,
-          }),
+          counts: {
+            today: insights.todayCount,
+            week: insights.weekCount,
+            all: insights.allTimeCount,
+          },
+          topSentWallet: input?.includeTopSentWallet ? insights.topSentWallet : insights.topSentWallet,
+          preferToolCardOnly: true,
+        };
+      },
+    }),
+
+    get_split_overview: tool({
+      description:
+        "Get latest splits for this user, including paid and unpaid split status.",
+      inputSchema: z.object({
+        limit: z.number().int().min(1).max(20).optional(),
+      }),
+      execute: async (input) => {
+        if (!primaryAddress && !farcaster.fid) {
+          return {
+            ok: false,
+            error: "Missing wallet address and Farcaster account for split lookup.",
+          };
+        }
+
+        const params = new URLSearchParams();
+        if (primaryAddress) params.set("address", primaryAddress);
+        if (farcaster.fid) params.set("fid", String(farcaster.fid));
+        params.set("limit", String(input?.limit ?? 10));
+
+        const result = await callJson(req, `/api/user-bills?${params.toString()}`, {
+          headers: { ...getInternalRequestHeaders() },
         });
 
         if (!result.ok) {
           return toolFailure(
-            "enter_jackpot",
+            "get_split_overview",
             result.status,
             result.data,
-            "Jackpot entry failed"
+            "Failed to fetch splits"
           );
         }
 
+        const payload = (result.data ?? {}) as {
+          bills?: Array<{
+            splitId?: string;
+            description?: string;
+            token?: string;
+            totalAmount?: number;
+            perPersonAmount?: number;
+            hasPaid?: boolean;
+            isSettled?: boolean;
+            createdAt?: string;
+            userStatus?: string | null;
+            paidCount?: number;
+            debtors?: number;
+          }>;
+        };
+
+        const bills = Array.isArray(payload.bills) ? payload.bills : [];
+        const latestSplits = bills.slice(0, 5);
+        const paidSplits = bills.filter((b) => b.hasPaid === true);
+        const pendingSplits = bills.filter((b) => b.hasPaid === false);
+
         return {
           ok: true,
-          success: true,
-          amount: input.amount,
-          ticketCount: input.ticketCount ?? 0,
+          latestSplits,
+          totalSplits: bills.length,
+          paidSplitCount: paidSplits.length,
+          pendingSplitCount: pendingSplits.length,
+          latestPaidSplit: paidSplits[0] ?? null,
+          preferToolCardOnly: true,
+        };
+      },
+    }),
+
+    get_jackpot_status: tool({
+      description:
+        "Get whether jackpot/spin is active for the user and their latest spin status.",
+      inputSchema: z.object({}),
+      execute: async () => {
+        if (!farcaster.fid) {
+          return {
+            ok: false,
+            error: "Missing Farcaster account required for jackpot status.",
+          };
+        }
+
+        const [spinResult, recentResult] = await Promise.all([
+          callJson(req, `/api/daily-spin?fid=${farcaster.fid}`, {
+            headers: { ...getInternalRequestHeaders() },
+          }),
+          callJson(req, "/api/jackpot", {
+            headers: { ...getInternalRequestHeaders() },
+          }),
+        ]);
+
+        if (!spinResult.ok) {
+          return toolFailure(
+            "get_jackpot_status",
+            spinResult.status,
+            spinResult.data,
+            "Failed to fetch jackpot status"
+          );
+        }
+
+        const spin = (spinResult.data ?? {}) as {
+          canSpin?: boolean;
+          nextEligibleSpinAt?: string | null;
+          latestResult?: { reward?: string } | null;
+          spinsToday?: number;
+          totalSpins?: number;
+          streak?: number;
+        };
+
+        const recentUsers =
+          recentResult.ok && recentResult.data && typeof recentResult.data === "object"
+            ? Array.isArray((recentResult.data as { users?: unknown[] }).users)
+              ? (recentResult.data as { users?: unknown[] }).users!.length
+              : 0
+            : 0;
+
+        return {
+          ok: true,
+          canSpin: Boolean(spin.canSpin),
+          nextEligibleSpinAt: spin.nextEligibleSpinAt ?? null,
+          latestResult: spin.latestResult ?? null,
+          spinsToday: Number(spin.spinsToday ?? 0),
+          totalSpins: Number(spin.totalSpins ?? 0),
+          streak: Number(spin.streak ?? 0),
+          recentParticipants: recentUsers,
+          active: Boolean(spin.canSpin),
+          preferToolCardOnly: true,
+        };
+      },
+    }),
+
+    get_earnings_overview: tool({
+      description:
+        "Get earnings/earn deposits summary for the user's wallet, including latest entries and active status.",
+      inputSchema: z.object({
+        limit: z.number().int().min(1).max(50).optional(),
+      }),
+      execute: async (input) => {
+        if (!primaryAddress) {
+          return {
+            ok: false,
+            error: "No Privy wallet address found for this account.",
+          };
+        }
+
+        const limit = input?.limit ?? 10;
+        const result = await callJson(req, `/api/earn/${primaryAddress}?limit=${limit}`, {
+          headers: { ...getInternalRequestHeaders() },
+        });
+
+        if (!result.ok) {
+          return toolFailure(
+            "get_earnings_overview",
+            result.status,
+            result.data,
+            "Failed to fetch earnings"
+          );
+        }
+
+        const payload = (result.data ?? {}) as {
+          total?: number;
+          deposits?: Array<{ amount?: number; timestamp?: string; txHash?: string | null }>;
+        };
+
+        const deposits = Array.isArray(payload.deposits) ? payload.deposits : [];
+        const total = Number(payload.total ?? 0);
+
+        return {
+          ok: true,
           address: primaryAddress,
-          fid: farcaster.fid,
+          totalDepositedUsd: total,
+          depositCount: deposits.length,
+          latestDeposit: deposits[0] ?? null,
+          deposits,
+          active: total > 0 || deposits.length > 0,
+          preferToolCardOnly: true,
+        };
+      },
+    }),
+
+    get_account_overview: tool({
+      description:
+        "Fetch a combined read-only overview: portfolio, spending, splits, jackpot, and earnings.",
+      inputSchema: z.object({
+        includeBreakdown: z.boolean().optional(),
+      }),
+      execute: async (input) => {
+        if (!primaryAddress) {
+          return {
+            ok: false,
+            error: "No Privy wallet address found for this account.",
+          };
+        }
+
+        const portfolioParams = new URLSearchParams({ address: primaryAddress });
+        const splitParams = new URLSearchParams();
+        splitParams.set("address", primaryAddress);
+        if (farcaster.fid) splitParams.set("fid", String(farcaster.fid));
+        splitParams.set("limit", "10");
+
+        const [portfolioResult, activityResult, splitResult, earnResult, spinResult] = await Promise.all([
+          callJson(req, `/api/moralis/portfolio?${portfolioParams.toString()}`, {
+            headers: { ...getInternalRequestHeaders() },
+          }),
+          fetchActivity(req, primaryAddress, 100),
+          callJson(req, `/api/user-bills?${splitParams.toString()}`, {
+            headers: { ...getInternalRequestHeaders() },
+          }),
+          callJson(req, `/api/earn/${primaryAddress}?limit=10`, {
+            headers: { ...getInternalRequestHeaders() },
+          }),
+          farcaster.fid
+            ? callJson(req, `/api/daily-spin?fid=${farcaster.fid}`, {
+                headers: { ...getInternalRequestHeaders() },
+              })
+            : Promise.resolve({ ok: false, status: 400, data: { error: "Missing fid" } }),
+        ]);
+
+        if (!portfolioResult.ok) {
+          return toolFailure(
+            "get_account_overview",
+            portfolioResult.status,
+            portfolioResult.data,
+            "Failed to build account overview"
+          );
+        }
+
+        const portfolio = (portfolioResult.data ?? {}) as {
+          totalBalanceUSD?: number;
+          tokens?: Array<{ symbol?: string; balance?: number; balanceUSD?: number; portfolioPercent?: number }>;
+        };
+
+        const activity = activityResult.ok
+          ? (((activityResult.data as { activity?: ActivityRecord[] })?.activity ?? []) as ActivityRecord[])
+          : [];
+        const spending = computeSpendingInsights(activity);
+
+        const bills = splitResult.ok && splitResult.data && typeof splitResult.data === "object"
+          ? Array.isArray((splitResult.data as { bills?: unknown[] }).bills)
+            ? ((splitResult.data as { bills?: unknown[] }).bills as Array<Record<string, unknown>>)
+            : []
+          : [];
+
+        const earn = (earnResult.ok ? earnResult.data : null) as
+          | { total?: number; deposits?: Array<{ amount?: number; timestamp?: string; txHash?: string | null }> }
+          | null;
+
+        const spin = (spinResult.ok ? spinResult.data : null) as
+          | { canSpin?: boolean; nextEligibleSpinAt?: string | null; spinsToday?: number; totalSpins?: number; streak?: number }
+          | null;
+
+        const tokens = Array.isArray(portfolio.tokens) ? portfolio.tokens : [];
+
+        return {
+          ok: true,
+          portfolio: {
+            totalUsd: Number(portfolio.totalBalanceUSD ?? 0),
+            showCards: Boolean(input?.includeBreakdown),
+            tokens: input?.includeBreakdown ? tokens.slice(0, 5) : [],
+          },
+          spending: {
+            todayUsd: spending.todayUsd,
+            weekUsd: spending.weekUsd,
+            allTimeUsd: spending.allTimeUsd,
+            topSentWallet: spending.topSentWallet,
+          },
+          splits: {
+            total: bills.length,
+            latest: bills.slice(0, 3),
+            paidCount: bills.filter((b) => b.hasPaid === true).length,
+          },
+          earnings: {
+            totalDepositedUsd: Number(earn?.total ?? 0),
+            depositCount: Array.isArray(earn?.deposits) ? earn!.deposits!.length : 0,
+            latestDeposit:
+              Array.isArray(earn?.deposits) && earn!.deposits!.length > 0
+                ? earn!.deposits![0]
+                : null,
+          },
+          jackpot: {
+            active: Boolean(spin?.canSpin),
+            canSpin: Boolean(spin?.canSpin),
+            nextEligibleSpinAt: spin?.nextEligibleSpinAt ?? null,
+            spinsToday: Number(spin?.spinsToday ?? 0),
+            totalSpins: Number(spin?.totalSpins ?? 0),
+            streak: Number(spin?.streak ?? 0),
+          },
         };
       },
     }),
@@ -471,10 +710,6 @@ export async function POST(req: NextRequest) {
     ? JSON.stringify(
         {
           pathname: body.context.pathname ?? null,
-          draftRecipient: body.context.draftRecipient ?? null,
-          draftAmount: body.context.draftAmount ?? null,
-          draftToken: body.context.draftToken ?? null,
-          splitUrl: body.context.splitUrl ?? null,
         },
         null,
         0
@@ -485,29 +720,24 @@ export async function POST(req: NextRequest) {
     model: openai(process.env.OPENAI_CHAT_MODEL?.trim() || "gpt-4o-mini"),
     system: [
       "You are Tab Assistant inside the Tab app.",
-      "Primary goals: help users send money, create/split bills, settle split shares, check portfolio balances, and enter jackpot/spin.",
-      "Use tools instead of guessing outcomes for balances and actions.",
+      "You are currently in READ-ONLY mode.",
+      "Never execute or suggest executing writes (send, split creation/settlement, jackpot entry, transfers).",
+      "If user asks to perform a write action, say read-only mode and offer to show relevant data instead.",
+      "Primary goals: answer wallet analytics questions with tools: portfolio, portfolio change, spending today/week/all-time, top sent wallet, latest/paid splits, jackpot status, earnings.",
+      "Use tools instead of guessing outcomes.",
       "For portfolio questions: default to summary mode (show total in USD, no cards).",
-      "For payment/split amounts in dollars (e.g. '$12', '12 dollars', 'USD'), default token to USDC unless user explicitly asks for another token.",
       "Use breakdown=true only if user explicitly asks for breakdown/by token/cards/top tokens.",
-      "When summary mode is used, reply with total only and keep it short (example: 'you've got $234.00').",
-      "Avoid repeating the same portfolio amount in both text and UI.",
-      "If UI shows the big portfolio metric, keep text to a short lead-in and do not restate the exact number.",
-      "If UI shows breakdown cards, do not also dump a long token-by-token list in text.",
+      "When summary mode is used and UI shows big number, keep text minimal.",
+      "If UI shows breakdown cards, avoid repeating a long token list in text.",
       "Be super casual and short.",
       "Keep responses to 1-2 short sentences by default.",
-      "Do not use long numbered lists unless the user explicitly asks for a checklist.",
+      "Do not use long numbered lists unless the user asks for a checklist.",
       "If info is missing, ask only one quick follow-up question.",
-      "Never claim a payment/split/jackpot action executed unless a tool returns success.",
-      "When a tool returns ok=false, use the tool's exact `error` text in your response and avoid inventing causes.",
-      "Only say credentials/auth are missing if the tool error explicitly mentions auth, token, authorization, or credentials (or status is 401).",
-      "For 403 errors, prefer permission/policy language. For 404 errors, say not found. For 503/500 errors, say temporary/internal issue.",
-      allowMutations
-        ? "The user explicitly confirmed a pending action in this turn. You may execute one matching mutating tool if appropriate."
-        : "Mutating tools are in preview mode this turn. If a mutating tool returns requiresConfirmation=true, ask for confirmation before execution.",
+      "When a tool returns ok=false, use the exact error text and do not invent causes.",
+      "Only say credentials/auth are missing if error explicitly mentions auth, token, authorization, credentials, or status is 401.",
+      "For 403 errors, use permission language. For 404, say not found. For 503/500, say temporary/internal issue.",
       `Current authenticated user context: wallet=${primaryAddress ?? "unknown"}, fid=${farcaster.fid ?? "unknown"}, username=${farcaster.username ?? "unknown"}.`,
       `UI context: ${contextText}`,
-      "If a user asks to 'spin', interpret that as jackpot entry/logging unless they clarify another game action.",
     ].join("\n"),
     messages: await convertToModelMessages(messages),
     tools,

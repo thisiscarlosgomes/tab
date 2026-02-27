@@ -4,44 +4,27 @@ import { useChat } from "@ai-sdk/react";
 import { DefaultChatTransport } from "ai";
 import {
   ArrowUp,
-  Check,
+  BarChart3,
+  Coins,
   Loader2,
-  PiggyBank,
   SendHorizonal,
-  SplitSquareVertical,
   TrendingDown,
   Trash2,
   Wallet,
   X,
 } from "lucide-react";
 import Link from "next/link";
-import { usePathname, useSearchParams } from "next/navigation";
-import { type FormEvent, type ComponentType, useEffect, useMemo, useRef, useState } from "react";
+import { usePathname } from "next/navigation";
+import { type FormEvent, type ComponentType, useMemo, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
-import {
-  useDelegatedActions,
-  useIdentityToken,
-  usePrivy,
-  useToken,
-  useWallets,
-} from "@privy-io/react-auth";
+import { useIdentityToken, usePrivy, useToken } from "@privy-io/react-auth";
 import { cn } from "@/lib/cn";
 import { Skeleton } from "@/components/ui/skeleton";
-import {
-  ResponsiveDialog,
-  ResponsiveDialogContent,
-  ResponsiveDialogDescription,
-  ResponsiveDialogHeader,
-  ResponsiveDialogTitle,
-} from "@/components/ui/responsive-dialog";
 
 type ToolPreviewPart = {
   type?: string;
   state?: string;
   output?: {
-    requiresConfirmation?: boolean;
-    summary?: string;
-    action?: string;
     [key: string]: unknown;
   };
   input?: Record<string, unknown>;
@@ -57,49 +40,38 @@ type StarterPrompt = {
   iconTone: string;
 };
 
-type ActionSuccessDialog = {
-  key: string;
-  title: string;
-  subtitle: string;
-  detail?: string;
-};
-
-type DelegationDialog = {
-  key: string;
-  message: string;
-};
-
-type WalletLike = {
-  type?: string;
-  address?: string;
-  walletClientType?: string;
-  delegated?: boolean;
-};
-
 const STARTER_PROMPTS: StarterPrompt[] = [
   {
-    key: "balance",
-    eyebrow: "Portfolio check",
-    title: "Show my balances and what changed today.",
-    prompt: "What is my current portfolio balance and top tokens?",
+    key: "portfolio",
+    eyebrow: "Portfolio",
+    title: "How much do I have right now?",
+    prompt: "What is my total portfolio balance?",
+    icon: Wallet,
+    iconTone: "bg-[#edf0ff] text-[#3c4c9e]",
+  },
+  {
+    key: "spending",
+    eyebrow: "Spending",
+    title: "Show spend today and this week.",
+    prompt: "How much did I spend today and this week?",
     icon: TrendingDown,
     iconTone: "bg-[#f4ecd8] text-[#7a5d2d]",
   },
   {
-    key: "split",
-    eyebrow: "Split a bill",
-    title: "I found a bill, help me split it with friends.",
-    prompt: "Help me create a split",
-    icon: SplitSquareVertical,
-    iconTone: "bg-[#edf0ff] text-[#3c4c9e]",
+    key: "splits",
+    eyebrow: "Splits",
+    title: "Show my latest and paid splits.",
+    prompt: "Show my latest splits and which ones are paid.",
+    icon: BarChart3,
+    iconTone: "bg-[#e7f7e8] text-[#206a34]",
   },
   {
-    key: "send",
-    eyebrow: "Send money",
-    title: "Pay someone fast from my Tab wallet.",
-    prompt: "Help me send money",
-    icon: Wallet,
-    iconTone: "bg-[#e7f7e8] text-[#206a34]",
+    key: "earn",
+    eyebrow: "Earnings",
+    title: "Show earnings + jackpot status.",
+    prompt: "Show my earnings data and if jackpot is active.",
+    icon: Coins,
+    iconTone: "bg-[#fbe8dc] text-[#a95c29]",
   },
 ];
 
@@ -145,19 +117,6 @@ function getToolOutput(part: ToolPreviewPart) {
   >;
 }
 
-function getPreviewSummary(part: ToolPreviewPart) {
-  const output = getToolOutput(part);
-  return typeof output.summary === "string"
-    ? output.summary
-    : "Review this action before continuing.";
-}
-
-function getConfirmationKey(part: ToolPreviewPart | undefined) {
-  if (!part) return null;
-  const output = getToolOutput(part);
-  return `${part.type ?? "tool"}:${String(output.action ?? "")}:${String(output.summary ?? "")}`;
-}
-
 function renderInlineMarkdown(text: string) {
   const nodes: Array<string | JSX.Element> = [];
   const regex = /\*\*(.+?)\*\*/g;
@@ -178,129 +137,39 @@ function renderInlineMarkdown(text: string) {
   return nodes.length ? nodes : text;
 }
 
-function toAmountLabel(output: Record<string, unknown>) {
-  const amount = output.amount;
-  if (amount === undefined || amount === null) return null;
-  const token = String(output.token ?? output.currency ?? "").trim();
-  return `${String(amount)}${token ? ` ${token}` : ""}`;
-}
-
-function getLatestActionSuccessDialog(messages: unknown[]): ActionSuccessDialog | null {
-  for (let i = messages.length - 1; i >= 0; i -= 1) {
-    const message = messages[i];
-    if (!message || typeof message !== "object") continue;
-    if ((message as { role?: string }).role !== "assistant") continue;
-    const parts = getToolParts(message);
-    for (let j = parts.length - 1; j >= 0; j -= 1) {
-      const part = parts[j];
-      const type = String(part.type ?? "");
-      if (
-        type !== "tool-send_payment" &&
-        type !== "tool-create_split" &&
-        type !== "tool-settle_split"
-      ) {
-        continue;
-      }
-
-      const output = getToolOutput(part);
-      if (output.success !== true) continue;
-
-      const uniqueSource =
-        String(output.txHash ?? output.requestId ?? output.splitId ?? output.splitCode ?? "");
-      const key = `${String((message as { id?: string }).id ?? i)}:${j}:${type}:${uniqueSource}`;
-
-      if (type === "tool-send_payment") {
-        const amountLabel = toAmountLabel(output) ?? "Payment sent";
-        const recipient = String(output.recipientUsername ?? output.recipientAddress ?? "").trim();
-        return {
-          key,
-          title: amountLabel,
-          subtitle: recipient ? `Sent to ${recipient}` : "Payment sent successfully",
-          detail: typeof output.txHash === "string" ? `Tx: ${output.txHash}` : undefined,
-        };
-      }
-
-      if (type === "tool-create_split") {
-        const amountLabel = toAmountLabel(output) ?? "Split created";
-        const description = String(output.description ?? "").trim();
-        return {
-          key,
-          title: amountLabel,
-          subtitle: description || "Split created successfully",
-          detail:
-            typeof output.splitCode === "string" ? `Code: ${output.splitCode}` : undefined,
-        };
-      }
-
-      const amountLabel = toAmountLabel(output) ?? "Split settled";
-      return {
-        key,
-        title: amountLabel,
-        subtitle: "Split payment completed",
-        detail: typeof output.txHash === "string" ? `Tx: ${output.txHash}` : undefined,
-      };
-    }
-  }
-  return null;
-}
-
 export function AssistantChatPage() {
   const pathname = usePathname();
-  const searchParams = useSearchParams();
   const { user } = usePrivy();
   const { identityToken } = useIdentityToken();
   const { getAccessToken } = useToken();
-  const { wallets, ready: walletsReady } = useWallets();
-  const { delegateWallet } = useDelegatedActions();
 
   const [input, setInput] = useState("");
-  const [confirmSheetOpen, setConfirmSheetOpen] = useState(false);
-  const [actionSuccessDialog, setActionSuccessDialog] = useState<ActionSuccessDialog | null>(null);
-  const [delegationDialog, setDelegationDialog] = useState<DelegationDialog | null>(null);
-  const [delegatingFromDialog, setDelegatingFromDialog] = useState(false);
-  const [delegationError, setDelegationError] = useState<string | null>(null);
-  const lastConfirmationKeyRef = useRef<string | null>(null);
-  const lastActionSuccessKeyRef = useRef<string | null>(null);
-  const lastDelegationDialogKeyRef = useRef<string | null>(null);
 
   const context = useMemo(
     () => ({
       pathname: pathname ?? "/assistant",
-      splitUrl:
-        pathname?.startsWith("/split/") && typeof window !== "undefined"
-          ? window.location.href
-          : undefined,
-      draftRecipient: searchParams?.get("recipient") ?? undefined,
-      draftAmount: searchParams?.get("amount") ?? undefined,
-      draftToken: searchParams?.get("token") ?? undefined,
     }),
-    [pathname, searchParams]
+    [pathname]
   );
 
   const greetingName = useMemo(() => {
     const farcaster = user?.farcaster;
     const displayName =
-      typeof farcaster?.displayName === "string"
-        ? farcaster.displayName
-        : typeof farcaster?.display_name === "string"
-          ? farcaster.display_name
-          : null;
-    const username =
-      typeof farcaster?.username === "string" ? farcaster.username : null;
-    const source = displayName || username || "there";
+      farcaster && typeof farcaster === "object" && "displayName" in farcaster
+        ? String((farcaster as { displayName?: unknown }).displayName ?? "")
+        : "";
+    const username = typeof farcaster?.username === "string" ? farcaster.username : null;
+    const source = displayName.trim() || username || "there";
     const first = source.trim().split(/\s+/)[0] || "there";
     return first;
   }, [user]);
 
-  const { messages, sendMessage, status, error, stop, setMessages } = useChat({
+  const { messages, sendMessage, status, error, setMessages } = useChat({
     transport: new DefaultChatTransport({ api: "/api/chat" }),
   });
 
   const isStreaming = status === "submitted" || status === "streaming";
   const lastAssistantMessage = [...messages].reverse().find((m) => m.role === "assistant");
-  const confirmationPreview = getToolParts(lastAssistantMessage).find(
-    (part) => part.output?.requiresConfirmation
-  );
   const hasToolLoading = useMemo(
     () =>
       messages.some((message) =>
@@ -310,12 +179,14 @@ export function AssistantChatPage() {
       ),
     [messages]
   );
-  const confirmationKey = getConfirmationKey(confirmationPreview);
+
   const shouldShowGlobalLoading = useMemo(() => {
     if (!isStreaming || hasToolLoading) return false;
     if (!lastAssistantMessage) return true;
 
-    const hasAssistantText = getTextParts(lastAssistantMessage).some((part) => part.text.trim().length > 0);
+    const hasAssistantText = getTextParts(lastAssistantMessage).some(
+      (part) => part.text.trim().length > 0
+    );
     const hasToolOutput = getToolParts(lastAssistantMessage).some((part) => {
       const hasOutputObject = Boolean(part.output && typeof part.output === "object");
       return part.state === "output-available" || hasOutputObject;
@@ -323,61 +194,6 @@ export function AssistantChatPage() {
 
     return !hasAssistantText && !hasToolOutput;
   }, [isStreaming, hasToolLoading, lastAssistantMessage]);
-  const delegateWalletTarget = useMemo(() => {
-    const candidates = (wallets as unknown as WalletLike[]).filter(
-      (entry) =>
-        typeof entry.address === "string" &&
-        (entry.walletClientType ?? "").toLowerCase().includes("privy")
-    );
-    const firstUndelegated = candidates.find((entry) => !entry.delegated);
-    return firstUndelegated ?? candidates[0] ?? null;
-  }, [wallets]);
-
-  useEffect(() => {
-    if (!confirmationKey) return;
-    if (confirmationKey === lastConfirmationKeyRef.current) return;
-    lastConfirmationKeyRef.current = confirmationKey;
-    setConfirmSheetOpen(true);
-  }, [confirmationKey]);
-
-  useEffect(() => {
-    const latest = getLatestActionSuccessDialog(messages as unknown[]);
-    if (!latest) return;
-    if (latest.key === lastActionSuccessKeyRef.current) return;
-    lastActionSuccessKeyRef.current = latest.key;
-    setActionSuccessDialog(latest);
-  }, [messages]);
-
-  useEffect(() => {
-    for (let i = messages.length - 1; i >= 0; i -= 1) {
-      const message = messages[i];
-      if (!message || typeof message !== "object") continue;
-      if ((message as { role?: string }).role !== "assistant") continue;
-      const parts = getToolParts(message);
-      for (let j = parts.length - 1; j >= 0; j -= 1) {
-        const part = parts[j];
-        const output = getToolOutput(part);
-        const code = String(output.errorCode ?? "").trim().toUpperCase();
-        const errorText = String(output.error ?? part.errorText ?? "").toLowerCase();
-        const shouldPromptDelegation =
-          code === "DELEGATION_REQUIRED" ||
-          errorText.includes("delegated wallet authorization is missing") ||
-          errorText.includes("enable server access") ||
-          errorText.includes("key quorum") ||
-          errorText.includes("authorized entity");
-        if (!shouldPromptDelegation) continue;
-
-        const key = `${String((message as { id?: string }).id ?? i)}:${j}:${code || "delegation"}`;
-        if (key === lastDelegationDialogKeyRef.current) return;
-        lastDelegationDialogKeyRef.current = key;
-        setDelegationDialog({
-          key,
-          message: "Enable server access so assistant can complete write actions.",
-        });
-        return;
-      }
-    }
-  }, [messages]);
 
   async function getBearer() {
     const accessToken = await getAccessToken().catch(() => null);
@@ -385,7 +201,7 @@ export function AssistantChatPage() {
     return identityToken ?? null;
   }
 
-  async function submitMessage(text: string, allowMutations = false) {
+  async function submitMessage(text: string) {
     const trimmed = text.trim();
     if (!trimmed) return;
     const bearer = await getBearer();
@@ -395,7 +211,7 @@ export function AssistantChatPage() {
       { text: trimmed },
       {
         headers: { Authorization: `Bearer ${bearer}` },
-        body: { context, allowMutations },
+        body: { context },
       }
     );
   }
@@ -405,147 +221,34 @@ export function AssistantChatPage() {
     if (!input.trim() || isStreaming) return;
     const next = input;
     setInput("");
-    await submitMessage(next, false);
+    await submitMessage(next);
   }
 
   async function onQuickPrompt(text: string) {
     if (isStreaming) return;
-    await submitMessage(text, false);
-  }
-
-  async function onConfirmAction() {
-    if (isStreaming) return;
-    setConfirmSheetOpen(false);
-    await submitMessage("Confirm and execute the last proposed action.", true);
+    await submitMessage(text);
   }
 
   function onClearChat() {
     if (isStreaming) return;
     setMessages([]);
     setInput("");
-    setConfirmSheetOpen(false);
-    setActionSuccessDialog(null);
-    setDelegationDialog(null);
-    lastConfirmationKeyRef.current = null;
-    lastActionSuccessKeyRef.current = null;
-    lastDelegationDialogKeyRef.current = null;
-  }
-
-  async function onDelegateFromDialog() {
-    if (delegatingFromDialog || !delegateWalletTarget?.address || !walletsReady) return;
-    try {
-      setDelegationError(null);
-      setDelegatingFromDialog(true);
-      await delegateWallet({
-        address: delegateWalletTarget.address,
-        chainType: "ethereum",
-      });
-
-      const bearer = await getBearer();
-      if (!bearer) {
-        setDelegationError("Missing auth session. Please re-login and try again.");
-        return;
-      }
-
-      if (bearer) {
-        const target = delegateWalletTarget.address.toLowerCase();
-        const headers = {
-          Authorization: `Bearer ${bearer}`,
-          "Content-Type": "application/json",
-        };
-
-        // Finalize server-access policy/signer setup after Privy delegation consent.
-        let delegateConfigured = false;
-        for (let attempt = 0; attempt < 3; attempt += 1) {
-          const res = await fetch(`/api/server-access/${target}`, {
-            method: "POST",
-            headers,
-            body: JSON.stringify({ action: "delegate" }),
-          });
-          if (res.ok) {
-            delegateConfigured = true;
-            break;
-          }
-          await new Promise((resolve) => setTimeout(resolve, 450));
-        }
-
-        if (!delegateConfigured) {
-          setDelegationError(
-            "Delegation approved, but server setup failed. Open setup page to finish."
-          );
-          return;
-        }
-
-        const activateRes = await fetch(`/api/server-access/${target}`, {
-          method: "PUT",
-          headers,
-          body: JSON.stringify({ status: "ACTIVE" }),
-        });
-        if (!activateRes.ok) {
-          const activateJson = (await activateRes.json().catch(() => null)) as
-            | { error?: string }
-            | null;
-          setDelegationError(
-            activateJson?.error ??
-              "Delegation approved, but activation failed. Open setup page to finish."
-          );
-          return;
-        }
-
-        const stateRes = await fetch("/api/server-access/me", { headers });
-        const stateJson = (await stateRes.json().catch(() => null)) as
-          | { enabled?: boolean; delegated?: boolean; status?: string; error?: string }
-          | null;
-        if (
-          !stateRes.ok ||
-          stateJson?.enabled !== true ||
-          stateJson?.delegated !== true ||
-          String(stateJson?.status ?? "") !== "ACTIVE"
-        ) {
-          setDelegationError(
-            stateJson?.error ??
-              "Server access is still not active. Open setup page to complete configuration."
-          );
-          return;
-        }
-      }
-
-      setDelegationDialog(null);
-      await submitMessage("Confirm and execute the last proposed action.", true);
-    } catch (error) {
-      setDelegationError(
-        error instanceof Error ? error.message : "Delegation failed. Please try again."
-      );
-    } finally {
-      setDelegatingFromDialog(false);
-    }
-  }
-
-  function onOpenServerSetup() {
-    setDelegationDialog(null);
-    if (typeof window !== "undefined") {
-      window.location.href = "/profile/server-access";
-    }
   }
 
   function renderToolCard(part: ToolPreviewPart, idxKey: string) {
     const output = getToolOutput(part);
     const toolName = prettifyToolName(part.type);
-    const requestedBreakdown = Boolean(
-      part.input &&
-        typeof part.input === "object" &&
-        (part.input as { breakdown?: unknown }).breakdown === true
-    );
     const isLoadingState = part.state ? part.state !== "output-available" : false;
-    const isPreview = output.requiresConfirmation === true;
     const isFailure = output.ok === false || typeof part.errorText === "string";
-    const isSuccessLike =
-      output.success === true ||
-      (output.ok === true && !isPreview) ||
-      toolName.includes("check portfolio balance");
 
     if (isLoadingState) {
       if (String(part.type ?? "").includes("check_portfolio_balance")) {
+        const requestedBreakdown = Boolean(
+          part.input &&
+            typeof part.input === "object" &&
+            (part.input as { breakdown?: unknown }).breakdown === true
+        );
+
         if (!requestedBreakdown) {
           return (
             <div key={idxKey} className="inline-flex items-center gap-2 text-sm text-white/65">
@@ -573,34 +276,10 @@ export function AssistantChatPage() {
       }
 
       return (
-        <div
-          key={idxKey}
-          className="rounded-[20px] border border-white/10 bg-white/5 p-3"
-        >
-          <div className="space-y-2 w-full">
-            <Skeleton className="h-3 w-24 border-white/0 bg-white/10" />
-            <Skeleton className="h-5 w-[75%] border-white/0 bg-white/10" />
-          </div>
+        <div key={idxKey} className="inline-flex items-center gap-2 text-sm text-white/65">
+          <Loader2 className="h-4 w-4 animate-spin" />
+          Loading
         </div>
-      );
-    }
-
-    if (isPreview) {
-      return (
-        <button
-          type="button"
-          key={idxKey}
-          onClick={() => setConfirmSheetOpen(true)}
-          className="w-full rounded-[20px] border border-white/10 bg-white/5 p-3 text-left shadow-sm"
-        >
-          <div className="min-w-0 flex-1">
-            <div className="text-xs text-white/45">{toolName}</div>
-            <div className="mt-0.5 text-[15px] font-medium leading-tight text-white">
-              {getPreviewSummary(part)}
-            </div>
-            <div className="mt-2 text-xs text-white/50">Review and confirm</div>
-          </div>
-        </button>
       );
     }
 
@@ -635,72 +314,106 @@ export function AssistantChatPage() {
           </div>
         );
       }
-      const total = Number(output.totalBalanceUSD ?? 0);
+
       const tokens = Array.isArray(output.tokens)
         ? (output.tokens as Array<Record<string, unknown>>)
         : [];
       if (!tokens.length) return null;
 
-        return (
-          <div className="flex gap-3 overflow-x-auto snap-x snap-mandatory pr-6 scrollbar-hide">
-            {tokens.map((token, i) => {
-              const symbol = String(token.symbol ?? "TOKEN");
-              const balance = Number(token.balance ?? 0);
-              const usd = Number(token.balanceUSD ?? 0);
-              return (
-                <div
-                  key={`${idxKey}-token-${i}`}
-                  className="min-w-[88%] max-w-[88%] snap-start rounded-[24px] border border-white/10 bg-white/5 p-4 md:min-w-[82%] md:max-w-[82%] shadow-sm"
-                >
-                  <div className="min-w-0 flex-1">
-                    <div className="text-xs text-white/45">{symbol}</div>
-                    <div className="mt-1 text-[46px] leading-[0.98] font-semibold tracking-tight text-white">
-                      {balance.toLocaleString(undefined, { maximumFractionDigits: 6 })}
-                    </div>
-                    <div className="mt-4 flex items-center justify-between text-sm">
-                      <span className="text-white/65">USD value</span>
-                      <span className="font-medium text-white">${usd.toFixed(2)}</span>
-                    </div>
+      return (
+        <div className="flex gap-3 overflow-x-auto snap-x snap-mandatory pr-6 scrollbar-hide">
+          {tokens.map((token, i) => {
+            const symbol = String(token.symbol ?? "TOKEN");
+            const balance = Number(token.balance ?? 0);
+            const usd = Number(token.balanceUSD ?? 0);
+            return (
+              <div
+                key={`${idxKey}-token-${i}`}
+                className="min-w-[88%] max-w-[88%] snap-start rounded-[24px] border border-white/10 bg-white/5 p-4 md:min-w-[82%] md:max-w-[82%] shadow-sm"
+              >
+                <div className="min-w-0 flex-1">
+                  <div className="text-xs text-white/45">{symbol}</div>
+                  <div className="mt-1 text-[46px] leading-[0.98] font-semibold tracking-tight text-white">
+                    {balance.toLocaleString(undefined, { maximumFractionDigits: 6 })}
+                  </div>
+                  <div className="mt-4 flex items-center justify-between text-sm">
+                    <span className="text-white/65">USD value</span>
+                    <span className="font-medium text-white">${usd.toFixed(2)}</span>
                   </div>
                 </div>
+              </div>
             );
           })}
         </div>
       );
     }
 
-    if (isSuccessLike) {
-      const summary =
-        typeof output.summary === "string"
-          ? output.summary
-          : typeof output.confirmation === "object" && output.confirmation
-            ? "Action completed"
-            : null;
-      const amount =
-        output.amount !== undefined
-          ? `${String(output.amount)} ${String(output.token ?? output.currency ?? "").trim()}`.trim()
+    if (String(part.type ?? "").includes("get_spending_overview")) {
+      const total = Number(output.periodTotalUsd ?? 0);
+      const period = String(output.period ?? "today");
+      const top =
+        output.topSentWallet && typeof output.topSentWallet === "object"
+          ? (output.topSentWallet as { target?: unknown })
           : null;
-
       return (
-        <div key={idxKey} className="rounded-[24px] border border-white/10 bg-white/5 p-4 shadow-sm">
-          <div className="min-w-0 flex-1">
-            <div className="text-xs text-white/45">{toolName}</div>
-            <div className="mt-1 text-2xl font-semibold tracking-tight text-white">{amount || "Done"}</div>
-            {summary ? <div className="mt-1 text-sm text-white/55">{summary}</div> : null}
-            {typeof output.txHash === "string" ? (
-              <div className="mt-2 text-xs text-white/45 break-all">Tx: {output.txHash}</div>
-            ) : null}
-            {typeof output.splitUrl === "string" ? (
-              <a
-                href={output.splitUrl}
-                target="_blank"
-                rel="noreferrer"
-                className="mt-2 inline-flex text-sm font-medium text-white"
-              >
-                Open split
-              </a>
-            ) : null}
+        <div key={idxKey} className="mt-1">
+          <div className="text-[15px] text-white/65">
+            {period === "all" ? "Historical spending" : period === "week" ? "This week spending" : "Today spending"}
           </div>
+          <div className="mt-1 text-[62px] leading-[0.95] font-semibold tracking-tight text-white">
+            ${total.toFixed(2)}
+          </div>
+          {top?.target ? (
+            <div className="mt-2 text-sm text-white/60">Top sent wallet: {String(top.target)}</div>
+          ) : null}
+        </div>
+      );
+    }
+
+    if (String(part.type ?? "").includes("get_earnings_overview")) {
+      const total = Number(output.totalDepositedUsd ?? 0);
+      return (
+        <div key={idxKey} className="mt-1">
+          <div className="text-[15px] text-white/65">Total earnings deposits</div>
+          <div className="mt-1 text-[62px] leading-[0.95] font-semibold tracking-tight text-white">
+            ${total.toFixed(2)}
+          </div>
+        </div>
+      );
+    }
+
+    if (String(part.type ?? "").includes("get_split_overview")) {
+      const totalSplits = Number(output.totalSplits ?? 0);
+      const paid = Number(output.paidSplitCount ?? 0);
+      const pending = Number(output.pendingSplitCount ?? 0);
+      return (
+        <div key={idxKey} className="rounded-[20px] border border-white/10 bg-white/5 p-4">
+          <div className="text-xs text-white/50">Split overview</div>
+          <div className="mt-2 grid grid-cols-3 gap-3 text-sm">
+            <div>
+              <div className="text-white/55">Total</div>
+              <div className="mt-1 text-xl font-semibold text-white">{totalSplits}</div>
+            </div>
+            <div>
+              <div className="text-white/55">Paid</div>
+              <div className="mt-1 text-xl font-semibold text-white">{paid}</div>
+            </div>
+            <div>
+              <div className="text-white/55">Pending</div>
+              <div className="mt-1 text-xl font-semibold text-white">{pending}</div>
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    if (String(part.type ?? "").includes("get_jackpot_status")) {
+      const canSpin = Boolean(output.canSpin);
+      const spinsToday = Number(output.spinsToday ?? 0);
+      return (
+        <div key={idxKey} className="rounded-[20px] border border-white/10 bg-white/5 p-4 text-sm">
+          <div className="text-white/90">Jackpot: {canSpin ? "active" : "cooldown"}</div>
+          <div className="mt-1 text-white/60">Spins today: {spinsToday}</div>
         </div>
       );
     }
@@ -743,54 +456,59 @@ export function AssistantChatPage() {
       </div>
 
       <div className="mx-auto w-full px-3 max-w-3xl pt-[calc(env(safe-area-inset-top)+78px)] md:pt-24">
-          <div className="px-1 pt-3 pb-24">
-            {messages.length === 0 ? (
-              <div className="pt-1">
-                <div className="px-1 pb-4">
-                  <h2 className="text-[34px] leading-[0.98] tracking-tight font-medium text-white">
-                    {`Hi ${greetingName}! A few ideas to start your day.`}
-                  </h2>
-                </div>
-                <div className="space-y-2">
-                  {STARTER_PROMPTS.map((item) => {
-                    const Icon = item.icon;
-                    return (
-                      <button
-                        key={item.key}
-                        type="button"
-                        onClick={() => onQuickPrompt(item.prompt)}
-                        disabled={isStreaming}
-                        className="w-full rounded-[24px] border border-white/10 bg-white/5 px-4 py-3 text-left shadow-[0_1px_0_rgba(255,255,255,0.03)] disabled:opacity-50"
-                      >
-                        <div className="flex items-center gap-3">
-                          <div className={cn("h-11 w-11 rounded-2xl inline-flex items-center justify-center shrink-0", item.iconTone)}>
-                            <Icon className="h-5 w-5" />
-                          </div>
-                          <div className="min-w-0 flex-1">
-                            <div className="text-xs text-white/45">{item.eyebrow}</div>
-                            <div className="mt-0.5 text-[15px] font-medium leading-tight text-white">{item.title}</div>
-                          </div>
-                          <div className="h-8 w-8 rounded-full bg-white text-black inline-flex items-center justify-center shrink-0">
-                            <ArrowUp className="h-4 w-4" />
+        <div className="px-1 pt-3 pb-24">
+          {messages.length === 0 ? (
+            <div className="pt-1">
+              <div className="px-1 pb-4">
+                <h2 className="text-[34px] leading-[0.98] tracking-tight font-medium text-white">
+                  {`Hi ${greetingName}! A few ideas to start your day.`}
+                </h2>
+              </div>
+              <div className="space-y-2">
+                {STARTER_PROMPTS.map((item) => {
+                  const Icon = item.icon;
+                  return (
+                    <button
+                      key={item.key}
+                      type="button"
+                      onClick={() => onQuickPrompt(item.prompt)}
+                      disabled={isStreaming}
+                      className="w-full rounded-[24px] border border-white/10 bg-white/5 px-4 py-3 text-left shadow-[0_1px_0_rgba(255,255,255,0.03)] disabled:opacity-50"
+                    >
+                      <div className="flex items-center gap-3">
+                        <div
+                          className={cn(
+                            "h-11 w-11 rounded-2xl inline-flex items-center justify-center shrink-0",
+                            item.iconTone
+                          )}
+                        >
+                          <Icon className="h-5 w-5" />
+                        </div>
+                        <div className="min-w-0 flex-1">
+                          <div className="text-xs text-white/45">{item.eyebrow}</div>
+                          <div className="mt-0.5 text-[15px] font-medium leading-tight text-white">
+                            {item.title}
                           </div>
                         </div>
-                      </button>
-                    );
-                  })}
-                </div>
+                        <div className="h-8 w-8 rounded-full bg-white text-black inline-flex items-center justify-center shrink-0">
+                          <ArrowUp className="h-4 w-4" />
+                        </div>
+                      </div>
+                    </button>
+                  );
+                })}
               </div>
-            ) : null}
+            </div>
+          ) : null}
 
-            <div className={cn(messages.length ? "space-y-3 pt-2" : "mt-4")}>
-              <AnimatePresence initial={false}>
-                {messages.map((message) => {
+          <div className={cn(messages.length ? "space-y-3 pt-2" : "mt-4")}>
+            <AnimatePresence initial={false}>
+              {messages.map((message) => {
                 const textParts = getTextParts(message);
                 const toolParts = getToolParts(message);
-                const hasMultipleCards = toolParts.length > 1;
-                const suppressTextForPortfolioResponse = toolParts.some((part) => {
-                  if (!String(part.type ?? "").includes("check_portfolio_balance")) return false;
+                const suppressTextForToolCards = toolParts.some((part) => {
                   const output = getToolOutput(part);
-                  return output.ok === true;
+                  return output.preferToolCardOnly === true;
                 });
                 const isUser = message.role === "user";
                 const fallbackText =
@@ -798,76 +516,69 @@ export function AssistantChatPage() {
                     ? ((message as { content?: string }).content ?? "")
                     : "";
 
-                  return (
-                    <motion.div
-                      key={message.id}
-                      initial={{ opacity: 0, y: 8 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      exit={{ opacity: 0, y: -4 }}
-                      transition={{ duration: 0.2, ease: "easeOut" }}
-                      className={cn("flex", isUser ? "justify-end" : "justify-start")}
+                return (
+                  <motion.div
+                    key={message.id}
+                    initial={{ opacity: 0, y: 8 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, y: -4 }}
+                    transition={{ duration: 0.2, ease: "easeOut" }}
+                    className={cn("flex", isUser ? "justify-end" : "justify-start")}
+                  >
+                    <div
+                      className={cn(
+                        "px-3 py-2 text-sm",
+                        isUser
+                          ? "max-w-[90%] rounded-[20px] bg-white/10 text-white"
+                          : "w-full rounded-none text-white"
+                      )}
                     >
-                      <div
-                        className={cn(
-                          "px-3 py-2 text-sm",
-                          isUser
-                            ? "max-w-[90%] rounded-[20px] bg-white/10 text-white"
-                            : "w-full rounded-none text-white"
-                        )}
-                      >
-                        {!suppressTextForPortfolioResponse
-                          ? (textParts.length ? textParts : []).map((part, index) => (
-                              <p
-                                key={`${message.id}-text-${index}`}
-                                className={cn(
-                                  "whitespace-pre-wrap",
-                                  isUser ? "text-[16px]" : "text-[15px] leading-[1.35] text-white/90"
-                                )}
-                              >
-                                {renderInlineMarkdown(part.text)}
-                              </p>
-                            ))
-                          : null}
+                      {!suppressTextForToolCards
+                        ? (textParts.length ? textParts : []).map((part, index) => (
+                            <p
+                              key={`${message.id}-text-${index}`}
+                              className={cn(
+                                "whitespace-pre-wrap",
+                                isUser ? "text-[16px]" : "text-[15px] leading-[1.35] text-white/90"
+                              )}
+                            >
+                              {renderInlineMarkdown(part.text)}
+                            </p>
+                          ))
+                        : null}
 
-                        {!suppressTextForPortfolioResponse && !textParts.length && fallbackText ? (
-                          <p className="whitespace-pre-wrap">{renderInlineMarkdown(fallbackText)}</p>
-                        ) : null}
+                      {!suppressTextForToolCards && !textParts.length && fallbackText ? (
+                        <p className="whitespace-pre-wrap">{renderInlineMarkdown(fallbackText)}</p>
+                      ) : null}
 
-                        {toolParts.length ? (
-                          hasMultipleCards ? (
-                            <div className="mt-2 flex gap-3 overflow-x-auto snap-x snap-mandatory pr-6 scrollbar-hide">
-                              {toolParts.map((part, index) => (
-                                <div
-                                  key={`${message.id}-tool-wrap-${index}`}
-                                  className="min-w-[88%] max-w-[88%] snap-start md:min-w-[82%] md:max-w-[82%]"
-                                >
-                                  {renderToolCard(part, `${message.id}-tool-${index}`)}
-                                </div>
-                              ))}
+                      {toolParts.length ? (
+                        <div className="mt-2 space-y-2">
+                          {toolParts.map((part, index) => (
+                            <div key={`${message.id}-tool-wrap-${index}`}>
+                              {renderToolCard(part, `${message.id}-tool-${index}`)}
                             </div>
-                          ) : (
-                            <div className="mt-2">
-                              {renderToolCard(toolParts[0], `${message.id}-tool-0`)}
-                            </div>
-                          )
-                        ) : null}
-                      </div>
-                    </motion.div>
-                  );
-                })}
-              </AnimatePresence>
-            </div>
-
-            {shouldShowGlobalLoading ? (
-              <div className="flex justify-start">
-                <div className="rounded-[18px] px-3 py-2 text-sm bg-white/5 text-white inline-flex items-center shadow-sm">
-                  <Loader2 className="h-4 w-4 animate-spin text-white/70" />
-                </div>
-              </div>
-            ) : null}
+                          ))}
+                        </div>
+                      ) : null}
+                    </div>
+                  </motion.div>
+                );
+              })}
+            </AnimatePresence>
           </div>
 
-          {error ? <div className="px-1 pb-2 text-xs text-red-300">{error.message || "Assistant request failed"}</div> : null}
+          {shouldShowGlobalLoading ? (
+            <div className="flex justify-start">
+              <div className="rounded-[18px] px-3 py-2 text-sm bg-white/5 text-white inline-flex items-center shadow-sm">
+                <Loader2 className="h-4 w-4 animate-spin text-white/70" />
+              </div>
+            </div>
+          ) : null}
+        </div>
+
+        {error ? (
+          <div className="px-1 pb-2 text-xs text-red-300">{error.message || "Assistant request failed"}</div>
+        ) : null}
       </div>
 
       <div className="fixed inset-x-0 bottom-0 z-30 px-4 pb-[calc(env(safe-area-inset-bottom)+10px)] pt-3 bg-gradient-to-t from-background via-background/95 to-transparent">
@@ -882,7 +593,7 @@ export function AssistantChatPage() {
                 if (isStreaming || !input.trim()) return;
                 const next = input;
                 setInput("");
-                void submitMessage(next, false);
+                void submitMessage(next);
               }}
               placeholder="I want to..."
               rows={1}
@@ -901,160 +612,6 @@ export function AssistantChatPage() {
           </div>
         </form>
       </div>
-
-      <ResponsiveDialog
-        open={Boolean(confirmationPreview) && confirmSheetOpen}
-        onOpenChange={(next) => setConfirmSheetOpen(next)}
-        repositionInputs
-      >
-        <ResponsiveDialogContent className="border-white/10 bg-background p-0 overflow-hidden text-white">
-          <ResponsiveDialogHeader className="px-5 pt-4 pb-2 text-left">
-            <ResponsiveDialogTitle className="text-white">Confirm Action</ResponsiveDialogTitle>
-            <ResponsiveDialogDescription className="text-white/50">
-              Review before executing a payment or split action.
-            </ResponsiveDialogDescription>
-          </ResponsiveDialogHeader>
-          <div className="px-5 pb-5">
-            <div className="mt-2 flex items-start gap-3">
-              <div className="h-14 w-14 rounded-full bg-[#17e52a] text-white inline-flex items-center justify-center">
-                <Check className="h-7 w-7" />
-              </div>
-              <div className="min-w-0 flex-1">
-                <div className="text-[13px] text-white/45">Ready to confirm</div>
-                <div className="mt-1 text-[28px] leading-[0.95] tracking-tight font-semibold text-white">
-                  {confirmationPreview
-                    ? String(getToolOutput(confirmationPreview).action ?? "Action").replace(/_/g, " ")
-                    : "Action"}
-                </div>
-                <div className="mt-1 text-[15px] leading-tight text-white/55">
-                  {confirmationPreview ? getPreviewSummary(confirmationPreview) : ""}
-                </div>
-              </div>
-            </div>
-
-            <div className="mt-8 grid grid-cols-2 gap-3">
-              <button
-                type="button"
-                onClick={() => setConfirmSheetOpen(false)}
-                className="h-12 rounded-full bg-white/10 text-white font-medium inline-flex items-center justify-center gap-2"
-              >
-                <X className="h-4 w-4" />
-                Cancel
-              </button>
-              <button
-                type="button"
-                onClick={onConfirmAction}
-                disabled={isStreaming}
-                className="h-12 rounded-full bg-white text-black font-medium inline-flex items-center justify-center gap-2 disabled:opacity-50"
-              >
-                {isStreaming ? <Loader2 className="h-4 w-4 animate-spin" /> : <PiggyBank className="h-4 w-4" />}
-                Confirm
-              </button>
-            </div>
-          </div>
-        </ResponsiveDialogContent>
-      </ResponsiveDialog>
-
-      <ResponsiveDialog
-        open={Boolean(actionSuccessDialog)}
-        onOpenChange={(next) => {
-          if (!next) setActionSuccessDialog(null);
-        }}
-        repositionInputs
-      >
-        <ResponsiveDialogContent className="border-white/10 bg-background p-0 overflow-hidden text-white">
-          <ResponsiveDialogHeader className="px-5 pt-4 pb-2 text-left">
-            <ResponsiveDialogTitle className="text-white">Done</ResponsiveDialogTitle>
-            <ResponsiveDialogDescription className="text-white/50">
-              Action confirmed and completed.
-            </ResponsiveDialogDescription>
-          </ResponsiveDialogHeader>
-          <div className="px-5 pb-5">
-            <div className="mt-2 flex items-start gap-3">
-              <div className="h-14 w-14 rounded-full bg-[#17e52a] text-white inline-flex items-center justify-center">
-                <Check className="h-7 w-7" />
-              </div>
-              <div className="min-w-0 flex-1">
-                <div className="text-[38px] leading-[0.95] tracking-tight font-semibold text-white">
-                  {actionSuccessDialog?.title ?? "Completed"}
-                </div>
-                <div className="mt-1 text-[16px] leading-tight text-white/65">
-                  {actionSuccessDialog?.subtitle ?? ""}
-                </div>
-                {actionSuccessDialog?.detail ? (
-                  <div className="mt-2 text-xs text-white/45 break-all">
-                    {actionSuccessDialog.detail}
-                  </div>
-                ) : null}
-              </div>
-            </div>
-
-            <button
-              type="button"
-              onClick={() => setActionSuccessDialog(null)}
-              className="mt-8 h-12 w-full rounded-full bg-white/10 text-white font-medium"
-            >
-              Done
-            </button>
-          </div>
-        </ResponsiveDialogContent>
-      </ResponsiveDialog>
-
-      <ResponsiveDialog
-        open={Boolean(delegationDialog)}
-        onOpenChange={(next) => {
-          if (!next) setDelegationDialog(null);
-        }}
-        repositionInputs
-      >
-        <ResponsiveDialogContent className="border-white/10 bg-background p-0 overflow-hidden text-white">
-          <ResponsiveDialogHeader className="px-5 pt-4 pb-2 text-left">
-            <ResponsiveDialogTitle className="text-white">Enable Server Access</ResponsiveDialogTitle>
-            <ResponsiveDialogDescription className="text-white/55">
-              {delegationDialog?.message ?? ""}
-            </ResponsiveDialogDescription>
-          </ResponsiveDialogHeader>
-          <div className="px-5 pb-5">
-            <div className="mt-2 text-sm text-white/70">
-              This is required once to allow Tab assistant to send, split, and settle from your wallet.
-            </div>
-            {delegationError ? (
-              <div className="mt-3 rounded-xl border border-red-400/30 bg-red-500/10 px-3 py-2 text-xs text-red-200">
-                {delegationError}
-              </div>
-            ) : null}
-            <div className="mt-6 grid grid-cols-2 gap-3">
-              <button
-                type="button"
-                onClick={() => setDelegationDialog(null)}
-                className="h-12 rounded-full bg-white/10 text-white font-medium inline-flex items-center justify-center"
-              >
-                Not now
-              </button>
-              {delegateWalletTarget?.address ? (
-                <button
-                  type="button"
-                  onClick={() => {
-                    void onDelegateFromDialog();
-                  }}
-                  disabled={delegatingFromDialog || !walletsReady}
-                  className="h-12 rounded-full bg-white text-black font-medium inline-flex items-center justify-center disabled:opacity-60"
-                >
-                  {delegatingFromDialog ? "Delegating..." : "Delegate wallet"}
-                </button>
-              ) : (
-                <button
-                  type="button"
-                  onClick={onOpenServerSetup}
-                  className="h-12 rounded-full bg-white text-black font-medium inline-flex items-center justify-center"
-                >
-                  Open setup
-                </button>
-              )}
-            </div>
-          </div>
-        </ResponsiveDialogContent>
-      </ResponsiveDialog>
     </main>
   );
 }
