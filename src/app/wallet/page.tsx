@@ -12,21 +12,35 @@ import {
   ArrowUpRight,
   ArrowDownLeft,
   ReceiptText,
+  ChevronLeft,
 } from "lucide-react";
-import { useIdentityToken, useToken } from "@privy-io/react-auth";
+import { useFundWallet, useIdentityToken, useToken } from "@privy-io/react-auth";
+import { NumericFormat } from "react-number-format";
+import { base } from "viem/chains";
 import { ReceiveDrawerController } from "@/components/app/ReceiveDrawerController";
 import { MorphoDepositDrawer } from "@/components/app/LendingMorpho";
+import { PaymentTokenPickerDialog } from "@/components/app/PaymentTokenPickerDialog";
 import { useSendDrawer } from "@/providers/SendDrawerProvider";
+import {
+  ResponsiveDialog,
+  ResponsiveDialogContent,
+  ResponsiveDialogTitle,
+} from "@/components/ui/responsive-dialog";
 import { useTabIdentity } from "@/lib/useTabIdentity";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
 import { shortAddress } from "@/lib/shortAddress";
+import { tokenList } from "@/lib/tokens";
 
 /* -------------------------------------- */
 /* TYPES                                  */
 /* -------------------------------------- */
 
 type ProfileTab = "tokens" | "transactions";
+type BuyStep = "amount" | "payment";
+type BuyCurrency = "ETH" | "USDC" | "EURC";
+const BUY_PRESET_AMOUNTS = ["100", "250", "500"] as const;
+const BUY_MIN_AMOUNT = 25;
 
 interface WalletToken {
   tokenAddress: string;
@@ -99,6 +113,7 @@ function tokenRouteSlug(token: Pick<WalletToken, "symbol" | "name">) {
 
 export default function WalletPage() {
   const { address, isProfileLoading } = useTabIdentity();
+  const { fundWallet } = useFundWallet();
   const { identityToken } = useIdentityToken();
   const { getAccessToken } = useToken();
   const pathname = usePathname();
@@ -128,8 +143,19 @@ export default function WalletPage() {
   const [shakeBalance, setShakeBalance] = useState(false);
   const [earnNetApy, setEarnNetApy] = useState<number | null>(null);
   const [showMorphoDrawer, setShowMorphoDrawer] = useState(false);
+  const [buyDialogOpen, setBuyDialogOpen] = useState(false);
+  const [buyTokenPickerOpen, setBuyTokenPickerOpen] = useState(false);
+  const [buyStep, setBuyStep] = useState<BuyStep>("amount");
+  const [buyAmount, setBuyAmount] = useState("");
+  const [buyCurrency, setBuyCurrency] = useState<BuyCurrency>("USDC");
+  const [buyBusy, setBuyBusy] = useState(false);
+  const [buyError, setBuyError] = useState<string | null>(null);
   const walletSwipeTouchStartRef = useRef<{ x: number; y: number } | null>(null);
   const walletSwipeHandledRef = useRef(false);
+  const selectedBuyToken =
+    tokenList.find((token) => token.name === buyCurrency) ?? tokenList[0];
+  const buyAmountNumber = Number.parseFloat(buyAmount || "0");
+  const canContinueBuy = Number.isFinite(buyAmountNumber) && buyAmountNumber >= BUY_MIN_AMOUNT;
 
   const formatUsdNumber = (value: number) =>
     new Intl.NumberFormat("en-US", {
@@ -142,6 +168,12 @@ export default function WalletPage() {
       minimumFractionDigits: value >= 1 ? 2 : 0,
       maximumFractionDigits: value >= 1 ? 4 : 6,
     }).format(value);
+
+  const getBuyPrefix = (currency: BuyCurrency) => {
+    if (currency === "ETH") return "Ξ";
+    if (currency === "EURC") return "€";
+    return "$";
+  };
 
   const fetchWallet = useCallback(async () => {
     if (!address) {
@@ -586,6 +618,60 @@ export default function WalletPage() {
     };
   }, []);
 
+  useEffect(() => {
+    if (buyDialogOpen) return;
+    setBuyStep("amount");
+    setBuyError(null);
+    setBuyBusy(false);
+    setBuyTokenPickerOpen(false);
+  }, [buyDialogOpen]);
+
+  const openBuyDialog = () => {
+    setBuyError(null);
+    setBuyStep("amount");
+    setBuyDialogOpen(true);
+  };
+
+  const handleMoonpayFunding = async () => {
+    if (!address || buyBusy || !canContinueBuy) return;
+    setBuyBusy(true);
+    setBuyError(null);
+    try {
+      const selectedToken = tokenList.find((token) => token.name === buyCurrency);
+      const baseFundingOptions = {
+        chain: base,
+        amount: buyAmount,
+        defaultFundingMethod: "card" as const,
+        card: { preferredProvider: "moonpay" as const },
+      };
+      const options =
+        buyCurrency === "USDC"
+          ? { ...baseFundingOptions, asset: "USDC" as const }
+          : buyCurrency === "ETH"
+            ? { ...baseFundingOptions, asset: "native-currency" as const }
+            : selectedToken?.address
+              ? {
+                ...baseFundingOptions,
+                asset: { erc20: selectedToken.address as `0x${string}` },
+              }
+              : { ...baseFundingOptions, asset: "native-currency" as const };
+
+      const result = await fundWallet({ address, options });
+      if (result?.status === "completed") {
+        setBuyDialogOpen(false);
+        void fetchWallet();
+        const retryId = window.setTimeout(() => void fetchWallet(), 2200);
+        balanceRefreshTimeoutsRef.current.push(retryId);
+      }
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : "Could not start MoonPay checkout.";
+      setBuyError(message);
+    } finally {
+      setBuyBusy(false);
+    }
+  };
+
   const renderProfileSkeleton = () => (
     <div className="min-h-screen w-full flex flex-col items-center p-4 pt-[calc(4rem+env(safe-area-inset-top))] pb-[calc(10rem+env(safe-area-inset-bottom))] overflow-y-auto scrollbar-hide">
       <div className="w-full max-w-md animate-pulse">
@@ -731,8 +817,8 @@ export default function WalletPage() {
       {
         label: "Buy",
         icon: CreditCard,
-        onClick: () => { },
-        disabled: true,
+        onClick: () => openBuyDialog(),
+        disabled: !address,
         iconClassName: "",
         labelClassName: "",
       },
@@ -1126,6 +1212,174 @@ export default function WalletPage() {
           <MorphoDepositDrawer
             isOpen={showMorphoDrawer}
             onOpenChange={setShowMorphoDrawer}
+          />
+          <ResponsiveDialog
+            open={buyDialogOpen}
+            onOpenChange={(open) => {
+              if (buyBusy) return;
+              setBuyDialogOpen(open);
+            }}
+            repositionInputs={false}
+          >
+            <ResponsiveDialogContent className="top-auto bottom-0 h-[calc(100dvh-80px)] min-h-[calc(100dvh-80px)] max-h-[calc(100dvh-80px)] rounded-t-3xl p-4 pb-6 md:top-1/2 md:bottom-auto md:h-auto md:min-h-0 md:max-h-[85vh] md:max-w-md md:rounded-2xl md:p-6">
+              <ResponsiveDialogTitle className="sr-only">
+                Buy crypto
+              </ResponsiveDialogTitle>
+
+              {buyStep === "amount" ? (
+                <div className="flex h-full flex-col">
+                  <h2 className="text-center text-lg font-semibold mt-2">Buy crypto</h2>
+                  <div className="mt-4 flex flex-col items-center">
+                    <NumericFormat
+                      value={buyAmount}
+                      inputMode="decimal"
+                      pattern="[0-9]*"
+                      onValueChange={(next) => setBuyAmount(next.value)}
+                      thousandSeparator
+                      allowNegative={false}
+                      decimalScale={2}
+                      prefix={getBuyPrefix(buyCurrency)}
+                      placeholder={`${getBuyPrefix(buyCurrency)}0`}
+                      className={`w-full bg-transparent text-center text-5xl font-semibold leading-none outline-none placeholder-white/20 ${buyAmount ? "text-white" : "text-white/20"
+                        }`}
+                    />
+                    <p className="mt-2 text-white/40">Amount to buy</p>
+                  </div>
+
+                  <div className="mt-5 flex flex-wrap items-center justify-center gap-2">
+                    {BUY_PRESET_AMOUNTS.map((preset) => {
+                      const isActive = buyAmount === preset;
+                      return (
+                        <button
+                          key={preset}
+                          type="button"
+                          onClick={() => {
+                            setBuyAmount(preset);
+                            setBuyError(null);
+                          }}
+                          className={[
+                            "rounded-full px-4 py-2 text-md font-semibold transition",
+                            isActive
+                              ? "bg-white text-black"
+                              : "bg-white/10 text-white hover:bg-white/15",
+                          ].join(" ")}
+                        >
+                          ${Number(preset).toLocaleString("en-US")}
+                        </button>
+                      );
+                    })}
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={() => setBuyTokenPickerOpen(true)}
+                    className="mb-4 mt-8 flex w-full items-center justify-between rounded-3xl bg-white/5 px-4 py-4"
+                  >
+                    <div className="flex items-center gap-2">
+                      <img
+                        src={selectedBuyToken?.icon}
+                        alt={selectedBuyToken?.name ?? buyCurrency}
+                        className="h-8 w-8 rounded-full"
+                      />
+                      <span className="text-md font-medium text-white">{buyCurrency}</span>
+                    </div>
+                    <span className="text-md text-primary">Change</span>
+                  </button>
+
+                  {buyError ? (
+                    <p className="mt-4 text-sm text-red-300 text-center">{buyError}</p>
+                  ) : null}
+
+                  <Button
+                    type="button"
+                    onClick={() => {
+                      setBuyError(null);
+                      setBuyStep("payment");
+                    }}
+                    disabled={!canContinueBuy}
+                    className="mt-4 md:mt-auto w-full bg-primary text-black font-semibold disabled:bg-white/20 disabled:text-white/50"
+                  >
+                    Continue
+                  </Button>
+                  <p className="mt-2 text-center text-sm text-white/50">
+                    Minimum order is ${BUY_MIN_AMOUNT}
+                  </p>
+                </div>
+              ) : (
+                <div className="flex h-full flex-col">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (buyBusy) return;
+                      setBuyStep("amount");
+                      setBuyError(null);
+                    }}
+                    className="mb-5 inline-flex h-9 w-9 items-center justify-center rounded-full bg-white/5 text-white/80"
+                    aria-label="Back to amount step"
+                  >
+                    <ChevronLeft className="h-5 w-5" />
+                  </button>
+
+                  <div className="mb-6 flex items-end justify-between">
+                    <h2 className="text-lg font-semibold tracking-tight">Checkout</h2>
+                    <div className="flex items-center gap-2 text-white/80">
+                      <span className="text-lg font-medium">
+                        {getBuyPrefix(buyCurrency)}
+                        {formatUsdNumber(buyAmountNumber)}
+                      </span>
+                      <img
+                        src={selectedBuyToken?.icon}
+                        alt={selectedBuyToken?.name ?? buyCurrency}
+                        className="h-7 w-7 rounded-full"
+                      />
+                    </div>
+                  </div>
+
+                  <button
+                    type="button"
+                    className="w-full rounded-3xl border border-white/15 bg-white/[0.02] p-4 text-left"
+                  >
+                    <div className="flex items-center gap-3">
+                      <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-gradient-to-br from-violet-500 to-fuchsia-500 text-white font-semibold">
+                        M
+                      </div>
+                      <div>
+                        <p className="text-lg leading-none">MoonPay</p>
+                        <p className="mt-1 text-white/60">Debit Card, Apple Pay</p>
+                      </div>
+                    </div>
+                  </button>
+
+                  <p className="mt-auto mb-4 text-center text-white/50">
+                    You&apos;ll continue to MoonPay to review fees and complete checkout.
+                  </p>
+
+                  {buyError ? (
+                    <p className="mb-3 text-sm text-red-300 text-center">{buyError}</p>
+                  ) : null}
+
+                  <Button
+                    type="button"
+                    onClick={() => void handleMoonpayFunding()}
+                    disabled={buyBusy || !canContinueBuy || !address}
+                    className="w-full bg-primary text-black font-semibold disabled:bg-white/20 disabled:text-white/50"
+                  >
+                    {buyBusy ? "Opening MoonPay..." : "Continue with MoonPay"}
+                  </Button>
+                </div>
+              )}
+            </ResponsiveDialogContent>
+          </ResponsiveDialog>
+          <PaymentTokenPickerDialog
+            open={buyTokenPickerOpen}
+            onOpenChange={setBuyTokenPickerOpen}
+            selectedToken={buyCurrency}
+            onSelect={(tokenName) => {
+              if (tokenName === "ETH" || tokenName === "USDC" || tokenName === "EURC") {
+                setBuyCurrency(tokenName);
+              }
+            }}
+            title="Choose currency"
           />
         </>
       )}

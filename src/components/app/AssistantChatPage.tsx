@@ -683,7 +683,7 @@ export function AssistantChatPage() {
             return (
               <div
                 key={`${idxKey}-token-${i}`}
-                className="min-w-[88%] max-w-[88%] snap-start rounded-[24px] border border-white/10 bg-white/5 p-4 md:min-w-[46%] md:max-w-[46%] lg:min-w-[34%] lg:max-w-[34%] shadow-sm"
+                className="min-w-[88%] max-w-[88%] snap-start rounded-[24px] border border-white/10 bg-white/5 p-4 md:min-w-[31%] md:max-w-[31%] shadow-sm"
               >
                 <div className="min-w-0 flex-1">
                   <div className="text-xs text-white/45">{symbol}</div>
@@ -707,7 +707,11 @@ export function AssistantChatPage() {
       const period = String(output.period ?? "today");
       const top =
         output.topSentWallet && typeof output.topSentWallet === "object"
-          ? (output.topSentWallet as { target?: unknown })
+          ? (output.topSentWallet as { target?: unknown; targetLabel?: unknown })
+          : null;
+      const topDisplayLabel =
+        typeof top?.targetLabel === "string" && top.targetLabel.trim()
+          ? top.targetLabel.trim()
           : null;
       return (
         <div key={idxKey} className="mt-1">
@@ -719,7 +723,7 @@ export function AssistantChatPage() {
           </div>
           {top?.target ? (
             <div className="mt-2 text-sm text-white/60">
-              Top sent wallet: {shortWallet(String(top.target))}
+              Top sent wallet: {topDisplayLabel ?? shortWallet(String(top.target))}
             </div>
           ) : null}
         </div>
@@ -728,11 +732,25 @@ export function AssistantChatPage() {
 
     if (String(part.type ?? "").includes("get_earnings_overview")) {
       const total = Number(output.totalDepositedUsd ?? 0);
+      const netApy = Number(output.netApy ?? Number.NaN);
+      const yearly = Number(output.yearlyAtCurrentRateUsd ?? Number.NaN);
+      const hasApy = Number.isFinite(netApy);
+      const hasYearly = Number.isFinite(yearly);
       return (
         <div key={idxKey} className="mt-1">
           <div className="text-[15px] text-white/65">Total earnings deposits</div>
           <div className="mt-1 text-[62px] leading-[0.95] font-semibold tracking-tight text-white">
             ${total.toFixed(2)}
+          </div>
+          <div className="mt-2 text-sm text-white/55">
+            At current rate:{" "}
+            <span className="text-white/75">
+              {hasApy ? `${(netApy * 100).toFixed(2)}% APY` : "--"}
+            </span>
+            {" • "}
+            <span className="text-white/75">
+              {hasYearly ? `+$${yearly.toFixed(2)}/yr` : "--"}
+            </span>
           </div>
         </div>
       );
@@ -847,9 +865,9 @@ export function AssistantChatPage() {
                 })}
               </div>
             </div>
-          ) : null}
+            ) : null}
 
-          <div className={cn(messages.length ? "space-y-3 pt-2" : "mt-4")}>
+            <div className={cn(messages.length ? "space-y-3 pt-2" : "mt-4")}>
             <AnimatePresence initial={false}>
               {messages.map((message) => {
                 const textParts = getTextParts(message);

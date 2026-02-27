@@ -15,6 +15,9 @@ import {
 import { getPrivyAuthedUserFromAuthorization } from "@/lib/user-profile";
 
 export const maxDuration = 30;
+const MORPHO_GRAPHQL_URL = "https://blue-api.morpho.org/graphql";
+const MORPHO_CHAIN_ID = 8453;
+const MORPHO_VAULT_ADDRESS = "0xc1256Ae5FF1cf2719D4937adb3bbCCab2E00A2Ca";
 
 type LinkedAccountLike = {
   type?: string;
@@ -217,18 +220,37 @@ function computeSpendingInsights(activity: ActivityRecord[], selfAddress?: strin
   let weekCount = 0;
   let allTimeCount = 0;
 
-  const sentCounterpartyAll = new Map<string, { txCount: number; totalUsd: number; address?: string | null }>();
-  const sentCounterpartyWeek = new Map<string, { txCount: number; totalUsd: number; address?: string | null }>();
-  const sentCounterpartyToday = new Map<string, { txCount: number; totalUsd: number; address?: string | null }>();
+  const sentCounterpartyAll = new Map<
+    string,
+    { txCount: number; totalUsd: number; address?: string | null; label?: string | null }
+  >();
+  const sentCounterpartyWeek = new Map<
+    string,
+    { txCount: number; totalUsd: number; address?: string | null; label?: string | null }
+  >();
+  const sentCounterpartyToday = new Map<
+    string,
+    { txCount: number; totalUsd: number; address?: string | null; label?: string | null }
+  >();
 
   for (const item of outgoing) {
     const ts = parseTimestamp(item.timestamp);
     const usd = usdAmountFromActivity(item);
     const recipientAddress =
       normalizeAddress(item.recipient) || normalizeAddress(item.counterpartyAddress);
+    const recipientUsername =
+      typeof item.recipientUsername === "string" ? item.recipientUsername.trim() : "";
     const labelRaw =
-      item.recipientUsername || item.counterparty || item.recipient || item.counterpartyAddress;
+      recipientUsername || item.counterparty || item.recipient || item.counterpartyAddress;
     const label = String(labelRaw ?? "").trim();
+    const displayLabel =
+      recipientUsername && recipientUsername !== ""
+        ? recipientUsername.startsWith("@")
+          ? recipientUsername
+          : `@${recipientUsername}`
+        : label && !normalizeAddress(label)
+          ? label
+          : null;
     const recipientKey = recipientAddress || (label ? `label:${label.toLowerCase()}` : "");
     const isSelfRecipient = Boolean(
       normalizedSelf && recipientAddress && recipientAddress === normalizedSelf
@@ -251,9 +273,11 @@ function computeSpendingInsights(activity: ActivityRecord[], selfAddress?: strin
           txCount: 0,
           totalUsd: 0,
           address: recipientAddress,
+          label: displayLabel,
         };
         prev.txCount += 1;
         prev.totalUsd += usd;
+        if (!prev.label && displayLabel) prev.label = displayLabel;
         sentCounterpartyAll.set(recipientKey, prev);
 
         if (ts && ts >= weekStart) {
@@ -261,9 +285,11 @@ function computeSpendingInsights(activity: ActivityRecord[], selfAddress?: strin
             txCount: 0,
             totalUsd: 0,
             address: recipientAddress,
+            label: displayLabel,
           };
           weekPrev.txCount += 1;
           weekPrev.totalUsd += usd;
+          if (!weekPrev.label && displayLabel) weekPrev.label = displayLabel;
           sentCounterpartyWeek.set(recipientKey, weekPrev);
         }
 
@@ -272,9 +298,11 @@ function computeSpendingInsights(activity: ActivityRecord[], selfAddress?: strin
             txCount: 0,
             totalUsd: 0,
             address: recipientAddress,
+            label: displayLabel,
           };
           todayPrev.txCount += 1;
           todayPrev.totalUsd += usd;
+          if (!todayPrev.label && displayLabel) todayPrev.label = displayLabel;
           sentCounterpartyToday.set(recipientKey, todayPrev);
         }
       }
@@ -282,11 +310,15 @@ function computeSpendingInsights(activity: ActivityRecord[], selfAddress?: strin
   }
 
   const toTop = (
-    map: Map<string, { txCount: number; totalUsd: number; address?: string | null }>
+    map: Map<
+      string,
+      { txCount: number; totalUsd: number; address?: string | null; label?: string | null }
+    >
   ) =>
     [...map.entries()]
       .map(([target, value]) => ({
         target: value.address || target.replace(/^label:/, ""),
+        targetLabel: value.label || null,
         txCount: value.txCount,
         totalUsd: value.totalUsd,
       }))
@@ -636,11 +668,47 @@ export async function POST(req: NextRequest) {
 
         const deposits = Array.isArray(payload.deposits) ? payload.deposits : [];
         const total = Number(payload.total ?? 0);
+        let netApy: number | null = null;
+        let yearlyAtCurrentRateUsd: number | null = null;
+
+        try {
+          const apyRes = await fetch(MORPHO_GRAPHQL_URL, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              query: `
+                query VaultByAddress($address: String!, $chainId: Int) {
+                  vaultByAddress(address: $address, chainId: $chainId) {
+                    state {
+                      netApy
+                    }
+                  }
+                }
+              `,
+              variables: {
+                address: MORPHO_VAULT_ADDRESS,
+                chainId: MORPHO_CHAIN_ID,
+              },
+            }),
+          });
+          const apyJson = (await apyRes.json().catch(() => null)) as
+            | { data?: { vaultByAddress?: { state?: { netApy?: number } } } }
+            | null;
+          const parsedApy = Number(apyJson?.data?.vaultByAddress?.state?.netApy ?? Number.NaN);
+          if (Number.isFinite(parsedApy)) {
+            netApy = parsedApy;
+            yearlyAtCurrentRateUsd = total > 0 ? total * parsedApy : 0;
+          }
+        } catch {
+          // best effort
+        }
 
         return {
           ok: true,
           address: primaryAddress,
           totalDepositedUsd: total,
+          netApy,
+          yearlyAtCurrentRateUsd,
           depositCount: deposits.length,
           latestDeposit: deposits[0] ?? null,
           deposits,
