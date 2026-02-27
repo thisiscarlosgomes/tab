@@ -527,7 +527,7 @@ const paidCount = bill?.paid?.length ?? 0;
             </div>
 
             {/* AMOUNT + AVATARS + PROGRESS */}
-            <div className="border rounded-lg p-4 mt-2">
+            <div className="">
               <div className="text-sm text-center">
                 {activityList.length > 0 && (
                   <button
@@ -649,45 +649,45 @@ const paidCount = bill?.paid?.length ?? 0;
               </div>
             </div>
 
-            <div className="mt-1">
-              {!isRecipient && canPay && hasJoined && !isPaid && address ? (
-                <SplitPayButton
-                  recipient={bill.recipient.address as `0x${string}`}
-                  amount={parseFloat(eachShare)}
-                  token={bill.token as TokenName}
-                  splitId={safeSplitId}
-                  onPaid={fetchBill}
-                  payer={{
-                    address,
-                    name:
-                      participantList.find(
-                        (p) => p.address?.toLowerCase() === address.toLowerCase()
-                      )?.name ?? "You",
-                    fid: userFid!,
-                  }}
-                  onSuccess={(data) => setPaymentSuccess(data)}
-                  creatorFid={
-                    bill.creator.fid != null ? Number(bill.creator.fid) : undefined
-                  }
-                  description={bill.description}
-                  ctaLabel="Contribute"
-                />
-              ) : (
-                <Button
-                  onClick={canJoin ? handleJoin : undefined}
-                  disabled={!canJoin || isJoining || allPaid}
-                  className="w-full bg-primary mt-4"
-                >
-                  {isJoining
-                    ? "Joining..."
-                    : allPaid
-                      ? "Settled"
+            {!allPaid && (
+              <>
+                {!isRecipient && canPay && hasJoined && !isPaid && address ? (
+                  <SplitPayButton
+                    recipient={bill.recipient.address as `0x${string}`}
+                    amount={parseFloat(eachShare)}
+                    token={bill.token as TokenName}
+                    splitId={safeSplitId}
+                    onPaid={fetchBill}
+                    payer={{
+                      address,
+                      name:
+                        participantList.find(
+                          (p) => p.address?.toLowerCase() === address.toLowerCase()
+                        )?.name ?? "You",
+                      fid: userFid!,
+                    }}
+                    onSuccess={(data) => setPaymentSuccess(data)}
+                    creatorFid={
+                      bill.creator.fid != null ? Number(bill.creator.fid) : undefined
+                    }
+                    description={bill.description}
+                    ctaLabel="Contribute"
+                  />
+                ) : (
+                  <Button
+                    onClick={canJoin ? handleJoin : undefined}
+                    disabled={!canJoin || isJoining}
+                    className="w-full bg-primary mt-4"
+                  >
+                    {isJoining
+                      ? "Joining..."
                       : canJoin
                         ? "Contribute"
                         : "Contribute unavailable"}
-                </Button>
-              )}
-            </div>
+                  </Button>
+                )}
+             </>
+            )}
           </>
         )}
       </Card>
