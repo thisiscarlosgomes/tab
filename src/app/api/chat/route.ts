@@ -787,6 +787,8 @@ export async function POST(req: NextRequest) {
       "If UI shows breakdown cards, avoid repeating a long token list in text.",
       "Be super casual and short.",
       "Keep responses to 1-2 short sentences by default.",
+      "Lead with the key metric first (amount/count/change), then a clear next action.",
+      "Prefer copy like: 'You sent $92 this week. Want recipient breakdown?'",
       "Do not use long numbered lists unless the user asks for a checklist.",
       "If info is missing, ask only one quick follow-up question.",
       "When a tool returns ok=false, use the exact error text and do not invent causes.",

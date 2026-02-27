@@ -35,7 +35,6 @@ type StarterPrompt = {
   key: string;
   eyebrow: string;
   title: string;
-  detail?: string;
   prompt: string;
   icon: ComponentType<{ className?: string }>;
   iconTone: string;
@@ -53,8 +52,8 @@ const BASE_STARTER_PROMPTS: StarterPrompt[] = [
   {
     key: "spending",
     eyebrow: "Spending",
-    title: "Show spend today and this week.",
-    prompt: "How much did I spend today and this week?",
+    title: "Show spend this week.",
+    prompt: "How much did I spend this week?",
     icon: TrendingDown,
     iconTone: "bg-[#f4ecd8] text-[#7a5d2d]",
   },
@@ -69,8 +68,8 @@ const BASE_STARTER_PROMPTS: StarterPrompt[] = [
   {
     key: "earn",
     eyebrow: "Earnings",
-    title: "Show earnings + jackpot status.",
-    prompt: "Show my earnings data and if jackpot is active.",
+    title: "Show earnings details.",
+    prompt: "Show my earnings breakdown in detail.",
     icon: Coins,
     iconTone: "bg-[#fbe8dc] text-[#a95c29]",
   },
@@ -155,9 +154,24 @@ export function AssistantChatPage() {
   const { getAccessToken } = useToken();
 
   const [input, setInput] = useState("");
-  const [quickStats, setQuickStats] = useState<{ portfolioUsd: number | null; weekSentUsd: number | null }>({
+  const [quickStats, setQuickStats] = useState<{
+    portfolioUsd: number | null;
+    weekSentUsd: number | null;
+    weekDeltaPct: number | null;
+    weekTopRecipient: string | null;
+    splitPaidCount: number | null;
+    splitPendingCount: number | null;
+    earnBalanceUsd: number | null;
+    earnYearlyUsd: number | null;
+  }>({
     portfolioUsd: null,
     weekSentUsd: null,
+    weekDeltaPct: null,
+    weekTopRecipient: null,
+    splitPaidCount: null,
+    splitPendingCount: null,
+    earnBalanceUsd: null,
+    earnYearlyUsd: null,
   });
 
   const context = useMemo(
@@ -192,16 +206,80 @@ export function AssistantChatPage() {
   }, [user?.linkedAccounts]);
 
   const starterPrompts = useMemo(() => {
-    return BASE_STARTER_PROMPTS.map((item) => {
+    const items = BASE_STARTER_PROMPTS.map((item) => {
       if (item.key === "portfolio" && quickStats.portfolioUsd !== null) {
-        return { ...item, detail: `You currently hold $${quickStats.portfolioUsd.toFixed(2)}.` };
+        return {
+          ...item,
+          title: `Portfolio: $${quickStats.portfolioUsd.toFixed(2)}. Want to see a breakdown?`,
+          prompt: "Show my wallet breakdown by token.",
+        };
       }
       if (item.key === "spending" && quickStats.weekSentUsd !== null) {
-        return { ...item, detail: `This week you sent $${quickStats.weekSentUsd.toFixed(2)}.` };
+        const delta = quickStats.weekDeltaPct;
+        const hasDelta = typeof delta === "number" && Number.isFinite(delta);
+        const trendUp = hasDelta ? delta > 0 : false;
+        const trendLabel = hasDelta
+          ? trendUp
+            ? "Spending's up"
+            : "Spending's down"
+          : "Weekly spending";
+        const deltaText = hasDelta ? `${Math.abs(delta).toFixed(0)}% ${trendUp ? "more" : "less"}` : "this week";
+        const recipientText = quickStats.weekTopRecipient
+          ? ` Mostly to ${quickStats.weekTopRecipient}.`
+          : "";
+        return {
+          ...item,
+          eyebrow: trendLabel,
+          title: `You sent $${quickStats.weekSentUsd.toFixed(2)} ${hasDelta ? `(${deltaText})` : "this week"}.${recipientText} See details?`,
+        };
+      }
+      if (
+        item.key === "splits" &&
+        quickStats.splitPendingCount !== null &&
+        quickStats.splitPaidCount !== null
+      ) {
+        const pending = quickStats.splitPendingCount;
+        const paid = quickStats.splitPaidCount;
+        const pendingCopy =
+          pending > 0
+            ? `${pending} split${pending === 1 ? "" : "s"} still pending.`
+            : "No pending splits.";
+        return {
+          ...item,
+          eyebrow: pending > 0 ? "Needs attention" : "Splits on track",
+          title: `${pendingCopy} ${paid} paid. See latest?`,
+          prompt: "Show my latest splits with paid and pending status.",
+        };
+      }
+      if (item.key === "earn" && quickStats.earnBalanceUsd !== null) {
+        const deposit = quickStats.earnBalanceUsd;
+        const yearly = quickStats.earnYearlyUsd ?? 0;
+        return {
+          ...item,
+          title: `You’re earning +$${yearly.toFixed(2)}/yr on $${deposit.toFixed(2)}. See breakdown?`,
+          prompt: "Show my earnings breakdown with APY and deposit details.",
+        };
       }
       return item;
     });
-  }, [quickStats.portfolioUsd, quickStats.weekSentUsd]);
+    return items.filter((item) => {
+      if (item.key === "portfolio") return quickStats.portfolioUsd !== null;
+      if (item.key === "spending") return quickStats.weekSentUsd !== null;
+      if (item.key === "splits")
+        return quickStats.splitPendingCount !== null && quickStats.splitPaidCount !== null;
+      if (item.key === "earn") return quickStats.earnBalanceUsd !== null;
+      return true;
+    });
+  }, [
+    quickStats.portfolioUsd,
+    quickStats.weekDeltaPct,
+    quickStats.weekTopRecipient,
+    quickStats.weekSentUsd,
+    quickStats.splitPaidCount,
+    quickStats.splitPendingCount,
+    quickStats.earnBalanceUsd,
+    quickStats.earnYearlyUsd,
+  ]);
 
   const { messages, sendMessage, status, error, setMessages } = useChat({
     transport: new DefaultChatTransport({ api: "/api/chat" }),
@@ -219,6 +297,8 @@ export function AssistantChatPage() {
       d.setUTCDate(d.getUTCDate() - diff);
       return d;
     })();
+    const lastWeekStart = new Date(weekStart);
+    lastWeekStart.setUTCDate(lastWeekStart.getUTCDate() - 7);
 
     const isOutgoing = (type?: unknown) => {
       const t = String(type ?? "").toLowerCase();
@@ -234,9 +314,56 @@ export function AssistantChatPage() {
 
     const loadStats = async () => {
       try {
-        const [portfolioRes, activityRes] = await Promise.all([
+        const splitParams = new URLSearchParams({ address: primaryAddress, limit: "20" });
+        const fid = Number(user?.farcaster?.fid ?? 0);
+        if (Number.isFinite(fid) && fid > 0) splitParams.set("fid", String(fid));
+        const [portfolioRes, activityRes, billsRes, vaultPositionRes, vaultApyRes] = await Promise.all([
           fetch(`/api/moralis/portfolio?address=${primaryAddress}`),
           fetch(`/api/activity?address=${primaryAddress}&limit=100`),
+          fetch(`/api/user-bills?${splitParams.toString()}`),
+          fetch("https://blue-api.morpho.org/graphql", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              query: `
+                query GetUserVaultPositions($address: String!, $chainId: Int!) {
+                  userByAddress(address: $address, chainId: $chainId) {
+                    vaultPositions {
+                      state {
+                        assetsUsd
+                      }
+                      vault {
+                        address
+                      }
+                    }
+                  }
+                }
+              `,
+              variables: {
+                address: primaryAddress,
+                chainId: 8453,
+              },
+            }),
+          }),
+          fetch("https://blue-api.morpho.org/graphql", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              query: `
+                query VaultByAddress($address: String!, $chainId: Int) {
+                  vaultByAddress(address: $address, chainId: $chainId) {
+                    state {
+                      netApy
+                    }
+                  }
+                }
+              `,
+              variables: {
+                address: "0xc1256Ae5FF1cf2719D4937adb3bbCCab2E00A2Ca",
+                chainId: 8453,
+              },
+            }),
+          }),
         ]);
 
         const portfolioJson = (await portfolioRes.json().catch(() => null)) as
@@ -244,6 +371,34 @@ export function AssistantChatPage() {
           | null;
         const activityJson = (await activityRes.json().catch(() => null)) as
           | { activity?: Array<{ type?: string; timestamp?: string; amount?: number; token?: string }> }
+          | null;
+        const billsJson = (await billsRes.json().catch(() => null)) as
+          | {
+              bills?: Array<{ hasPaid?: boolean }>;
+            }
+          | null;
+        const vaultPositionJson = (await vaultPositionRes.json().catch(() => null)) as
+          | {
+              data?: {
+                userByAddress?: {
+                  vaultPositions?: Array<{
+                    state?: { assetsUsd?: number };
+                    vault?: { address?: string };
+                  }>;
+                };
+              };
+            }
+          | null;
+        const vaultApyJson = (await vaultApyRes.json().catch(() => null)) as
+          | {
+              data?: {
+                vaultByAddress?: {
+                  state?: {
+                    netApy?: number;
+                  };
+                };
+              };
+            }
           | null;
 
         const portfolioUsd = Number(portfolioJson?.totalBalanceUSD ?? 0);
@@ -255,11 +410,103 @@ export function AssistantChatPage() {
             return !Number.isNaN(ts.getTime()) && ts >= weekStart;
           })
           .reduce((sum, a) => sum + usdAmountFromActivity(a), 0);
+        const weeklyOutgoing = activity.filter((a) => {
+          if (!isOutgoing(a.type)) return false;
+          const ts = new Date(String(a.timestamp ?? ""));
+          return !Number.isNaN(ts.getTime()) && ts >= weekStart;
+        });
+        const recipientTotals = new Map<string, { usd: number; label: string; address: string | null }>();
+        for (const a of weeklyOutgoing) {
+          const labelRaw = (a as { recipientUsername?: string; counterparty?: string; recipient?: string; counterpartyAddress?: string });
+          const addressRaw =
+            (typeof labelRaw.recipient === "string" && normalizeAddress(labelRaw.recipient)) ||
+            (typeof labelRaw.counterpartyAddress === "string" && normalizeAddress(labelRaw.counterpartyAddress)) ||
+            null;
+          const label =
+            (typeof labelRaw.recipientUsername === "string" && labelRaw.recipientUsername.trim()) ||
+            (typeof labelRaw.counterparty === "string" && labelRaw.counterparty.trim()) ||
+            (typeof labelRaw.recipient === "string" && labelRaw.recipient.trim()) ||
+            (typeof labelRaw.counterpartyAddress === "string" && labelRaw.counterpartyAddress.trim()) ||
+            "";
+          if (!label) continue;
+          const usd = usdAmountFromActivity(a);
+          if (usd <= 0) continue;
+          const key = addressRaw || label.toLowerCase();
+          const prev = recipientTotals.get(key) ?? { usd: 0, label, address: addressRaw };
+          prev.usd += usd;
+          if (!prev.address && addressRaw) prev.address = addressRaw;
+          if (!prev.label && label) prev.label = label;
+          recipientTotals.set(key, prev);
+        }
+        const topRecipientEntry =
+          [...recipientTotals.values()].sort((a, b) => b.usd - a.usd)[0] ?? null;
+        let weekTopRecipient = topRecipientEntry?.label ?? null;
+        const topAddress = topRecipientEntry?.address ?? null;
+        if (topAddress) {
+          try {
+            const [tabRes, farcasterRes] = await Promise.all([
+              fetch(`/api/user/by-address/${topAddress}`),
+              fetch(`/api/neynar/user/by-address/${topAddress}`),
+            ]);
+            const tabJson = (await tabRes.json().catch(() => null)) as
+              | { profile?: { username?: string | null; displayName?: string | null } | null }
+              | null;
+            const farcasterJson = (await farcasterRes.json().catch(() => null)) as
+              | { username?: string | null }
+              | null;
+            const resolvedUsername =
+              (typeof tabJson?.profile?.username === "string" && tabJson.profile.username.trim()) ||
+              (typeof farcasterJson?.username === "string" && farcasterJson.username.trim()) ||
+              null;
+            if (resolvedUsername) {
+              weekTopRecipient = resolvedUsername.startsWith("@")
+                ? resolvedUsername
+                : `@${resolvedUsername}`;
+            }
+          } catch {
+            // Keep label fallback if resolution fails.
+          }
+        }
+        const lastWeekSentUsd = activity
+          .filter((a) => isOutgoing(a.type))
+          .filter((a) => {
+            const ts = new Date(String(a.timestamp ?? ""));
+            return !Number.isNaN(ts.getTime()) && ts >= lastWeekStart && ts < weekStart;
+          })
+          .reduce((sum, a) => sum + usdAmountFromActivity(a), 0);
+        const weekDeltaPct =
+          lastWeekSentUsd > 0
+            ? ((weekSentUsd - lastWeekSentUsd) / lastWeekSentUsd) * 100
+            : null;
+        const bills = Array.isArray(billsJson?.bills) ? billsJson.bills : [];
+        const splitPaidCount = bills.filter((b) => b?.hasPaid === true).length;
+        const splitPendingCount = bills.filter((b) => b?.hasPaid === false).length;
+        const vaultAddress = "0xc1256Ae5FF1cf2719D4937adb3bbCCab2E00A2Ca";
+        const positions = vaultPositionJson?.data?.userByAddress?.vaultPositions ?? [];
+        const vaultPosition = positions.find(
+          (p) => p?.vault?.address?.toLowerCase() === vaultAddress.toLowerCase()
+        );
+        const earnBalanceUsd = Number(vaultPosition?.state?.assetsUsd ?? 0);
+        const netApy = Number(vaultApyJson?.data?.vaultByAddress?.state?.netApy ?? 0);
+        const yearlyRaw = earnBalanceUsd * netApy;
+        const formatMonthlyEarnings = (value: number) => {
+          if (value <= 0) return "0.00";
+          if (value < 0.000001) return "<0.000001";
+          if (value < 0.01) return value.toFixed(6);
+          return value.toFixed(2);
+        };
+        const earnYearlyUsd = Number(formatMonthlyEarnings(yearlyRaw).replace("<", ""));
 
         if (!cancelled) {
           setQuickStats({
             portfolioUsd: portfolioUsd,
             weekSentUsd: weekSentUsd,
+            weekDeltaPct,
+            weekTopRecipient,
+            splitPaidCount,
+            splitPendingCount,
+            earnBalanceUsd,
+            earnYearlyUsd,
           });
         }
       } catch {
@@ -273,7 +520,7 @@ export function AssistantChatPage() {
     return () => {
       cancelled = true;
     };
-  }, [primaryAddress]);
+  }, [primaryAddress, user?.farcaster?.fid]);
 
   const isStreaming = status === "submitted" || status === "streaming";
   const lastAssistantMessage = [...messages].reverse().find((m) => m.role === "assistant");
@@ -428,7 +675,7 @@ export function AssistantChatPage() {
       if (!tokens.length) return null;
 
       return (
-        <div className="flex gap-3 overflow-x-auto snap-x snap-mandatory pr-6 scrollbar-hide">
+        <div className="flex gap-3 overflow-x-auto snap-x snap-mandatory pr-6 md:pr-2 scrollbar-hide">
           {tokens.map((token, i) => {
             const symbol = String(token.symbol ?? "TOKEN");
             const balance = Number(token.balance ?? 0);
@@ -436,7 +683,7 @@ export function AssistantChatPage() {
             return (
               <div
                 key={`${idxKey}-token-${i}`}
-                className="min-w-[88%] max-w-[88%] snap-start rounded-[24px] border border-white/10 bg-white/5 p-4 md:min-w-[82%] md:max-w-[82%] shadow-sm"
+                className="min-w-[88%] max-w-[88%] snap-start rounded-[24px] border border-white/10 bg-white/5 p-4 md:min-w-[46%] md:max-w-[46%] lg:min-w-[34%] lg:max-w-[34%] shadow-sm"
               >
                 <div className="min-w-0 flex-1">
                   <div className="text-xs text-white/45">{symbol}</div>
@@ -516,16 +763,7 @@ export function AssistantChatPage() {
       );
     }
 
-    if (String(part.type ?? "").includes("get_jackpot_status")) {
-      const canSpin = Boolean(output.canSpin);
-      const spinsToday = Number(output.spinsToday ?? 0);
-      return (
-        <div key={idxKey} className="rounded-[20px] border border-white/10 bg-white/5 p-4 text-sm">
-          <div className="text-white/90">Jackpot: {canSpin ? "active" : "cooldown"}</div>
-          <div className="mt-1 text-white/60">Spins today: {spinsToday}</div>
-        </div>
-      );
-    }
+    if (String(part.type ?? "").includes("get_jackpot_status")) return null;
 
     return (
       <div key={idxKey} className="rounded-[20px] border border-white/10 bg-white/5 p-3 text-xs text-white/70">
@@ -541,7 +779,15 @@ export function AssistantChatPage() {
     <main className="min-h-[100dvh] bg-background text-white pb-48 md:pb-44">
       <div className="fixed inset-x-0 top-0 z-30 px-4 pt-[calc(env(safe-area-inset-top)+12px)] pb-3 bg-background">
         <div className="mx-auto w-full max-w-3xl flex items-center justify-between gap-3">
-          <div className="text-md font-medium text-white/80">Tab Assistant</div>
+          <Link
+            href="/"
+            className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-white/10 bg-white/5 text-white shadow-sm"
+            aria-label="Close assistant"
+          >
+            <X className="h-4 w-4" />
+          </Link>
+          <div className="hidden text-md font-medium text-white/80">Tab Assistant</div>
+          <div className="h-10 w-10" aria-hidden />
           <div className="flex items-center gap-2">
             <button
               type="button"
@@ -553,13 +799,6 @@ export function AssistantChatPage() {
             >
               <Trash2 className="h-4 w-4" />
             </button>
-            <Link
-              href="/"
-              className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-white/10 bg-white/5 text-white shadow-sm"
-              aria-label="Close assistant"
-            >
-              <X className="h-4 w-4" />
-            </Link>
           </div>
         </div>
       </div>
@@ -598,9 +837,6 @@ export function AssistantChatPage() {
                           <div className="mt-0.5 text-[15px] font-medium leading-tight text-white">
                             {item.title}
                           </div>
-                          {item.detail ? (
-                            <div className="mt-1 text-[13px] text-white/55">{item.detail}</div>
-                          ) : null}
                         </div>
                         <div className="h-8 w-8 rounded-full bg-white text-black inline-flex items-center justify-center shrink-0">
                           <ArrowUp className="h-4 w-4" />
@@ -631,10 +867,11 @@ export function AssistantChatPage() {
                 return (
                   <motion.div
                     key={message.id}
-                    initial={{ opacity: 0, y: 8 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    exit={{ opacity: 0, y: -4 }}
-                    transition={{ duration: 0.2, ease: "easeOut" }}
+                    layout
+                    initial={{ opacity: 0, x: isUser ? 18 : -18, y: 6, scale: 0.985 }}
+                    animate={{ opacity: 1, x: 0, y: 0, scale: 1 }}
+                    exit={{ opacity: 0, x: isUser ? 12 : -12, y: -2, scale: 0.99 }}
+                    transition={{ type: "spring", stiffness: 380, damping: 30, mass: 0.7 }}
                     className={cn("flex", isUser ? "justify-end" : "justify-start")}
                   >
                     <div
@@ -666,9 +903,14 @@ export function AssistantChatPage() {
                       {toolParts.length ? (
                         <div className="mt-2 space-y-2">
                           {toolParts.map((part, index) => (
-                            <div key={`${message.id}-tool-wrap-${index}`}>
+                            <motion.div
+                              key={`${message.id}-tool-wrap-${index}`}
+                              initial={{ opacity: 0, y: 6 }}
+                              animate={{ opacity: 1, y: 0 }}
+                              transition={{ duration: 0.16, delay: Math.min(index * 0.04, 0.16), ease: "easeOut" }}
+                            >
                               {renderToolCard(part, `${message.id}-tool-${index}`)}
-                            </div>
+                            </motion.div>
                           ))}
                         </div>
                       ) : null}
@@ -695,7 +937,7 @@ export function AssistantChatPage() {
 
       <div className="fixed inset-x-0 bottom-0 z-30 px-4 pb-[calc(env(safe-area-inset-bottom)+10px)] pt-3 bg-gradient-to-t from-background via-background/95 to-transparent">
         <form onSubmit={onSubmit} className="mx-auto w-full max-w-3xl">
-          <div className="relative rounded-[28px] bg-black/30 px-4 py-2 shadow-[0_8px_28px_rgba(0,0,0,0.28)] backdrop-blur-sm">
+          <div className="relative rounded-[28px] bg-white/5 px-4 py-2 shadow-[0_8px_28px_rgba(0,0,0,0.28)] backdrop-blur-sm">
             <textarea
               value={input}
               onChange={(e) => setInput(e.target.value)}
@@ -709,7 +951,7 @@ export function AssistantChatPage() {
               }}
               placeholder="I want to..."
               rows={1}
-              className="h-11 w-full resize-none bg-white/5 pr-16 pt-[9px] text-[17px] leading-6 text-white outline-none placeholder:text-white/35"
+              className="h-11 w-full resize-none bg-transparent pr-16 py-0 text-[17px] leading-[44px] text-white outline-none placeholder:text-white/35"
             />
             <button
               type="submit"

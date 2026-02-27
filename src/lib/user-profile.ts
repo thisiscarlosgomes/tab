@@ -297,3 +297,15 @@ export async function getCanonicalUserProfileByFid(fid: number) {
   const profile = await collection.findOne({ fid: normalizedFid });
   return profile ? sanitizeProfile(profile) : null;
 }
+
+export async function getCanonicalUserProfileByAddress(address: string) {
+  const normalized = normalizeAddress(address);
+  if (!normalized) return null;
+
+  const client = await clientPromise;
+  const db = client.db();
+  const collection = db.collection<UserProfileDoc>("a-user-profile");
+  await ensureUserProfileIndexes(collection);
+  const profile = await collection.findOne({ primaryAddress: normalized });
+  return profile ? sanitizeProfile(profile) : null;
+}
