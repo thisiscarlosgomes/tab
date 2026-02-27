@@ -34,6 +34,7 @@ interface SplitPayButtonProps {
 
   creatorFid?: number;
   description?: string;
+  ctaLabel?: string;
 }
 
 export function SplitPayButton({
@@ -46,6 +47,7 @@ export function SplitPayButton({
   onSuccess,
   creatorFid,
   description,
+  ctaLabel,
 }: SplitPayButtonProps) {
   const { isConnected, address } = useAccount();
   const { connect, connectors } = useConnect();
@@ -237,7 +239,7 @@ export function SplitPayButton({
         ? "Processing…"
         : txHash
           ? "Paid"
-          : `Pay ${amount} ${token}`}
+          : (ctaLabel ?? `Pay ${amount} ${token}`)}
     </Button>
   );
 }

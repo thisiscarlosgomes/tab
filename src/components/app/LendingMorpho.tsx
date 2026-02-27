@@ -53,7 +53,7 @@ export function MorphoDepositDrawer({
   const { connect } = useConnect();
   const { writeContractAsync } = useWriteContract();
 
-  const [amount, setAmount] = useState("10");
+  const [amount, setAmount] = useState("0");
   const [isCustomInput, setIsCustomInput] = useState(false);
   const [isDepositing, setIsDepositing] = useState(false);
   const [isWithdrawing, setIsWithdrawing] = useState(false);
@@ -576,7 +576,7 @@ export function MorphoDepositDrawer({
             )}
 
             <p className="text-white/30 text-[13px] text-center">
-              Powered by Morpho.
+              Powered by Morpho
             </p>
 
             <SuccessShareDrawer

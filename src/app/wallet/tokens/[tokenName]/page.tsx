@@ -2,7 +2,7 @@
 
 import dynamic from "next/dynamic";
 import { useParams, useSearchParams } from "next/navigation";
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import type { CandlePoint, LivelinePoint } from "liveline";
 import { ChartCandlestick, ChartLine } from "lucide-react";
 import { ReceiveDrawerController } from "@/components/app/ReceiveDrawerController";
@@ -67,6 +67,7 @@ const BASE_TOKEN_ADDRESS_BY_SYMBOL: Record<string, string> = {
 
 const APP_POSITIVE_HEX = "#34d399"; // tailwind emerald-400
 const APP_NEGATIVE_HEX = "#f87171"; // tailwind red-400
+const TOKEN_INSIGHTS_POLL_MS = 300_000;
 
 function num(value: string | null, fallback = 0) {
   if (value === null || value.trim() === "") return fallback;
@@ -267,6 +268,139 @@ export default function WalletTokenDetailsPage() {
     [symbol, tokenAddress]
   );
 
+  const loadInsights = useCallback(
+    async ({
+      background = false,
+      signal,
+    }: { background?: boolean; signal?: AbortSignal } = {}) => {
+      if (!resolvedTokenAddress) {
+        if (!background && !signal?.aborted) {
+          setChart(
+            buildSeededChartState({
+              seedKey,
+              basePrice,
+              windowSecs: selectedConfig.secs,
+              candleWidth: selectedConfig.candleWidth,
+            })
+          );
+        }
+        return;
+      }
+
+      if (!background && !chart && !signal?.aborted) setIsChartLoading(true);
+      try {
+        const qs = new URLSearchParams({
+          tokenAddress: resolvedTokenAddress,
+          chain: "base",
+          windowSecs: String(selectedConfig.secs),
+        });
+        const res = await fetch(`/api/moralis/token-insights?${qs.toString()}`, {
+          cache: "no-store",
+          signal,
+        });
+        if (!res.ok) throw new Error("Failed to load token insights");
+        const data = (await res.json()) as TokenInsightsResponse;
+        const insightsPair =
+          typeof data.pairAddress === "string" && data.pairAddress
+            ? data.pairAddress.toLowerCase()
+            : null;
+
+        const rows = Array.isArray(data.candles) ? data.candles : [];
+        const sorted = [...rows].sort((a, b) => a.time - b.time);
+
+        if (sorted.length > 0) {
+          const latest = sorted[sorted.length - 1];
+          const committed = sorted.slice(0, -1);
+          const mappedCommitted: CandlePoint[] = committed.map((c) => ({
+            time: c.time,
+            open: c.open,
+            high: c.high,
+            low: c.low,
+            close: c.close,
+          }));
+          const liveCandle: CandlePoint = {
+            time: latest.time,
+            open: latest.open,
+            high: latest.high,
+            low: latest.low,
+            close: latest.close,
+          };
+          const ticks: LivelinePoint[] = [...mappedCommitted, liveCandle].map((c) => ({
+            time: c.time,
+            value: c.close,
+          }));
+          if (!signal?.aborted) {
+            if (
+              typeof data.candleWidthSecs === "number" &&
+              Number.isFinite(data.candleWidthSecs) &&
+              data.candleWidthSecs > 0
+            ) {
+              setEffectiveCandleWidthSecs(data.candleWidthSecs);
+            }
+            setChart({
+              candles: mappedCommitted,
+              liveCandle,
+              ticks,
+              value: latest.close,
+            });
+            setChartLoadedWindowSecs(selectedConfig.secs);
+          }
+        } else if (!signal?.aborted && !background) {
+          setChart(
+            buildSeededChartState({
+              seedKey,
+              basePrice: data.price > 0 ? data.price : basePrice,
+              windowSecs: selectedConfig.secs,
+              candleWidth: data.candleWidthSecs || selectedConfig.candleWidth,
+            })
+          );
+          setChartLoadedWindowSecs(selectedConfig.secs);
+        }
+
+        if (!signal?.aborted) {
+          setActivePairAddress(insightsPair);
+          setMarketCapReal(
+            typeof data.marketCap === "number" && Number.isFinite(data.marketCap)
+              ? data.marketCap
+              : null
+          );
+          setVolume24hReal(
+            typeof data.volume24h === "number" && Number.isFinite(data.volume24h)
+              ? data.volume24h
+              : null
+          );
+          setChange24hPctReal(
+            typeof data.change24hPct === "number" && Number.isFinite(data.change24hPct)
+              ? data.change24hPct
+              : null
+          );
+        }
+      } catch {
+        if (!signal?.aborted && !background) {
+          setChart(
+            buildSeededChartState({
+              seedKey,
+              basePrice,
+              windowSecs: selectedConfig.secs,
+              candleWidth: selectedConfig.candleWidth,
+            })
+          );
+          setChartLoadedWindowSecs(selectedConfig.secs);
+        }
+      } finally {
+        if (!signal?.aborted) setIsChartLoading(false);
+      }
+    },
+    [
+      basePrice,
+      chart,
+      resolvedTokenAddress,
+      seedKey,
+      selectedConfig.candleWidth,
+      selectedConfig.secs,
+    ]
+  );
+
   useEffect(() => {
     if (!address) return;
     if (queryTokenAddress && querySymbol && queryName) return;
@@ -328,148 +462,14 @@ export default function WalletTokenDetailsPage() {
   }, []);
 
   useEffect(() => {
-    let cancelled = false;
     const controller = new AbortController();
-
-    const loadInsights = async (background = false) => {
-      if (!resolvedTokenAddress) {
-        if (!background) {
-          setChart(
-            buildSeededChartState({
-              seedKey,
-              basePrice,
-              windowSecs: selectedConfig.secs,
-              candleWidth: selectedConfig.candleWidth,
-            })
-          );
-        }
-        return;
-      }
-
-      if (!background && !chart) setIsChartLoading(true);
-      try {
-        const qs = new URLSearchParams({
-          tokenAddress: resolvedTokenAddress,
-          chain: "base",
-          windowSecs: String(selectedConfig.secs),
-        });
-        const res = await fetch(`/api/moralis/token-insights?${qs.toString()}`, {
-          cache: "no-store",
-          signal: controller.signal,
-        });
-        if (!res.ok) throw new Error("Failed to load token insights");
-        const data = (await res.json()) as TokenInsightsResponse;
-        const insightsPair =
-          typeof data.pairAddress === "string" && data.pairAddress
-            ? data.pairAddress.toLowerCase()
-            : null;
-
-        const rows = Array.isArray(data.candles) ? data.candles : [];
-        const sorted = [...rows].sort((a, b) => a.time - b.time);
-
-        if (sorted.length > 0) {
-          const latest = sorted[sorted.length - 1];
-          const committed = sorted.slice(0, -1);
-          const mappedCommitted: CandlePoint[] = committed.map((c) => ({
-            time: c.time,
-            open: c.open,
-            high: c.high,
-            low: c.low,
-            close: c.close,
-          }));
-          const liveCandle: CandlePoint = {
-            time: latest.time,
-            open: latest.open,
-            high: latest.high,
-            low: latest.low,
-            close: latest.close,
-          };
-          const ticks: LivelinePoint[] = [...mappedCommitted, liveCandle].map((c) => ({
-            time: c.time,
-            value: c.close,
-          }));
-          if (!cancelled) {
-            if (
-              typeof data.candleWidthSecs === "number" &&
-              Number.isFinite(data.candleWidthSecs) &&
-              data.candleWidthSecs > 0
-            ) {
-              setEffectiveCandleWidthSecs(data.candleWidthSecs);
-            }
-            setChart({
-              candles: mappedCommitted,
-              liveCandle,
-              ticks,
-              value: latest.close,
-            });
-            setChartLoadedWindowSecs(selectedConfig.secs);
-          }
-        } else if (!cancelled && !background) {
-          setChart(
-            buildSeededChartState({
-              seedKey,
-              basePrice: data.price > 0 ? data.price : basePrice,
-              windowSecs: selectedConfig.secs,
-              candleWidth: data.candleWidthSecs || selectedConfig.candleWidth,
-            })
-          );
-          setChartLoadedWindowSecs(selectedConfig.secs);
-        }
-
-        if (!cancelled) {
-          setActivePairAddress(insightsPair);
-          setMarketCapReal(
-            typeof data.marketCap === "number" && Number.isFinite(data.marketCap)
-              ? data.marketCap
-              : null
-          );
-          setVolume24hReal(
-            typeof data.volume24h === "number" && Number.isFinite(data.volume24h)
-              ? data.volume24h
-              : null
-          );
-          setChange24hPctReal(
-            typeof data.change24hPct === "number" && Number.isFinite(data.change24hPct)
-              ? data.change24hPct
-              : null
-          );
-        }
-      } catch {
-        if (!cancelled && !background) {
-          setChart(
-            buildSeededChartState({
-              seedKey,
-              basePrice,
-              windowSecs: selectedConfig.secs,
-              candleWidth: selectedConfig.candleWidth,
-            })
-          );
-          setChartLoadedWindowSecs(selectedConfig.secs);
-        }
-      } finally {
-        if (!cancelled) setIsChartLoading(false);
-      }
-    };
-
-    void loadInsights(false);
-    const pollId = isPageVisible
-      ? window.setInterval(() => {
-          void loadInsights(true);
-        }, 300_000)
-      : null;
+    void loadInsights({ background: false, signal: controller.signal });
 
     return () => {
-      cancelled = true;
       controller.abort();
-      if (pollId !== null) window.clearInterval(pollId);
     };
   }, [
-    basePrice,
-    isPageVisible,
-    resolvedTokenAddress,
-    seedKey,
-    selectedConfig.candleWidth,
-    selectedConfig.secs,
+    loadInsights,
   ]);
 
   useEffect(() => {
@@ -578,9 +578,15 @@ export default function WalletTokenDetailsPage() {
             ? 10_000
             : 15_000;
 
+    let lastInsightsRefreshAt = Date.now();
     void fetchQuote();
     const id = window.setInterval(() => {
       void fetchQuote();
+      const now = Date.now();
+      if (now - lastInsightsRefreshAt >= TOKEN_INSIGHTS_POLL_MS) {
+        lastInsightsRefreshAt = now;
+        void loadInsights({ background: true });
+      }
     }, quotePollMs);
 
     return () => {
@@ -593,9 +599,24 @@ export default function WalletTokenDetailsPage() {
     effectiveCandleWidthSecs,
     isPageVisible,
     lineMode,
+    loadInsights,
     resolvedTokenAddress,
     selectedConfig.secs,
   ]);
+
+  useEffect(() => {
+    if (!isPageVisible) return;
+    if (lineMode) return;
+
+    void loadInsights({ background: true });
+    const id = window.setInterval(() => {
+      void loadInsights({ background: true });
+    }, TOKEN_INSIGHTS_POLL_MS);
+
+    return () => {
+      window.clearInterval(id);
+    };
+  }, [isPageVisible, lineMode, loadInsights]);
 
   const fallbackWindowChangePct = useMemo(() => {
     if (!chart) return 0;

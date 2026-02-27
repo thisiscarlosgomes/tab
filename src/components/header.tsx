@@ -265,7 +265,7 @@ export function Header() {
                 }}
                 className="text-white text-xs flex items-center font-medium"
               >
-                <ArrowLeft className="w-8 h-8" />
+                <ArrowLeft className="w-7 h-7" />
               </button>
             )}
           </div>

@@ -25,7 +25,6 @@ import { getTokenPrices } from "@/lib/getTokenPrices";
 import { useFrameSplash } from "@/providers/FrameSplashProvider";
 import { toast } from "sonner";
 import { Drawer } from "vaul";
-import { shortAddress } from "@/lib/shortAddress";
 import { useTabIdentity } from "@/lib/useTabIdentity";
 import {
   ResponsiveDialog,
@@ -99,6 +98,7 @@ export default function SplitPage() {
 
   const [showSettingsDrawer, setShowSettingsDrawer] = useState(false);
   const [showQrDrawer, setShowQrDrawer] = useState(false);
+  const [showMembersDialog, setShowMembersDialog] = useState(false);
 
   const normalizeBill = (bill: SplitBill): SplitBill => ({
     ...bill,
@@ -500,6 +500,14 @@ const paidCount = bill?.paid?.length ?? 0;
   const totalPaid = paidList.reduce((sum, p) => sum + (p.amount ?? 0), 0);
 
   const remaining = Math.max(bill.totalAmount - totalPaid, 0);
+  const progressRatio =
+    debtorCount > 0 ? Math.min(Math.max(paidCount / debtorCount, 0), 1) : 0;
+  const progressPercent = Math.round(progressRatio * 100);
+  const ringRadius = 110;
+  const ringCircumference = 2 * Math.PI * ringRadius;
+  const ringOffset = ringCircumference * (1 - progressRatio);
+  const previewMembers = activityList.slice(0, 4);
+  const extraMembersCount = Math.max(activityList.length - previewMembers.length, 0);
 
   return (
     <div className="min-h-screen w-full flex flex-col items-center px-4 pt-[calc(5rem+env(safe-area-inset-top))] pb-[calc(8rem+env(safe-area-inset-bottom))] overflow-y-auto scrollbar-hide">
@@ -512,63 +520,80 @@ const paidCount = bill?.paid?.length ?? 0;
           <>
             {/* HEADER */}
             <div className="flex flex-col items-center">
-              <h1 className="text-lg font-medium text-center mb-1 mt-4">
+              <h1 className="text-xl font-medium text-center mb-1 mt-4">
                 {bill.description}
               </h1>
               <p className="text-primary">Splits by @{creatorHandleLabel}</p>
-              <p className=" opacity-50 py-1 text-sm px-3 bg-white/5 text-white mt-1 rounded-[6px]">
-                Recipient: {shortAddress(bill.recipient.address)}
-              </p>
             </div>
 
             {/* AMOUNT + AVATARS + PROGRESS */}
             <div className="border rounded-lg p-4 mt-2">
               <div className="text-sm text-center">
-                <NumberFlow
-                  value={bill.totalAmount}
-                  format={{
-                    minimumFractionDigits: token === "USDC" ? 2 : 3,
-                    maximumFractionDigits: token === "USDC" ? 2 : 6,
-                  }}
-                  prefix={getTokenSuffix(token)}
-                  className="text-4xl font-medium text-white"
-                />
-
-                {participantList.length > 0 && (
-                  <div className="flex justify-center -space-x-3 mt-2">
-                    {participantList
-                      .filter((p) => p.fid !== bill?.recipient?.fid)
-                      .slice(0, 8)
-                      .map((p) => (
+                {activityList.length > 0 && (
+                  <button
+                    onClick={() => setShowMembersDialog(true)}
+                    className="mx-auto mb-4 flex items-center"
+                  >
+                    <div className="flex -space-x-3">
+                      {previewMembers.map((p) => (
                         <img
-                          key={p.address}
+                          key={p.fid}
                           src={
                             p.pfp ||
                             `https://api.dicebear.com/9.x/fun-emoji/svg?seed=${p.name}`
                           }
                           alt={p.name}
-                          className="w-8 h-8 rounded-full border-2 border-white object-cover mb-4"
+                          className="w-10 h-10 rounded-full border-2 border-background object-cover"
                         />
                       ))}
-
-                    {participantList.length > 8 && (
-                      <span className="w-8 h-8 rounded-full bg-card border-white border-2 text-xs flex items-center justify-center">
-                        +{participantList.length - 8}
-                      </span>
-                    )}
-                  </div>
+                      {extraMembersCount > 0 && (
+                        <span className="w-10 h-10 rounded-full bg-white/10 border-2 border-background text-sm flex items-center justify-center">
+                          +{extraMembersCount}
+                        </span>
+                      )}
+                    </div>
+                  </button>
                 )}
 
-                <div className="w-full max-w-[180px] h-2 rounded-full bg-white/10 mx-auto overflow-hidden">
-                  <div
-                    className="h-full bg-primary transition-all duration-500"
-                    style={{
-                      width:
-                        debtorCount > 0
-                          ? `${(paidCount / debtorCount) * 100}%`
-                          : "0%",
-                    }}
-                  />
+                <div className="relative mx-auto w-[260px] h-[260px] flex items-center justify-center">
+                  <svg className="absolute inset-0 -rotate-90" viewBox="0 0 260 260">
+                    <circle
+                      cx="130"
+                      cy="130"
+                      r={ringRadius}
+                      stroke="currentColor"
+                      strokeWidth="10"
+                      className="text-white/10"
+                      fill="none"
+                    />
+                    <circle
+                      cx="130"
+                      cy="130"
+                      r={ringRadius}
+                      stroke="currentColor"
+                      strokeWidth="10"
+                      strokeLinecap="round"
+                      className="text-primary transition-all duration-700"
+                      fill="none"
+                      strokeDasharray={ringCircumference}
+                      strokeDashoffset={ringOffset}
+                    />
+                  </svg>
+
+                  <div className="text-center">
+                    <NumberFlow
+                      value={bill.totalAmount}
+                      format={{
+                        minimumFractionDigits: token === "USDC" ? 2 : 3,
+                        maximumFractionDigits: token === "USDC" ? 2 : 6,
+                      }}
+                      prefix={getTokenSuffix(token)}
+                      className="text-5xl font-medium text-white"
+                    />
+                    <p className="text-sm text-white/50 mt-1">
+                      {progressPercent}% complete
+                    </p>
+                  </div>
                 </div>
 
                 <div className="flex justify-center items-center gap-2 text-sm mt-2">
@@ -624,160 +649,114 @@ const paidCount = bill?.paid?.length ?? 0;
               </div>
             </div>
 
-            {/* USER ACTIONS */}
-            {!isRecipient && (
-              <>
-                {hasJoined && !isPaid && address && (
-                  <SplitPayButton
-                    recipient={bill.recipient.address as `0x${string}`} // ✅ CORRECT
-                    amount={parseFloat(eachShare)}
-                    token={bill.token as TokenName}
-                    splitId={safeSplitId}
-                    onPaid={fetchBill}
-                    payer={{
-                      address,
-                      name:
-                        participantList.find(
-                          (p) =>
-                            p.address?.toLowerCase() === address.toLowerCase()
-                        )?.name ?? "You",
-                      fid: userFid!, // ✅ REQUIRED
-                    }}
-                    onSuccess={(data) => setPaymentSuccess(data)}
-                    creatorFid={
-                      bill.creator.fid != null
-                        ? Number(bill.creator.fid)
-                        : undefined
-                    }
-                    description={bill.description}
-                  />
-                )}
-
-                <div className="mt-2">
-                  {canJoin && (
-                    <div className="mt-2">
-                      <Button
-                        onClick={handleJoin}
-                        disabled={isJoining}
-                        className="w-full bg-primary"
-                      >
-                        {isJoining ? "Joining..." : "Join"}
-                      </Button>
-                    </div>
-                  )}
-                </div>
-              </>
-            )}
-
-            {/* ACTIVITY */}
-            {activityList.length > 0 && (
-              <div className="mt-4 text-sm text-muted pb-1">
-                <p className="mb-3 text-md font-medium">Members</p>
-
-                <ul className="space-y-2">
-                  {activityList.map((p) => {
-                    const paid = paidList.find(
-                      (x) =>
-                        x.address?.toLowerCase?.() &&
-                        p.address?.toLowerCase?.() &&
-                        x.address.toLowerCase() === p.address.toLowerCase()
-                    );
-
-                    const joined = participantList.some(
-                      (x) =>
-                        x.address?.toLowerCase?.() &&
-                        p.address?.toLowerCase?.() &&
-                        x.address.toLowerCase() === p.address.toLowerCase()
-                    );
-
-                    const isRecipient =
-                      bill.recipient?.address?.toLowerCase?.() ===
-                      p.address?.toLowerCase?.();
-
-                    const invitedEntry = bill.invited?.find(
-                      (i) => i.fid === p.fid
-                    );
-
-                    const participantEntry = participantList.find(
-                      (x) => x.fid === p.fid
-                    );
-
-                    const paidAmount: number =
-                      paid?.amount ??
-                      participantEntry?.amount ??
-                      invitedEntry?.amount ??
-                      0;
-
-                    return (
-                      <li
-                        key={p.address}
-                        className="flex items-center justify-between"
-                      >
-                        <div className="flex items-center gap-2">
-                          <img
-                            src={
-                              p.pfp ||
-                              `https://api.dicebear.com/9.x/fun-emoji/svg?seed=${p.name}`
-                            }
-                            className="w-7 h-7 rounded-full object-cover"
-                          />
-
-                          <div className="flex items-center gap-1">
-                            <span className="text-white me-1">@{p.name}</span>
-
-                            {/* Settled (creator only, no onchain payment) */}
-                            {isRecipient && (
-                              <span className="bg-teal-500/20 text-teal-300 border border-teal-500/30 px-1.5 py-0.5 text-[13px] rounded-[6px]">
-                                Recipient
-                              </span>
-                            )}
-
-                            {paid && !isRecipient && (
-                              <span className="bg-green-500/20 text-green-300 border border-green-500/30 px-1.5  text-[13px] rounded-[6px]">
-                                Paid
-                              </span>
-                            )}
-
-                            {joined && !paid && !isRecipient && (
-                              <span className="bg-yellow-600/20 text-yellow-400 border border-yellow-600/40 px-1.5 text-[13px] rounded-[6px]">
-                                Joined
-                              </span>
-                            )}
-
-                            {bill.splitType !== "receipt_open" &&
-                              !joined &&
-                              !isRecipient &&
-                              bill.invited?.length && (
-                                <span className="bg-blue-600/20 text-blue-400 border border-blue-600/40 px-1.5 text-[13px] rounded-[6px]">
-                                  Invited
-                                </span>
-                              )}
-                          </div>
-                        </div>
-
-                        {/* <span className="text-white/40 text-sm">
-                          {`${getTokenSuffix(token)}${formatTokenAmount(
-                            paidAmount,
-                            token
-                          )}`}
-                        </span> */}
-                        {!isRecipient && (
-                          <span className="text-white/40 text-sm">
-                            {`${getTokenSuffix(token)}${formatTokenAmount(
-                              paidAmount,
-                              token
-                            )}`}
-                          </span>
-                        )}
-                      </li>
-                    );
-                  })}
-                </ul>
-              </div>
-            )}
+            <div className="mt-1">
+              {!isRecipient && canPay && hasJoined && !isPaid && address ? (
+                <SplitPayButton
+                  recipient={bill.recipient.address as `0x${string}`}
+                  amount={parseFloat(eachShare)}
+                  token={bill.token as TokenName}
+                  splitId={safeSplitId}
+                  onPaid={fetchBill}
+                  payer={{
+                    address,
+                    name:
+                      participantList.find(
+                        (p) => p.address?.toLowerCase() === address.toLowerCase()
+                      )?.name ?? "You",
+                    fid: userFid!,
+                  }}
+                  onSuccess={(data) => setPaymentSuccess(data)}
+                  creatorFid={
+                    bill.creator.fid != null ? Number(bill.creator.fid) : undefined
+                  }
+                  description={bill.description}
+                  ctaLabel="Contribute"
+                />
+              ) : (
+                <Button
+                  onClick={canJoin ? handleJoin : undefined}
+                  disabled={!canJoin || isJoining || allPaid}
+                  className="w-full bg-primary mt-4"
+                >
+                  {isJoining
+                    ? "Joining..."
+                    : allPaid
+                      ? "Settled"
+                      : canJoin
+                        ? "Contribute"
+                        : "Contribute unavailable"}
+                </Button>
+              )}
+            </div>
           </>
         )}
       </Card>
+
+      <ResponsiveDialog open={showMembersDialog} onOpenChange={setShowMembersDialog}>
+        <ResponsiveDialogContent className="p-6 pb-8 md:max-w-md">
+          <ResponsiveDialogTitle className="text-center text-lg">
+            Members
+          </ResponsiveDialogTitle>
+
+          <ul className="mt-4 space-y-2">
+            {activityList.map((p) => {
+              const paid = paidList.find(
+                (x) =>
+                  x.address?.toLowerCase?.() &&
+                  p.address?.toLowerCase?.() &&
+                  x.address.toLowerCase() === p.address.toLowerCase()
+              );
+
+              const joined = participantList.some(
+                (x) =>
+                  x.address?.toLowerCase?.() &&
+                  p.address?.toLowerCase?.() &&
+                  x.address.toLowerCase() === p.address.toLowerCase()
+              );
+
+              const invitedEntry = bill.invited?.find((i) => i.fid === p.fid);
+              const participantEntry = participantList.find((x) => x.fid === p.fid);
+              const paidAmount: number =
+                paid?.amount ?? participantEntry?.amount ?? invitedEntry?.amount ?? 0;
+
+              return (
+                <li key={p.address} className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <img
+                      src={
+                        p.pfp ||
+                        `https://api.dicebear.com/9.x/fun-emoji/svg?seed=${p.name}`
+                      }
+                      alt={p.name}
+                      className="w-8 h-8 rounded-full object-cover"
+                    />
+                    <div className="flex items-center gap-1">
+                      <span className="text-white me-1">@{p.name}</span>
+                      {paid ? (
+                        <span className="bg-green-500/20 text-green-300 border border-green-500/30 px-1.5 text-[12px] rounded-[6px]">
+                          Paid
+                        </span>
+                      ) : joined ? (
+                        <span className="bg-yellow-600/20 text-yellow-400 border border-yellow-600/40 px-1.5 text-[12px] rounded-[6px]">
+                          Joined
+                        </span>
+                      ) : (
+                        <span className="bg-blue-600/20 text-blue-400 border border-blue-600/40 px-1.5 text-[12px] rounded-[6px]">
+                          Invited
+                        </span>
+                      )}
+                    </div>
+                  </div>
+
+                  <span className="text-white/40 text-sm">
+                    {`${getTokenSuffix(token)}${formatTokenAmount(paidAmount, token)}`}
+                  </span>
+                </li>
+              );
+            })}
+          </ul>
+        </ResponsiveDialogContent>
+      </ResponsiveDialog>
 
       {/* SETTINGS DIALOG / SHEET */}
       <ResponsiveDialog

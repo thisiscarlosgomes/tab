@@ -415,10 +415,7 @@ export default function ActivityPage() {
     <div className="mt-4">
       <ul className="space-y-3">
         {Array.from({ length: 6 }).map((_, idx) => (
-          <li
-            key={idx}
-            className="p-3 border border-white/10 rounded-lg flex justify-between"
-          >
+          <li key={idx} className="px-3 py-2 flex justify-between">
             <div className="flex gap-3 items-start w-full">
               <Skeleton className="w-9 h-9 rounded-full shrink-0" />
               <div className="flex-1">
