@@ -26,7 +26,13 @@ export interface ActivityInput {
   txHash?: string;
   executionMode?: "user_session" | "service_agent";
   agentId?: string | null;
-  recipientResolutionSource?: "address" | "ens" | "tab" | "farcaster" | null;
+  recipientResolutionSource?:
+    | "address"
+    | "ens"
+    | "tab"
+    | "farcaster"
+    | "twitter"
+    | null;
   note?: string | null;
 
   counterparty?: {

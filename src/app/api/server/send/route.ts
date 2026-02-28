@@ -284,6 +284,11 @@ export async function POST(req: NextRequest) {
         : undefined,
     recipientEns:
       typeof body?.recipientEns === "string" ? body.recipientEns : undefined,
+    recipientProvider:
+      body?.recipientProvider === "twitter" || body?.recipientProvider === "farcaster"
+        ? body.recipientProvider
+        : null,
+    actorUserId: userId,
   });
 
   if (!recipientResolved?.address || !isAddress(recipientResolved.address)) {

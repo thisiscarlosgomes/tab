@@ -14,7 +14,13 @@ type ActivityRecord = {
   txHash?: string;
   recipient?: string;
   recipientUsername?: string;
-  recipientResolutionSource?: "address" | "ens" | "tab" | "farcaster" | null;
+  recipientResolutionSource?:
+    | "address"
+    | "ens"
+    | "tab"
+    | "farcaster"
+    | "twitter"
+    | null;
   note?: string | null;
   counterparty?: {
     address?: string | null;

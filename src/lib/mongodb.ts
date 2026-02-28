@@ -93,6 +93,21 @@ async function ensureIndexes(mongoClient: MongoClient) {
       { unique: true, sparse: true }
     ),
     db.collection("a-user-profile").createIndex({ primaryAddress: 1 }, { sparse: true }),
+    db
+      .collection("a-twitter-oauth")
+      .createIndex({ userId: 1 }, { unique: true }),
+    db
+      .collection("a-twitter-oauth")
+      .createIndex({ subject: 1 }, { sparse: true }),
+    db
+      .collection("a-twitter-identity")
+      .createIndex({ subject: 1 }, { unique: true }),
+    db
+      .collection("a-twitter-identity")
+      .createIndex({ usernameLower: 1 }, { sparse: true }),
+    db
+      .collection("a-twitter-identity")
+      .createIndex({ walletAddress: 1 }, { sparse: true }),
   ]);
 }
 

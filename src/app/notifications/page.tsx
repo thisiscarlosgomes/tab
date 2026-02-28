@@ -42,7 +42,13 @@ interface ActivityItem {
   token?: string;
   recipient?: string;
   recipientUsername?: string;
-  recipientResolutionSource?: "address" | "ens" | "tab" | "farcaster" | null;
+  recipientResolutionSource?:
+    | "address"
+    | "ens"
+    | "tab"
+    | "farcaster"
+    | "twitter"
+    | null;
   executionMode?: "user_session" | "service_agent" | null;
 }
 
@@ -130,6 +136,7 @@ export default function ActivityPage() {
     if (item.executionMode !== "service_agent") return "";
     if (item.recipientResolutionSource === "tab") return " on Tab";
     if (item.recipientResolutionSource === "farcaster") return " via Farcaster";
+    if (item.recipientResolutionSource === "twitter") return " via Twitter";
     return "";
   };
 

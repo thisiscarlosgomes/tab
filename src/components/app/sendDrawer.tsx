@@ -16,7 +16,7 @@ import { useWriteContract } from "wagmi";
 import { createPublicClient, erc20Abi, http, isAddress, parseUnits } from "viem";
 import { mainnet } from "viem/chains";
 import { normalize } from "viem/ens";
-import { usePrivy, useWallets } from "@privy-io/react-auth";
+import { useIdentityToken, usePrivy, useToken, useWallets } from "@privy-io/react-auth";
 
 import { LoaderCircle } from "lucide-react";
 // import { useAddPoints } from "@/lib/useAddPoints";
@@ -30,18 +30,7 @@ import {
   ResponsiveDialogContent,
   ResponsiveDialogTitle,
 } from "@/components/ui/responsive-dialog";
-
-type FarcasterUser = {
-  fid: number;
-  username: string;
-  display_name: string;
-  pfp_url: string;
-  verified_addresses: {
-    primary?: {
-      eth_address?: string | null;
-    };
-  };
-};
+import { getSocialUserKey, SocialUser } from "@/lib/social";
 
 type EnrichedCast = {
   hash: string;
@@ -55,7 +44,12 @@ type EnrichedCast = {
 };
 
 type SendStatus = "idle" | "confirming" | "sending";
-type RecipientResolutionSource = "address" | "ens" | "tab" | "farcaster";
+type RecipientResolutionSource =
+  | "address"
+  | "ens"
+  | "tab"
+  | "farcaster"
+  | "twitter";
 
 const getTokenSuffix = (token: string) => {
   switch (token) {
@@ -89,6 +83,8 @@ export function GlobalSendDrawer() {
 
   const { isConnected, address } = useAccount();
   const { user } = usePrivy();
+  const { identityToken } = useIdentityToken();
+  const { getAccessToken } = useToken();
   const {
     fid: identityFid,
     username: identityUsername,
@@ -100,7 +96,7 @@ export function GlobalSendDrawer() {
 
   const inputRef = useRef<HTMLInputElement>(null);
 
-  const [results, setResults] = useState<FarcasterUser[]>([]);
+  const [results, setResults] = useState<SocialUser[]>([]);
   const [isSearching, setIsSearching] = useState(false);
   // const [selectedUser, setSelectedUser] = useState<FarcasterUser | null>(null);
   const [amount, setAmount] = useState("0");
@@ -124,9 +120,23 @@ export function GlobalSendDrawer() {
   const { wallets } = useWallets();
   const linkedFarcasterFid = user?.farcaster?.fid ?? null;
   const linkedFarcasterUsername = user?.farcaster?.username ?? null;
+  const linkedTwitterSubject = user?.twitter?.subject ?? null;
+  const linkedTwitterUsername = user?.twitter?.username ?? null;
+  const hasLinkedFarcaster = Boolean(
+    user?.farcaster ||
+      user?.linkedAccounts?.some((account) => account.type === "farcaster")
+  );
+  const hasLinkedTwitter = Boolean(
+    user?.twitter ||
+      user?.linkedAccounts?.some((account) => account.type === "twitter_oauth")
+  );
+  const prefersTwitterGraph = hasLinkedTwitter && !hasLinkedFarcaster;
   const walletAddress = useMemo(() => {
     return isConnected && address ? address : (wallets[0]?.address ?? null);
   }, [isConnected, address, wallets]);
+  const getAuthToken = async () => {
+    return identityToken ?? (await getAccessToken().catch(() => null));
+  };
 
   // const [selectedToken, setSelectedToken] = useState<
   //   "ETH" | "USDC" | "TAB" | null
@@ -166,7 +176,14 @@ export function GlobalSendDrawer() {
         const data = await res.json();
 
         if (data?.username) {
-          setSelectedUser(data);
+          setSelectedUser({
+            ...data,
+            id:
+              typeof data?.fid === "number"
+                ? `farcaster:${data.fid}`
+                : `farcaster:${sharedUsername.toLowerCase()}`,
+            provider: "farcaster",
+          });
           setSelectedToken("USDC");
           setTokenType("USDC");
           setSendDrawerOpen(true);
@@ -200,7 +217,14 @@ export function GlobalSendDrawer() {
         );
         const data = await res.json();
         if (data?.username) {
-          setSelectedUser(data);
+          setSelectedUser({
+            ...data,
+            id:
+              typeof data?.fid === "number"
+                ? `farcaster:${data.fid}`
+                : `farcaster:${scannedUsername.toLowerCase()}`,
+            provider: "farcaster",
+          });
           setSelectedToken("USDC");
           setTokenType("USDC");
           setMode("search");
@@ -244,14 +268,24 @@ export function GlobalSendDrawer() {
         const qs = new URLSearchParams();
         if (selectedUser.username) qs.set("username", selectedUser.username);
         if (fallbackAddress) qs.set("address", fallbackAddress);
-        const res = await fetch(`/api/recipient-resolve?${qs.toString()}`);
+        if (selectedUser.provider === "twitter") qs.set("provider", "twitter");
+        if (selectedUser.provider === "farcaster") qs.set("provider", "farcaster");
+        const token = await getAuthToken();
+        const res = await fetch(`/api/recipient-resolve?${qs.toString()}`, token
+          ? {
+              headers: {
+                Authorization: `Bearer ${token}`,
+              },
+            }
+          : undefined);
         const data = await res.json().catch(() => null);
         if (cancelled) return;
 
         if (data?.resolved?.address) {
           setResolvedRecipientAddress(data.resolved.address);
           setRecipientResolutionSource(
-            (data.resolved.source as RecipientResolutionSource) ?? "farcaster"
+            (data.resolved.source as RecipientResolutionSource) ??
+              (selectedUser.provider === "twitter" ? "twitter" : "farcaster")
           );
           setIsRecipientResolving(false);
           return;
@@ -262,7 +296,13 @@ export function GlobalSendDrawer() {
 
       if (!cancelled) {
         setResolvedRecipientAddress(fallbackAddress);
-        setRecipientResolutionSource("farcaster");
+        setRecipientResolutionSource(
+          selectedUser.provider === "twitter"
+            ? "twitter"
+            : selectedUser.provider === "address"
+              ? "address"
+              : "farcaster"
+        );
         setIsRecipientResolving(false);
       }
     };
@@ -271,14 +311,16 @@ export function GlobalSendDrawer() {
     return () => {
       cancelled = true;
     };
-  }, [selectedUser]);
+  }, [selectedUser, identityToken, getAccessToken]);
 
   useEffect(() => {
     if (!isOpen || mode !== "search" || query.trim() !== "") return;
 
     const cacheKey =
-      (linkedFarcasterFid ? `fid:${linkedFarcasterFid}` : null) ??
+      (linkedFarcasterFid ? `farcaster:fid:${linkedFarcasterFid}` : null) ??
       linkedFarcasterUsername ??
+      (linkedTwitterSubject ? `twitter:${linkedTwitterSubject}` : null) ??
+      linkedTwitterUsername ??
       identityUsername ??
       identityAddress;
 
@@ -300,6 +342,8 @@ export function GlobalSendDrawer() {
     query,
     linkedFarcasterFid,
     linkedFarcasterUsername,
+    linkedTwitterSubject,
+    linkedTwitterUsername,
     identityUsername,
     identityAddress,
   ]);
@@ -321,11 +365,13 @@ export function GlobalSendDrawer() {
               );
               const profile = await profileRes.json().catch(() => null);
 
-              const addressResult: FarcasterUser = {
+              const addressResult: SocialUser = {
+                id: `address:${trimmedQuery.toLowerCase()}`,
+                provider: "address",
                 fid:
                   typeof profile?.fid === "number" && Number.isFinite(profile.fid)
                     ? profile.fid
-                    : 0,
+                    : undefined,
                 username:
                   typeof profile?.username === "string" && profile.username
                     ? profile.username
@@ -352,7 +398,8 @@ export function GlobalSendDrawer() {
             } catch {
               setResults([
                 {
-                  fid: 0,
+                  id: `address:${trimmedQuery.toLowerCase()}`,
+                  provider: "address",
                   username: shortAddress(trimmedQuery),
                   display_name: shortAddress(trimmedQuery),
                   pfp_url: "",
@@ -387,11 +434,13 @@ export function GlobalSendDrawer() {
               );
               const profile = await profileRes.json().catch(() => null);
 
-              const ensResult: FarcasterUser = {
+              const ensResult: SocialUser = {
+                id: `address:${ensAddress.toLowerCase()}`,
+                provider: "address",
                 fid:
                   typeof profile?.fid === "number" && Number.isFinite(profile.fid)
                     ? profile.fid
-                    : 0,
+                    : undefined,
                 username:
                   typeof profile?.username === "string" && profile.username
                     ? profile.username
@@ -421,24 +470,80 @@ export function GlobalSendDrawer() {
             }
           }
 
+          if (prefersTwitterGraph) {
+            const token = await getAuthToken();
+            const res = await fetch(
+              `/api/twitter/user/by-username?username=${encodeURIComponent(
+                normalizedQuery
+              )}`,
+              token
+                ? {
+                    headers: {
+                      Authorization: `Bearer ${token}`,
+                    },
+                  }
+                : undefined
+            );
+            const data = await res.json().catch(() => null);
+            setResults(data?.user ? [data.user] : []);
+            return;
+          }
+
           const res = await fetch(
             `/api/neynar/user/search?q=${encodeURIComponent(query)}`
           );
           const data = await res.json();
-          const searchResults = data.users?.slice(0, 10) || [];
+          const searchResults =
+            data.users?.slice(0, 10)?.map((entry: SocialUser) => ({
+              ...entry,
+              id:
+                typeof entry?.fid === "number"
+                  ? `farcaster:${entry.fid}`
+                  : `farcaster:${String(entry?.username ?? normalizedQuery).toLowerCase()}`,
+              provider: "farcaster" as const,
+            })) || [];
           setResults(searchResults);
         } else {
+          if (prefersTwitterGraph) {
+            const token = await getAuthToken();
+            if (!token) {
+              setResults([]);
+              return;
+            }
+            const res = await fetch("/api/twitter/following?limit=20", {
+              headers: {
+                Authorization: `Bearer ${token}`,
+              },
+            });
+            const data = await res.json().catch(() => null);
+            if (Array.isArray(data)) {
+              setResults(data);
+
+              const cacheKey =
+                (linkedTwitterSubject ? `twitter:${linkedTwitterSubject}` : null) ??
+                linkedTwitterUsername ??
+                identityUsername ??
+                identityAddress;
+              if (cacheKey) {
+                localStorage.setItem(`tab_friends_${cacheKey}`, JSON.stringify(data));
+              }
+            } else {
+              setResults([]);
+            }
+            return;
+          }
+
           const followingQuery = linkedFarcasterFid
             ? `fid=${encodeURIComponent(String(linkedFarcasterFid))}`
             : linkedFarcasterUsername
               ? `username=${encodeURIComponent(linkedFarcasterUsername)}`
               : identityFid
                 ? `fid=${encodeURIComponent(String(identityFid))}`
-            : identityUsername
-              ? `username=${encodeURIComponent(identityUsername)}`
-                : identityAddress
-                ? `address=${encodeURIComponent(identityAddress)}`
-                : null;
+                : identityUsername
+                  ? `username=${encodeURIComponent(identityUsername)}`
+                  : identityAddress
+                    ? `address=${encodeURIComponent(identityAddress)}`
+                    : null;
 
           if (!followingQuery) {
             setResults([]);
@@ -452,11 +557,19 @@ export function GlobalSendDrawer() {
             const next = data
               .slice(0, 20)
               .map((entry) => entry?.user ?? entry)
-              .filter(Boolean);
+              .filter(Boolean)
+              .map((entry: SocialUser) => ({
+                ...entry,
+                id:
+                  typeof entry?.fid === "number"
+                    ? `farcaster:${entry.fid}`
+                    : `farcaster:${String(entry?.username ?? "").toLowerCase()}`,
+                provider: "farcaster" as const,
+              }));
             setResults(next);
 
             const cacheKey =
-              (linkedFarcasterFid ? `fid:${linkedFarcasterFid}` : null) ??
+              (linkedFarcasterFid ? `farcaster:fid:${linkedFarcasterFid}` : null) ??
               linkedFarcasterUsername ??
               identityUsername ??
               identityAddress;
@@ -481,9 +594,14 @@ export function GlobalSendDrawer() {
     mode,
     linkedFarcasterFid,
     linkedFarcasterUsername,
+    linkedTwitterSubject,
+    linkedTwitterUsername,
     identityFid,
     identityUsername,
     identityAddress,
+    prefersTwitterGraph,
+    identityToken,
+    getAccessToken,
   ]);
 
   useEffect(() => {
@@ -666,7 +784,7 @@ export function GlobalSendDrawer() {
                     <input
                       ref={inputRef}
                       type="text"
-                      placeholder="farcaster @, ens, or 0x..."
+                      placeholder="social @, ens, or 0x..."
                       value={query}
                       onFocus={() => {
                         if (mode === "token") {
@@ -722,7 +840,7 @@ export function GlobalSendDrawer() {
                     !(query.trim() !== "" && isSearching) &&
                     results.map((user) => (
                       <button
-                        key={user.fid}
+                        key={getSocialUserKey(user)}
                         onClick={() => {
                           setSelectedUser(user);
                           setSelectedToken("USDC"); // or default
@@ -733,7 +851,7 @@ export function GlobalSendDrawer() {
                       >
                         <UserAvatar
                           src={user.pfp_url}
-                          seed={user.username ?? user.fid}
+                          seed={user.username ?? user.fid ?? user.id}
                           width={32}
                           className="w-8 h-8 rounded-full object-cover mr-3 shrink-0"
                         />
@@ -829,7 +947,11 @@ export function GlobalSendDrawer() {
                       <div className="relative w-16 h-16 rounded-full bg-purple-100 text-purple-800 flex items-center justify-center">
                         <UserAvatar
                           src={selectedUser?.pfp_url}
-                          seed={selectedUser?.username ?? selectedUser?.fid}
+                          seed={
+                            selectedUser?.username ??
+                            selectedUser?.fid ??
+                            selectedUser?.id
+                          }
                           width={64}
                           alt={selectedUser?.username ?? "Recipient"}
                           className="w-16 h-16 rounded-full object-cover"
@@ -847,7 +969,9 @@ export function GlobalSendDrawer() {
                       <ResponsiveDialogTitle className="text-lg font-medium text-center mt-4 pt-4">
                         You're sending {""}
                         <span className="text-primary mt-2">
-                          @{selectedUser?.username}
+                          {selectedUser?.provider === "address"
+                            ? selectedUser?.display_name ?? selectedUser?.username
+                            : `@${selectedUser?.username}`}
                         </span>
                       </ResponsiveDialogTitle>
 

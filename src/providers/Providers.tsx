@@ -39,9 +39,19 @@ function Providers({ children }: React.PropsWithChildren) {
               <SendDrawerProvider>
                 <Toaster
                   richColors
+                  expand={false}
                   position="top-center"
                   offset={{ top: "20px" }}
                   mobileOffset={{ top: "calc(env(safe-area-inset-top) + 72px)" }}
+                  toastOptions={{
+                    classNames: {
+                      toast:
+                        "w-fit max-w-[calc(100vw-32px)] rounded-full px-4 py-3",
+                      content: "px-0",
+                      title: "text-sm",
+                      description: "text-sm",
+                    },
+                  }}
                 />
                 <>
                   {children}
@@ -60,12 +70,11 @@ function Providers({ children }: React.PropsWithChildren) {
     <PrivyProvider
       appId={process.env.NEXT_PUBLIC_PRIVY_APP_ID!}
       config={{
-        loginMethods: ["email", "farcaster"],
+        loginMethods: ["email", "farcaster", "twitter"],
         externalWallets: {
           disableAllExternalWallets: true,
         },
         embeddedWallets: {
-          createOnLogin: "all-users",
           ethereum: {
             createOnLogin: "all-users",
           },

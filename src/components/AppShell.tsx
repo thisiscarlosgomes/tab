@@ -1,8 +1,15 @@
 "use client";
 
-import { useEffect, useMemo, useRef } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
-import { useIdentityToken, usePrivy, useToken } from "@privy-io/react-auth";
+import {
+  useCreateWallet,
+  useIdentityToken,
+  useOAuthTokens,
+  usePrivy,
+  useToken,
+  useWallets,
+} from "@privy-io/react-auth";
 import { Header } from "@/components/header";
 import { FooterNav } from "@/components/footer-nav";
 import { InstallQrCard } from "@/components/InstallQrCard";
@@ -14,11 +21,24 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const { ready, authenticated, user } = usePrivy();
   const { identityToken } = useIdentityToken();
   const { getAccessToken } = useToken();
+  const { wallets } = useWallets();
+  const { createWallet } = useCreateWallet();
   const lastSyncedUserKeyRef = useRef<string | null>(null);
+  const walletCreationAttemptedUserIdRef = useRef<string | null>(null);
+  const [pendingTwitterOAuthTokens, setPendingTwitterOAuthTokens] = useState<{
+    provider: string;
+    accessToken: string;
+    accessTokenExpiresInSeconds?: number;
+    refreshToken?: string;
+    refreshTokenExpiresInSeconds?: number;
+    scopes?: string[];
+  } | null>(null);
 
   const isPublicRoute =
     pathname === "/" ||
     pathname === "/faq" ||
+    pathname === "/privacy" ||
+    pathname === "/terms" ||
     pathname.startsWith("/claim/") ||
     pathname.startsWith("/claims/") ||
     pathname.startsWith("/r/") ||
@@ -32,6 +52,14 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const hideAssistantLauncherOnRoute = pathname.startsWith("/assistant");
   const hideInstallQrOnRoute = pathname.startsWith("/assistant");
   const showDesktopHeaderOnly = pathname.startsWith("/game");
+  const hasLinkedTwitter = useMemo(
+    () =>
+      Boolean(
+        user?.twitter ||
+          user?.linkedAccounts?.some((account) => account.type === "twitter_oauth")
+      ),
+    [user]
+  );
   const hasLinkedFarcaster = useMemo(
     () =>
       Boolean(
@@ -40,10 +68,75 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       ),
     [user]
   );
-  const needsFarcasterOnboarding = Boolean(
-    ready && authenticated && user?.id && !hasLinkedFarcaster
+  const hasLinkedSupportedSocial = hasLinkedFarcaster || hasLinkedTwitter;
+  const hasEmbeddedPrivyWallet = useMemo(
+    () =>
+      wallets.some(
+        (wallet) =>
+          wallet.walletClientType === "privy" &&
+          typeof wallet.address === "string"
+      ),
+    [wallets]
   );
-  const isAuthed = ready && authenticated && !needsFarcasterOnboarding;
+  const needsSocialOnboarding = Boolean(
+    ready && authenticated && user?.id && !hasLinkedSupportedSocial
+  );
+  const isAuthed = ready && authenticated && !needsSocialOnboarding;
+
+  useOAuthTokens({
+    onOAuthTokenGrant: async ({ oAuthTokens }) => {
+      if (oAuthTokens.provider !== "twitter") return;
+      setPendingTwitterOAuthTokens({
+        provider: oAuthTokens.provider,
+        accessToken: oAuthTokens.accessToken,
+        accessTokenExpiresInSeconds: oAuthTokens.accessTokenExpiresInSeconds,
+        refreshToken: oAuthTokens.refreshToken,
+        refreshTokenExpiresInSeconds: oAuthTokens.refreshTokenExpiresInSeconds,
+        scopes: Array.isArray(oAuthTokens.scopes) ? oAuthTokens.scopes : [],
+      });
+    },
+  });
+
+  useEffect(() => {
+    if (!pendingTwitterOAuthTokens) return;
+    if (!ready || !authenticated || !user?.id) return;
+
+    let cancelled = false;
+    const persistTwitterOAuthTokens = async () => {
+      const token = identityToken ?? (await getAccessToken().catch(() => null));
+      if (!token || cancelled) return;
+
+      try {
+        const res = await fetch("/api/twitter/oauth", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${token}`,
+          },
+          body: JSON.stringify({
+            tokens: pendingTwitterOAuthTokens,
+          }),
+        });
+
+        if (!res.ok || cancelled) return;
+        setPendingTwitterOAuthTokens(null);
+      } catch {
+        // best-effort token persistence for Twitter graph sync
+      }
+    };
+
+    void persistTwitterOAuthTokens();
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    pendingTwitterOAuthTokens,
+    ready,
+    authenticated,
+    user?.id,
+    identityToken,
+    getAccessToken,
+  ]);
 
   useEffect(() => {
     if (ready && !authenticated && !isPublicRoute) {
@@ -52,11 +145,11 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   }, [ready, authenticated, isPublicRoute, router]);
 
   useEffect(() => {
-    if (!ready || !authenticated || !needsFarcasterOnboarding) return;
+    if (!ready || !authenticated || !needsSocialOnboarding) return;
     if (!isPublicRoute) {
       router.replace("/");
     }
-  }, [ready, authenticated, needsFarcasterOnboarding, isPublicRoute, router]);
+  }, [ready, authenticated, needsSocialOnboarding, isPublicRoute, router]);
 
   useEffect(() => {
     if (!isAuthed) return;
@@ -67,12 +160,42 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   }, [isAuthed, router]);
 
   useEffect(() => {
-    if (!ready || !authenticated || !user?.id || !hasLinkedFarcaster) {
+    if (!ready || !authenticated || !user?.id) {
+      walletCreationAttemptedUserIdRef.current = null;
+      return;
+    }
+
+    if (hasEmbeddedPrivyWallet) {
+      walletCreationAttemptedUserIdRef.current = user.id;
+      return;
+    }
+
+    if (walletCreationAttemptedUserIdRef.current === user.id) return;
+    walletCreationAttemptedUserIdRef.current = user.id;
+
+    let cancelled = false;
+    const ensureWallet = async () => {
+      try {
+        await createWallet();
+      } catch (error) {
+        if (cancelled) return;
+        console.error("Failed to create embedded wallet", error);
+      }
+    };
+
+    void ensureWallet();
+    return () => {
+      cancelled = true;
+    };
+  }, [ready, authenticated, user?.id, hasEmbeddedPrivyWallet, createWallet]);
+
+  useEffect(() => {
+    if (!ready || !authenticated || !user?.id || !hasLinkedSupportedSocial) {
       lastSyncedUserKeyRef.current = null;
       return;
     }
 
-    const syncKey = `${user.id}:${user.farcaster?.fid ?? "linked"}`;
+    const syncKey = `${user.id}:${user.farcaster?.fid ?? user.twitter?.subject ?? "linked"}`;
     if (lastSyncedUserKeyRef.current === syncKey) return;
     lastSyncedUserKeyRef.current = syncKey;
 
@@ -97,7 +220,16 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     return () => {
       cancelled = true;
     };
-  }, [ready, authenticated, user?.id, user?.farcaster?.fid, hasLinkedFarcaster, identityToken, getAccessToken]);
+  }, [
+    ready,
+    authenticated,
+    user?.id,
+    user?.farcaster?.fid,
+    user?.twitter?.subject,
+    hasLinkedSupportedSocial,
+    identityToken,
+    getAccessToken,
+  ]);
 
   if (!ready) {
     return (

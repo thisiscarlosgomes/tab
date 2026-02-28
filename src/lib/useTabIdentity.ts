@@ -86,6 +86,7 @@ export function useTabIdentity() {
   }, [address]);
 
   const privyFarcaster = user?.farcaster ?? null;
+  const privyTwitter = user?.twitter ?? null;
   const privyFid =
     typeof privyFarcaster?.fid === "number"
       ? privyFarcaster.fid
@@ -98,23 +99,22 @@ export function useTabIdentity() {
   const username =
     profile?.username ??
     (typeof privyFarcaster?.username === "string" ? privyFarcaster.username : null) ??
+    (typeof privyTwitter?.username === "string" ? privyTwitter.username : null) ??
     null;
   const displayName =
     profile?.display_name ??
     (typeof privyFarcaster?.displayName === "string"
       ? privyFarcaster.displayName
-      : typeof privyFarcaster?.display_name === "string"
-        ? privyFarcaster.display_name
-        : null) ??
+      : null) ??
+    (typeof privyTwitter?.name === "string" ? privyTwitter.name : null) ??
     username ??
     (address ? shortAddress(address) : null);
   const pfp =
     profile?.pfp_url ??
-    (typeof privyFarcaster?.pfpUrl === "string"
-      ? privyFarcaster.pfpUrl
-      : typeof privyFarcaster?.pfp === "string"
-        ? privyFarcaster.pfp
-        : null) ??
+    (typeof privyFarcaster?.pfp === "string" ? privyFarcaster.pfp : null) ??
+    (typeof privyTwitter?.profilePictureUrl === "string"
+      ? privyTwitter.profilePictureUrl
+      : null) ??
     null;
 
   return {

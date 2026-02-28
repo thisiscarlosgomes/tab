@@ -7,7 +7,7 @@ import { useFrameSplash } from "@/providers/FrameSplashProvider";
 import {
   useIdentityToken,
   useLinkAccount,
-  useLoginWithEmail,
+  useLogin,
   usePrivy,
   useToken,
 } from "@privy-io/react-auth";
@@ -26,10 +26,8 @@ import clsx from "clsx";
 
 import {
   Bot,
-  Clipboard,
   CircleDollarSign,
   Dice5,
-  Loader2,
   Ticket,
 } from "lucide-react";
 import {
@@ -37,25 +35,13 @@ import {
   ResponsiveDialogContent,
   ResponsiveDialogTitle,
 } from "@/components/ui/responsive-dialog";
+import { getSocialUserKey, SocialUser } from "@/lib/social";
 
 import { useTicketCountForRound } from "@/lib/BaseJackpotQueries";
 import { useTabIdentity } from "@/lib/useTabIdentity";
 import { UserAvatar } from "@/components/ui/user-avatar";
 
 const VAULT_ADDRESS = "0xc1256Ae5FF1cf2719D4937adb3bbCCab2E00A2Ca";
-const OTP_LENGTH = 6;
-
-type FriendUser = {
-  fid: number;
-  username?: string;
-  display_name?: string;
-  pfp_url?: string;
-  verified_addresses?: {
-    primary?: {
-      eth_address?: string | null;
-    };
-  };
-};
 
 type MultiBalances = {
   base?: number;
@@ -366,27 +352,17 @@ export default function Home() {
   const { ready, authenticated, user } = usePrivy();
   const { identityToken } = useIdentityToken();
   const { getAccessToken } = useToken();
-  const { sendCode, loginWithCode } = useLoginWithEmail();
-  const { linkFarcaster } = useLinkAccount();
+  const { login } = useLogin();
+  const { linkFarcaster, linkTwitter } = useLinkAccount();
   const [isConnecting, setIsConnecting] = useState(false);
-  const [authStep, setAuthStep] = useState<"welcome" | "email" | "code">("welcome");
-  const [authEmail, setAuthEmail] = useState("");
-  const [authOtp, setAuthOtp] = useState<string[]>(Array(OTP_LENGTH).fill(""));
-  const [authBusy, setAuthBusy] = useState<"send" | "verify" | "resend" | null>(null);
-  const [authError, setAuthError] = useState<string | null>(null);
-  const [lastAutoSubmittedCode, setLastAutoSubmittedCode] = useState<string | null>(null);
-  const [resendSecondsLeft, setResendSecondsLeft] = useState(0);
-  const emailInputRef = useRef<HTMLInputElement | null>(null);
-  const otpInputRefs = useRef<Array<HTMLInputElement | null>>([]);
-  const [farcasterLinkError, setFarcasterLinkError] = useState<string | null>(
+  const [socialLinkError, setSocialLinkError] = useState<string | null>(
     null
   );
-  const [pendingPostOtpNotificationCheck, setPendingPostOtpNotificationCheck] =
-    useState(false);
   const [showPostOtpNotificationDialog, setShowPostOtpNotificationDialog] =
     useState(false);
   const [postOtpNotificationBusy, setPostOtpNotificationBusy] = useState(false);
   const [postOtpNotificationError, setPostOtpNotificationError] = useState<string | null>(null);
+  const notificationCheckUserIdRef = useRef<string | null>(null);
 
   const { open: openScanDrawer } = useScanDrawer();
   const { open, setQuery, setSelectedUser, setSelectedToken, setTokenType } =
@@ -399,7 +375,7 @@ export default function Home() {
   const authWelcomeTouchStartXRef = useRef<number | null>(null);
   const authWelcomeSwipeHandledRef = useRef(false);
 
-  const [friends, setFriends] = useState<FriendUser[]>([]);
+  const [friends, setFriends] = useState<SocialUser[]>([]);
   const [multiBalances, setMultiBalances] = useState<MultiBalances | null>(null);
 
   const [shake, setShake] = useState(false);
@@ -419,7 +395,11 @@ export default function Home() {
   const [jackpotTickets, setJackpotTickets] = useState<number | null>(null);
 
   const { data: ticketCount, isLoading: loadingTickets } =
-    useTicketCountForRound(address);
+    useTicketCountForRound(
+      address && address.startsWith("0x")
+        ? (address as `0x${string}`)
+        : undefined
+    );
 
   const hasEarn = typeof earnBalance === "number" && earnBalance > 0;
 
@@ -485,43 +465,19 @@ export default function Home() {
 
   useEffect(() => {
     if (authenticated) {
-      setAuthStep("welcome");
-      setAuthOtp(Array(OTP_LENGTH).fill(""));
-      setAuthError(null);
-      setLastAutoSubmittedCode(null);
-      setResendSecondsLeft(0);
       return;
     }
-    setPendingPostOtpNotificationCheck(false);
+    notificationCheckUserIdRef.current = null;
     setShowPostOtpNotificationDialog(false);
     setPostOtpNotificationBusy(false);
     setPostOtpNotificationError(null);
   }, [authenticated]);
 
   useEffect(() => {
-    if (authStep !== "welcome") return;
-    setAuthWelcomeStep(0);
-  }, [authStep]);
-
-  useEffect(() => {
-    if (resendSecondsLeft <= 0) return;
-    const id = window.setInterval(() => {
-      setResendSecondsLeft((prev) => Math.max(prev - 1, 0));
-    }, 1000);
-    return () => window.clearInterval(id);
-  }, [resendSecondsLeft]);
-
-  useEffect(() => {
     if (!user?.id) {
-      setFarcasterLinkError(null);
+      setSocialLinkError(null);
     }
   }, [user?.id]);
-
-  useEffect(() => {
-    if (authStep !== "email") return;
-    const id = window.setTimeout(() => emailInputRef.current?.focus(), 50);
-    return () => window.clearTimeout(id);
-  }, [authStep]);
 
   useEffect(() => {
     if (typeof ticketCount === "number") {
@@ -533,11 +489,19 @@ export default function Home() {
     user?.farcaster ||
       user?.linkedAccounts?.some((account) => account.type === "farcaster")
   );
+  const hasLinkedTwitter = Boolean(
+    user?.twitter ||
+      user?.linkedAccounts?.some((account) => account.type === "twitter_oauth")
+  );
   const linkedFarcasterFid = user?.farcaster?.fid ?? null;
   const linkedFarcasterUsername = user?.farcaster?.username ?? null;
+  const linkedTwitterSubject = user?.twitter?.subject ?? null;
+  const linkedTwitterUsername = user?.twitter?.username ?? null;
 
-  const shouldShowFarcasterLinkStep = Boolean(
-    ready && authenticated && user?.id && !hasLinkedFarcaster
+  const hasLinkedSupportedSocial = hasLinkedFarcaster || hasLinkedTwitter;
+
+  const shouldShowSocialLinkStep = Boolean(
+    ready && authenticated && user?.id && !hasLinkedSupportedSocial
   );
 
   const getAuthToken = useCallback(async () => {
@@ -545,8 +509,9 @@ export default function Home() {
   }, [identityToken, getAccessToken]);
 
   useEffect(() => {
-    if (!pendingPostOtpNotificationCheck) return;
     if (!authenticated || !user?.id) return;
+    if (notificationCheckUserIdRef.current === user.id) return;
+    notificationCheckUserIdRef.current = user.id;
 
     let cancelled = false;
 
@@ -589,8 +554,6 @@ export default function Home() {
         setShowPostOtpNotificationDialog(true);
       } catch {
         // If status check fails, don't block onboarding.
-      } finally {
-        if (!cancelled) setPendingPostOtpNotificationCheck(false);
       }
     };
 
@@ -598,7 +561,7 @@ export default function Home() {
     return () => {
       cancelled = true;
     };
-  }, [pendingPostOtpNotificationCheck, authenticated, user?.id, getAuthToken]);
+  }, [authenticated, user?.id, getAuthToken]);
 
   useEffect(() => {
     const cached = localStorage.getItem("tab_actives");
@@ -736,10 +699,12 @@ export default function Home() {
 
   useEffect(() => {
     const friendsCacheKey =
-      (linkedFarcasterFid ? `fid:${linkedFarcasterFid}` : null) ??
-      linkedFarcasterUsername ??
-      username ??
-      address;
+      hasLinkedFarcaster
+        ? (linkedFarcasterFid ? `farcaster:fid:${linkedFarcasterFid}` : null) ??
+          linkedFarcasterUsername ??
+          address
+        : (linkedTwitterSubject ? `twitter:${linkedTwitterSubject}` : null) ??
+          linkedTwitterUsername;
     if (!friendsCacheKey) return;
 
     const cached = localStorage.getItem(`tab_friends_${friendsCacheKey}`);
@@ -751,22 +716,53 @@ export default function Home() {
         setFriends(parsed);
       }
     } catch {}
-  }, [linkedFarcasterFid, linkedFarcasterUsername, username, address]);
+  }, [
+    linkedFarcasterFid,
+    linkedFarcasterUsername,
+    linkedTwitterSubject,
+    linkedTwitterUsername,
+    hasLinkedFarcaster,
+    address,
+  ]);
 
   /* LOAD FRIENDS */
   useEffect(() => {
-    if (!linkedFarcasterFid && !linkedFarcasterUsername && !username && !address) return;
+    if (!hasLinkedFarcaster && !hasLinkedTwitter)
+      return;
     let cancelled = false;
 
     const fetchFriends = async () => {
       try {
+        if (!hasLinkedFarcaster && hasLinkedTwitter) {
+          const token = await getAuthToken();
+          if (!token) return;
+
+          const res = await fetch("/api/twitter/following?limit=10", {
+            headers: { Authorization: `Bearer ${token}` },
+          });
+          const data = await res.json().catch(() => null);
+
+          if (cancelled) return;
+
+          if (Array.isArray(data) && data.length > 0) {
+            setFriends(data);
+            const cacheKey =
+              (linkedTwitterSubject ? `twitter:${linkedTwitterSubject}` : null) ??
+              linkedTwitterUsername;
+            if (!cacheKey) return;
+            localStorage.setItem(
+              `tab_friends_${cacheKey}`,
+              JSON.stringify(data)
+            );
+          }
+          return;
+        }
+
         const query = linkedFarcasterFid
           ? `fid=${encodeURIComponent(String(linkedFarcasterFid))}`
           : linkedFarcasterUsername
             ? `username=${encodeURIComponent(linkedFarcasterUsername)}`
-            : username
-              ? `username=${encodeURIComponent(username)}`
-              : `address=${encodeURIComponent(address!)}`;
+            : `address=${encodeURIComponent(address!)}`;
         const res = await fetch(`/api/neynar/user/following?${query}`);
         const data = await res.json();
 
@@ -776,12 +772,19 @@ export default function Home() {
           const next = data
             .slice(0, 10)
             .map((entry) => entry?.user ?? entry)
-            .filter(Boolean) as FriendUser[];
+            .filter(Boolean)
+            .map((entry: SocialUser) => ({
+              ...entry,
+              id:
+                typeof entry?.fid === "number"
+                  ? `farcaster:${entry.fid}`
+                  : `farcaster:${String(entry?.username ?? "").toLowerCase()}`,
+              provider: "farcaster" as const,
+            })) as SocialUser[];
           setFriends(next);
           const cacheKey =
-            (linkedFarcasterFid ? `fid:${linkedFarcasterFid}` : null) ??
+            (linkedFarcasterFid ? `farcaster:fid:${linkedFarcasterFid}` : null) ??
             linkedFarcasterUsername ??
-            username ??
             address;
           if (!cacheKey) return;
           localStorage.setItem(
@@ -799,7 +802,17 @@ export default function Home() {
     return () => {
       cancelled = true;
     };
-  }, [linkedFarcasterFid, linkedFarcasterUsername, username, address]);
+  }, [
+    linkedFarcasterFid,
+    linkedFarcasterUsername,
+    linkedTwitterSubject,
+    linkedTwitterUsername,
+    hasLinkedFarcaster,
+    hasLinkedTwitter,
+    address,
+    identityToken,
+    getAccessToken,
+  ]);
 
   useEffect(() => {
     if (!address) return;
@@ -819,7 +832,8 @@ export default function Home() {
     };
 
     const refetchBalances = async () => {
-      const data = await loadBalances(address, true);
+      if (!address || !address.startsWith("0x")) return;
+      const data = await loadBalances(address as `0x${string}`, true);
       setMultiBalances((prev) => mergeAndCacheBalances(prev, data));
     };
 
@@ -913,114 +927,6 @@ export default function Home() {
   /* LANDING PAGE (WALLET CONNECT) */
   /* ------------------------------------------ */
   const hasFriends = friends.length > 0;
-  const authCode = authOtp.join("");
-
-  const startEmailLogin = async (opts?: { resend?: boolean }) => {
-    const email = authEmail.trim();
-    if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
-      setAuthError("Enter a valid email.");
-      return;
-    }
-
-    setAuthError(null);
-    setAuthBusy(opts?.resend ? "resend" : "send");
-
-    try {
-      await sendCode({ email });
-      setAuthStep("code");
-      setAuthOtp(Array(OTP_LENGTH).fill(""));
-      setResendSecondsLeft(60);
-      setTimeout(() => otpInputRefs.current[0]?.focus(), 0);
-    } catch (err) {
-      console.error("Email code send failed", err);
-      setAuthError("Could not send code. Please try again.");
-    } finally {
-      setAuthBusy(null);
-    }
-  };
-
-  const confirmEmailCode = async () => {
-    if (authCode.length !== OTP_LENGTH) {
-      setAuthError("Enter the 6-digit code.");
-      return;
-    }
-
-    setAuthError(null);
-    setAuthBusy("verify");
-    try {
-      await loginWithCode({ code: authCode });
-      setPendingPostOtpNotificationCheck(true);
-    } catch (err) {
-      console.error("Email code verify failed", err);
-      setAuthError("Invalid code. Please try again.");
-    } finally {
-      setAuthBusy(null);
-    }
-  };
-
-  const setOtpDigit = (index: number, nextValue: string) => {
-    const digit = nextValue.replace(/\D/g, "").slice(-1);
-    setAuthOtp((prev) => {
-      const next = [...prev];
-      next[index] = digit;
-      return next;
-    });
-    if (digit && index < OTP_LENGTH - 1) {
-      otpInputRefs.current[index + 1]?.focus();
-    }
-  };
-
-  const fillOtpFromDigits = (digits: string) => {
-    const cleaned = digits.replace(/\D/g, "").slice(0, OTP_LENGTH);
-    if (!cleaned) return;
-    setAuthOtp((prev) => {
-      const next = [...prev];
-      for (let i = 0; i < OTP_LENGTH; i += 1) {
-        next[i] = cleaned[i] ?? "";
-      }
-      return next;
-    });
-    setAuthError(null);
-    const focusIndex = Math.min(cleaned.length, OTP_LENGTH - 1);
-    setTimeout(() => otpInputRefs.current[focusIndex]?.focus(), 0);
-  };
-
-  const pasteOtpFromClipboard = async () => {
-    try {
-      const text = await navigator.clipboard.readText();
-      fillOtpFromDigits(text);
-    } catch (err) {
-      console.error("Clipboard read failed", err);
-      setAuthError("Paste failed. Try long-press paste.");
-    }
-  };
-
-  const emailDomainSuggestions = ["@gmail.com", "@icloud.com"];
-  const emailValueTrimmed = authEmail.trim();
-  const isAuthEmailValid = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(emailValueTrimmed);
-  const emailLocalPart = emailValueTrimmed.split("@")[0] ?? "";
-  const showInvalidEmailError = authError === "Enter a valid email.";
-  const showEmailDomainSuggestions = authStep === "email";
-
-  const applyEmailDomainSuggestion = (domain: string) => {
-    const local = authEmail.trim().split("@")[0]?.replace(/\s/g, "") ?? "";
-    if (!local) return;
-    setAuthEmail(`${local}${domain}`);
-    setAuthError(null);
-    setTimeout(() => emailInputRef.current?.focus(), 0);
-  };
-
-  useEffect(() => {
-    if (authStep !== "code") return;
-    if (authCode.length !== OTP_LENGTH) {
-      if (lastAutoSubmittedCode) setLastAutoSubmittedCode(null);
-      return;
-    }
-    if (authBusy !== null) return;
-    if (lastAutoSubmittedCode === authCode) return;
-    setLastAutoSubmittedCode(authCode);
-    void confirmEmailCode();
-  }, [authStep, authCode, authBusy, lastAutoSubmittedCode]);
 
   const dismissPostOtpNotificationDialog = useCallback(() => {
     if (!user?.id) {
@@ -1106,330 +1012,144 @@ export default function Home() {
   }
 
   if (!authenticated) {
-    const showWelcomeStep = authStep === "welcome";
-    const showCodeStep = authStep === "code";
     const activeWelcomeSlide = AUTH_WELCOME_STEPS[authWelcomeStep];
 
     return (
       <main className="relative h-[100dvh] w-full overflow-hidden bg-background text-center text-white overscroll-none">
 
         <div className="relative z-10 h-full px-6 mx-auto w-full max-w-md flex flex-col">
-          {showWelcomeStep ? (
-            <div className="bg-background flex-1 min-h-0 pt-[max(6rem,env(safe-area-inset-top))] pb-44 flex flex-col">
-              <div
-                onTouchStart={(e) => {
-                  authWelcomeTouchStartXRef.current = e.touches[0]?.clientX ?? null;
-                  authWelcomeSwipeHandledRef.current = false;
-                }}
-                onTouchMove={(e) => {
-                  e.preventDefault();
-                  if (authWelcomeSwipeHandledRef.current) return;
-                  const startX = authWelcomeTouchStartXRef.current;
-                  const currentX = e.touches[0]?.clientX ?? null;
-                  if (startX === null || currentX === null) return;
+          <div className="bg-background flex-1 min-h-0 pt-[max(6rem,env(safe-area-inset-top))] pb-44 flex flex-col">
+            <div
+              onTouchStart={(e) => {
+                authWelcomeTouchStartXRef.current = e.touches[0]?.clientX ?? null;
+                authWelcomeSwipeHandledRef.current = false;
+              }}
+              onTouchMove={(e) => {
+                e.preventDefault();
+                if (authWelcomeSwipeHandledRef.current) return;
+                const startX = authWelcomeTouchStartXRef.current;
+                const currentX = e.touches[0]?.clientX ?? null;
+                if (startX === null || currentX === null) return;
 
-                  const deltaX = currentX - startX;
-                  const threshold = 18;
-                  let nextIndex: number | null = null;
+                const deltaX = currentX - startX;
+                const threshold = 18;
+                let nextIndex: number | null = null;
 
-                  if (deltaX <= -threshold) {
-                    nextIndex = Math.min(AUTH_WELCOME_STEPS.length - 1, authWelcomeStep + 1);
-                  } else if (deltaX >= threshold) {
-                    nextIndex = Math.max(0, authWelcomeStep - 1);
-                  }
+                if (deltaX <= -threshold) {
+                  nextIndex = Math.min(AUTH_WELCOME_STEPS.length - 1, authWelcomeStep + 1);
+                } else if (deltaX >= threshold) {
+                  nextIndex = Math.max(0, authWelcomeStep - 1);
+                }
 
-                  if (nextIndex === null || nextIndex === authWelcomeStep) return;
-                  authWelcomeSwipeHandledRef.current = true;
-                  setAuthWelcomeStep(nextIndex);
-                }}
-                onTouchEnd={(e) => {
-                  const startX = authWelcomeTouchStartXRef.current;
-                  const endX = e.changedTouches[0]?.clientX ?? null;
-                  const alreadyHandled = authWelcomeSwipeHandledRef.current;
-                  authWelcomeTouchStartXRef.current = null;
-                  authWelcomeSwipeHandledRef.current = false;
-                  if (alreadyHandled) return;
+                if (nextIndex === null || nextIndex === authWelcomeStep) return;
+                authWelcomeSwipeHandledRef.current = true;
+                setAuthWelcomeStep(nextIndex);
+              }}
+              onTouchEnd={(e) => {
+                const startX = authWelcomeTouchStartXRef.current;
+                const endX = e.changedTouches[0]?.clientX ?? null;
+                const alreadyHandled = authWelcomeSwipeHandledRef.current;
+                authWelcomeTouchStartXRef.current = null;
+                authWelcomeSwipeHandledRef.current = false;
+                if (alreadyHandled) return;
 
-                  if (startX === null || endX === null) return;
-                  const deltaX = endX - startX;
-                  const threshold = 18;
-                  if (deltaX <= -threshold) {
-                    setAuthWelcomeStep((prev) =>
-                      Math.min(AUTH_WELCOME_STEPS.length - 1, prev + 1)
-                    );
-                  } else if (deltaX >= threshold) {
-                    setAuthWelcomeStep((prev) => Math.max(0, prev - 1));
-                  }
-                }}
-                className="flex-1 min-h-0 w-full overflow-hidden overscroll-none touch-none select-none"
+                if (startX === null || endX === null) return;
+                const deltaX = endX - startX;
+                const threshold = 18;
+                if (deltaX <= -threshold) {
+                  setAuthWelcomeStep((prev) =>
+                    Math.min(AUTH_WELCOME_STEPS.length - 1, prev + 1)
+                  );
+                } else if (deltaX >= threshold) {
+                  setAuthWelcomeStep((prev) => Math.max(0, prev - 1));
+                }
+              }}
+              className="flex-1 min-h-0 w-full overflow-hidden overscroll-none touch-none select-none"
+            >
+              <section
+                key={activeWelcomeSlide.key}
+                className="h-full w-full flex flex-col items-center justify-center text-center px-2 min-h-full"
               >
-                <section
-                  key={activeWelcomeSlide.key}
-                  className="h-full w-full flex flex-col items-center justify-center text-center px-2 min-h-full"
-                >
-                  {activeWelcomeSlide.kind === "brand" ? (
-                    <div className="w-full max-w-sm mx-auto flex items-center justify-center md:pt-24">
-                      <AuthBrandLockup />
-                    </div>
-                  ) : (
-                    <div className="w-full max-w-sm mx-auto flex flex-col items-center justify-center md:pt-18">
-                      <div
-                        aria-hidden
-                        className="relative grid place-items-center h-54 w-54 rounded-full"
-                      >
-                        <div className="grid place-items-center h-40 w-40 rounded-full">
-                          <img
-                            src={activeWelcomeSlide.iconSrc}
-                            alt=""
-                            aria-hidden="true"
-                            className="w-[148px] h-[148px] object-contain object-center"
-                          />
-                        </div>
+                {activeWelcomeSlide.kind === "brand" ? (
+                  <div className="w-full max-w-sm mx-auto flex items-center justify-center md:pt-24">
+                    <AuthBrandLockup />
+                  </div>
+                ) : (
+                  <div className="w-full max-w-sm mx-auto flex flex-col items-center justify-center md:pt-18">
+                    <div
+                      aria-hidden
+                      className="relative grid place-items-center h-54 w-54 rounded-full"
+                    >
+                      <div className="grid place-items-center h-40 w-40 rounded-full">
+                        <img
+                          src={activeWelcomeSlide.iconSrc}
+                          alt=""
+                          aria-hidden="true"
+                          className="w-[148px] h-[148px] object-contain object-center"
+                        />
                       </div>
-
-                      <h2 className="text-xl leading-[1.08] font-semibold tracking-tight text-white text-center">
-                        {activeWelcomeSlide.title}
-                      </h2>
-                      <p className="mt-3 text-lg leading-tight text-white/45 max-w-[18rem] text-center">
-                        {activeWelcomeSlide.desc}
-                      </p>
                     </div>
-                  )}
-                </section>
-              </div>
 
-              <div className="mt-3 flex items-center justify-center gap-2">
-                {AUTH_WELCOME_STEPS.map((step, idx) => (
-                  <button
-                    key={step.key}
-                    type="button"
-                    aria-label={`Go to step ${idx + 1}`}
-                    aria-current={authWelcomeStep === idx}
-                    onClick={() => {
-                      setAuthWelcomeStep(idx);
-                    }}
-                    className={clsx(
-                      "h-2.5 rounded-full transition-all",
-                      authWelcomeStep === idx
-                        ? "w-6 bg-primary"
-                        : "w-2.5 bg-white/20"
-                    )}
-                  />
-                ))}
-              </div>
+                    <h2 className="text-xl leading-[1.08] font-semibold tracking-tight text-white text-center">
+                      {activeWelcomeSlide.title}
+                    </h2>
+                    <p className="mt-3 text-lg leading-tight text-white/45 max-w-[18rem] text-center">
+                      {activeWelcomeSlide.desc}
+                    </p>
+                  </div>
+                )}
+              </section>
             </div>
-          ) : (
-            <div className="flex-1 flex items-center justify-center">
-              <AuthBrandLockup />
+
+            <div className="mt-3 flex items-center justify-center gap-2">
+              {AUTH_WELCOME_STEPS.map((step, idx) => (
+                <button
+                  key={step.key}
+                  type="button"
+                  aria-label={`Go to step ${idx + 1}`}
+                  aria-current={authWelcomeStep === idx}
+                  onClick={() => {
+                    setAuthWelcomeStep(idx);
+                  }}
+                  className={clsx(
+                    "h-2.5 rounded-full transition-all",
+                    authWelcomeStep === idx
+                      ? "w-6 bg-primary"
+                      : "w-2.5 bg-white/20"
+                  )}
+                />
+              ))}
             </div>
-          )}
+          </div>
         </div>
 
         <div className="fixed bottom-0 inset-x-0 z-20 p-5 pb-8">
           <div className="mx-auto w-full max-w-md">
-            {showWelcomeStep && (
-              <Button
-                className="w-full bg-white text-black shadow-[0_10px_40px_rgba(0,0,0,0.35)] mb-2"
-                onClick={() => {
-                  const isLastWelcomeStep =
-                    authWelcomeStep >= AUTH_WELCOME_STEPS.length - 1;
-                  if (!isLastWelcomeStep) {
-                    setAuthWelcomeStep((prev) =>
-                      Math.min(AUTH_WELCOME_STEPS.length - 1, prev + 1)
-                    );
-                    return;
-                  }
-                  setAuthStep("email");
-                  setAuthError(null);
-                }}
-              >
-                {authWelcomeStep >= AUTH_WELCOME_STEPS.length - 1
-                  ? "Sign up / Login"
-                  : "Continue"}
-              </Button>
-            )}
-           
+            <Button
+              className="w-full bg-white text-black shadow-[0_10px_40px_rgba(0,0,0,0.35)] mb-2"
+              onClick={() => {
+                const isLastWelcomeStep =
+                  authWelcomeStep >= AUTH_WELCOME_STEPS.length - 1;
+                if (!isLastWelcomeStep) {
+                  setAuthWelcomeStep((prev) =>
+                    Math.min(AUTH_WELCOME_STEPS.length - 1, prev + 1)
+                  );
+                  return;
+                }
+                login();
+              }}
+            >
+              {authWelcomeStep >= AUTH_WELCOME_STEPS.length - 1
+                ? "Sign up / Login"
+                : "Continue"}
+            </Button>
+            {authWelcomeStep >= AUTH_WELCOME_STEPS.length - 1 ? (
+              <p className="text-center text-sm text-white/35">
+                Sign in with Twitter, Farcaster, or email.
+              </p>
+            ) : null}
           </div>
         </div>
-
-        <ResponsiveDialog
-          open={!showWelcomeStep}
-          onOpenChange={(open) => {
-            if (open) return;
-            setAuthStep("welcome");
-            setAuthError(null);
-            setLastAutoSubmittedCode(null);
-          }}
-        >
-          <ResponsiveDialogContent className="p-4 md:w-full md:max-w-md max-h-[calc(100dvh-110px)] md:max-h-[85vh] overflow-hidden [&>svg]:hidden">
-            <div className="rounded-t-3xl md:rounded-2xl bg-background flex flex-col gap-5 max-h-[calc(100dvh-140px)] md:max-h-[calc(85vh-2rem)] overflow-y-auto">
-              <ResponsiveDialogTitle className="sr-only">
-                {showCodeStep ? "Verify email" : "Log in / Sign up"}
-              </ResponsiveDialogTitle>
-
-              {showCodeStep ? (
-                <>
-                  <div className="space-y-4">
-                    <div className="hidden h-1 w-full bg-white/15 rounded-full overflow-hidden">
-                      <div className="h-full w-1/2 bg-primary" />
-                    </div>
-
-                    <div>
-                      <p className="text-white text-sm pt-6">Enter the code we emailed to</p>
-                        <p className="mt-1 text-white font-semibold text-lg break-all">
-                          {authEmail.trim()}
-                        </p>
-                    </div>
-                  </div>
-
-                  <div className="grid grid-cols-6 gap-2 sm:gap-3">
-                    {authOtp.map((digit, index) => (
-                      <input
-                        key={index}
-                        ref={(node) => {
-                          otpInputRefs.current[index] = node;
-                        }}
-                        type="text"
-                        inputMode="numeric"
-                        autoComplete={index === 0 ? "one-time-code" : "off"}
-                        pattern="[0-9]*"
-                        maxLength={1}
-                        value={digit}
-                        onChange={(e) => setOtpDigit(index, e.target.value)}
-                        onKeyDown={(e) => {
-                          if (e.key === "Backspace" && !authOtp[index] && index > 0) {
-                            otpInputRefs.current[index - 1]?.focus();
-                          }
-                          if (e.key === "ArrowLeft" && index > 0) {
-                            otpInputRefs.current[index - 1]?.focus();
-                          }
-                          if (e.key === "ArrowRight" && index < OTP_LENGTH - 1) {
-                            otpInputRefs.current[index + 1]?.focus();
-                          }
-                          if (e.key === "Enter" && authCode.length === OTP_LENGTH) {
-                            void confirmEmailCode();
-                          }
-                        }}
-                        onPaste={(e) => {
-                          const pasted = e.clipboardData.getData("text");
-                          if (!pasted) return;
-                          e.preventDefault();
-                          fillOtpFromDigits(pasted);
-                        }}
-                        className="h-14 w-full rounded-2xl border border-white/20 bg-transparent text-center text-2xl font-semibold text-white outline-none focus:border-white"
-                      />
-                    ))}
-                  </div>
-
-                  <div className="flex items-center justify-center gap-2 sm:gap-3">
-                    <button
-                      type="button"
-                      onClick={() => void pasteOtpFromClipboard()}
-                      className="inline-flex h-11 items-center gap-2 rounded-full border border-white/20 px-4 text-white font-medium active:scale-95 transition"
-                    >
-                      <Clipboard className="h-4 w-4" />
-                      Paste
-                    </button>
-                    <button
-                      type="button"
-                      disabled={resendSecondsLeft > 0 || authBusy !== null}
-                      onClick={() => void startEmailLogin({ resend: true })}
-                      className="inline-flex h-11 items-center rounded-full border border-white/20 px-4 text-white/90 font-medium disabled:text-white/35 disabled:border-white/10 disabled:cursor-not-allowed active:scale-95 transition"
-                    >
-                      {resendSecondsLeft > 0
-                        ? `Resend (${resendSecondsLeft}s)`
-                        : authBusy === "resend"
-                          ? "Resending..."
-                          : "Resend"}
-                    </button>
-                  </div>
-
-                  <div className="min-h-6 text-center">
-                    {authBusy === "verify" ? (
-                      <Loader2 className="h-6 w-6 animate-spin text-white/80 mx-auto" />
-                    ) : authError ? (
-                      <p className="text-sm text-red-300/90">{authError}</p>
-                    ) : null}
-                  </div>
-                </>
-              ) : (
-                <>
-                  <p className="text-white text-sm text-left pt-6 px-2">
-                    Enter your email to continue.
-                  </p>
-
-                  <div className="w-full space-y-3">
-                    <input
-                      ref={emailInputRef}
-                      type="email"
-                      inputMode="email"
-                      autoComplete="email"
-                      autoCapitalize="none"
-                      autoCorrect="off"
-                      spellCheck={false}
-                      value={authEmail}
-                      onChange={(e) => {
-                        setAuthEmail(e.target.value);
-                        if (authError) setAuthError(null);
-                      }}
-                      placeholder="example@email.com"
-                      className={clsx(
-                        "w-full rounded-2xl border px-5 py-4 text-white text-lg placeholder:text-white/25 outline-none bg-background",
-                        showInvalidEmailError
-                          ? "border-red-400/80 focus:border-red-300"
-                          : "border-white/15 focus:border-white/40"
-                      )}
-                    />
-
-                    {showInvalidEmailError && (
-                      <p className="text-sm text-red-300/90 text-left">{authError}</p>
-                    )}
-
-                    <Button
-                      className={clsx(
-                        "w-full bg-white text-black border",
-                        showInvalidEmailError
-                          ? "border-red-400/80"
-                          : "border-transparent"
-                      )}
-                      disabled={!ready || authBusy !== null || !isAuthEmailValid}
-                      onClick={() => void startEmailLogin()}
-                    >
-                      {authBusy === "send" ? "Sending code..." : "Continue"}
-                    </Button>
-
-                    {showEmailDomainSuggestions && (
-                      <div className="flex gap-2 pt-1 overflow-x-auto scrollbar-hide whitespace-nowrap">
-                        {emailDomainSuggestions.map((domain) => (
-                          <button
-                            key={domain}
-                            type="button"
-                            onClick={() => applyEmailDomainSuggestion(domain)}
-                            disabled={emailLocalPart.length === 0}
-                            className={clsx(
-                              "shrink-0 rounded-full border px-3 py-1.5 text-[14px] font-medium transition",
-                              emailLocalPart.length === 0
-                                ? "border-white/10 bg-white/5 text-white/25 cursor-not-allowed"
-                                : "border-white/15 bg-white text-black active:scale-95"
-                            )}
-                          >
-                            {domain}
-                          </button>
-                        ))}
-                      </div>
-                    )}
-
-                    {authError && !showInvalidEmailError && (
-                      <p className="text-sm text-red-300/90 text-left">{authError}</p>
-                    )}
-                  </div>
-                </>
-              )}
-
-              <p className="hidden text-xs text-white/20 text-center pt-1">2025 © tab tech</p>
-            </div>
-          </ResponsiveDialogContent>
-        </ResponsiveDialog>
       </main>
     );
   }
@@ -1487,7 +1207,7 @@ export default function Home() {
     );
   }
 
-  if (shouldShowFarcasterLinkStep) {
+  if (shouldShowSocialLinkStep) {
     return (
       <main className="relative h-[100dvh] w-full overflow-hidden bg-background text-center text-white overscroll-none">
 
@@ -1499,40 +1219,62 @@ export default function Home() {
           <ResponsiveDialogContent className="p-4 md:w-full md:max-w-md max-h-[calc(100dvh-110px)] md:max-h-[85vh] overflow-hidden [&>svg]:hidden">
             <div className="rounded-t-3xl md:rounded-2xl bg-background p-4 md:p-5 flex flex-col gap-5 max-h-[calc(100dvh-140px)] md:max-h-[calc(85vh-2rem)] overflow-y-auto">
               <ResponsiveDialogTitle className="sr-only">
-                Link your Farcaster
+                Link a social account
               </ResponsiveDialogTitle>
 
               <div className="text-left">
                 <h2 className="text-lg font-semibold leading-tight">
-                  Link your Farcaster
+                  Link a social account
                 </h2>
                 <p className="mt-2 text-white/50 text-sm">
-                  Farcaster is required to use Tab. Link your account to continue.
+                  Link Farcaster or Twitter to continue. Your Privy wallet stays on the
+                  same Tab account as long as you link the second social onto this same
+                  login.
                 </p>
               </div>
 
-              {farcasterLinkError && (
+              {socialLinkError && (
                 <p className="text-red-300/90 text-sm text-left">
-                  {farcasterLinkError}
+                  {socialLinkError}
                 </p>
               )}
 
-              <Button
-                className="w-full bg-primary text-black font-semibold"
-                onClick={async () => {
-                  setFarcasterLinkError(null);
-                  try {
-                    await Promise.resolve(linkFarcaster());
-                  } catch (err) {
-                    console.error("Failed to initialize Farcaster linking", err);
-                    setFarcasterLinkError(
-                      "Farcaster linking is not enabled for this app yet. Enable Farcaster in Privy Dashboard and try again."
-                    );
-                  }
-                }}
-              >
-                Link Farcaster
-              </Button>
+              <div className="flex flex-col gap-3">
+                <Button
+                  className="w-full bg-primary text-black font-semibold"
+                  onClick={async () => {
+                    setSocialLinkError(null);
+                    try {
+                      await Promise.resolve(linkFarcaster());
+                    } catch (err) {
+                      console.error("Failed to initialize Farcaster linking", err);
+                      setSocialLinkError(
+                        "Farcaster linking is not enabled for this app yet. Enable Farcaster in Privy Dashboard and try again."
+                      );
+                    }
+                  }}
+                >
+                  Link Farcaster
+                </Button>
+
+                <Button
+                  variant="secondary"
+                  className="w-full font-semibold"
+                  onClick={async () => {
+                    setSocialLinkError(null);
+                    try {
+                      await Promise.resolve(linkTwitter());
+                    } catch (err) {
+                      console.error("Failed to initialize Twitter linking", err);
+                      setSocialLinkError(
+                        "Twitter linking is not enabled for this app yet. Enable Twitter in Privy Dashboard and try again."
+                      );
+                    }
+                  }}
+                >
+                  Link Twitter
+                </Button>
+              </div>
 
               <p className="hidden text-xs text-white/20 text-center">2025 © tab tech</p>
             </div>
@@ -1694,18 +1436,10 @@ export default function Home() {
                 ))
               : friends.slice(0, 16).map((f) => (
                   <button
-                    key={f.fid}
+                    key={getSocialUserKey(f)}
                     onClick={() => {
-                      const user = {
-                        fid: f.fid,
-                        username: f.username,
-                        display_name: f.display_name,
-                        pfp_url: f.pfp_url,
-                        verified_addresses: f.verified_addresses,
-                      };
-
                       setQuery("");
-                      setSelectedUser(user);
+                      setSelectedUser(f);
                       setSelectedToken("USDC");
                       setTokenType("USDC");
 
@@ -1715,7 +1449,7 @@ export default function Home() {
                   >
                     <UserAvatar
                       src={f.pfp_url}
-                      seed={f.username ?? f.fid}
+                      seed={f.username ?? f.fid ?? f.id}
                       width={56}
                       className="w-14 h-14 rounded-full object-cover"
                     />

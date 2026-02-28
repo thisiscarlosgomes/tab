@@ -43,7 +43,13 @@ interface ActivityItem {
   counterparty?: string;
   recipient?: string;
   recipientUsername?: string;
-  recipientResolutionSource?: "address" | "ens" | "tab" | "farcaster" | null;
+  recipientResolutionSource?:
+    | "address"
+    | "ens"
+    | "tab"
+    | "farcaster"
+    | "twitter"
+    | null;
   pfp?: string;
   ticketCount?: number;
   rewarded?: boolean;
@@ -177,6 +183,7 @@ export default function ActivityPage() {
     if (item.executionMode !== "service_agent") return "";
     if (item.recipientResolutionSource === "tab") return " on Tab";
     if (item.recipientResolutionSource === "farcaster") return " via Farcaster";
+    if (item.recipientResolutionSource === "twitter") return " via Twitter";
     return "";
   };
 

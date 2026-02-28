@@ -1,5 +1,6 @@
 "use client";
 import { createContext, useContext, useState, useRef } from "react";
+import { SocialUser } from "@/lib/social";
 
 type EnrichedCast = {
   hash: string;
@@ -9,19 +10,6 @@ type EnrichedCast = {
     username: string;
     fid: number;
     pfp_url?: string;
-  };
-};
-
-// Farcaster user type used in GlobalSendDrawer
-type FarcasterUser = {
-  fid: number;
-  username: string;
-  display_name?: string;
-  pfp_url?: string;
-  verified_addresses?: {
-    primary?: {
-      eth_address?: string | null;
-    };
   };
 };
 
@@ -42,8 +30,8 @@ const SendDrawerContext = createContext<{
   hasTriggeredSendFromCast: React.MutableRefObject<boolean>;
 
   // 🔥 NEW — needed for Friends Row
-  selectedUser: FarcasterUser | null;
-  setSelectedUser: (u: FarcasterUser | null) => void;
+  selectedUser: SocialUser | null;
+  setSelectedUser: (u: SocialUser | null) => void;
 
   selectedToken: string | null;
   setSelectedToken: (t: string | null) => void;
@@ -81,7 +69,7 @@ export function SendDrawerProvider({ children }: { children: React.ReactNode }) 
   const hasTriggeredSendFromCast = useRef(false);
 
   // 🔥 NEW GLOBAL SEND STATE
-  const [selectedUser, setSelectedUser] = useState<FarcasterUser | null>(null);
+  const [selectedUser, setSelectedUser] = useState<SocialUser | null>(null);
   const [selectedToken, setSelectedToken] = useState<string | null>(null);
   const [tokenType, setTokenType] = useState<string>("USDC");
 

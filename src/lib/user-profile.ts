@@ -10,6 +10,10 @@ type LinkedAccountLike = {
   walletClientType?: string;
   address?: string;
   fid?: number | string;
+  username?: string | null;
+  name?: string | null;
+  profile_picture_url?: string | null;
+  profilePictureUrl?: string | null;
 };
 
 type PrivyUserLike = {
@@ -22,6 +26,12 @@ type PrivyUserLike = {
     pfp?: string | null;
     pfpUrl?: string | null;
   } | null;
+  twitter?: {
+    subject?: string | null;
+    username?: string | null;
+    name?: string | null;
+    profilePictureUrl?: string | null;
+  } | null;
   linked_accounts?: unknown;
   linkedAccounts?: unknown;
 };
@@ -31,10 +41,13 @@ export type UserProfileDoc = {
   fid: number | null;
   username: string | null;
   usernameLower: string | null;
+  twitterUsername: string | null;
+  twitterUsernameLower: string | null;
   displayName: string | null;
   pfpUrl: string | null;
   primaryAddress: string | null;
-  usernameSource: "farcaster";
+  socialType: "farcaster" | "twitter" | null;
+  usernameSource: "farcaster" | null;
   createdAt: Date;
   updatedAt: Date;
   lastSyncedAt: Date;
@@ -55,6 +68,7 @@ function ensureUserProfileIndexes(
         { key: { userId: 1 }, unique: true },
         { key: { fid: 1 } },
         { key: { usernameLower: 1 } },
+        { key: { twitterUsernameLower: 1 } },
       ]);
     })().catch(() => {
       ensureUserProfileIndexesPromise = null;
@@ -96,6 +110,10 @@ function findPrimaryPrivyWalletAddress(accounts: LinkedAccountLike[]) {
       typeof account.address === "string"
   );
   return normalizeAddress(wallet?.address);
+}
+
+function findTwitterAccount(accounts: LinkedAccountLike[]) {
+  return accounts.find((account) => account.type === "twitter_oauth") ?? null;
 }
 
 async function lookupNeynarProfile(fid: number) {
@@ -172,9 +190,11 @@ function sanitizeProfile(doc: UserProfileDoc) {
     userId: doc.userId,
     fid: doc.fid,
     username: doc.username,
+    twitterUsername: doc.twitterUsername,
     displayName: doc.displayName,
     pfpUrl: doc.pfpUrl,
     primaryAddress: doc.primaryAddress,
+    socialType: doc.socialType,
     createdAt: doc.createdAt,
     updatedAt: doc.updatedAt,
     lastSyncedAt: doc.lastSyncedAt,
@@ -194,34 +214,46 @@ export async function syncCanonicalUserProfileFromPrivyUser(input: {
   }
 
   const fid = findFarcasterFid(input.user, input.linkedAccounts);
-  if (!fid) {
-    return {
-      ok: false as const,
-      response: Response.json({ error: "Farcaster link required" }, { status: 403 }),
-    };
-  }
-
-  const neynarProfile = await lookupNeynarProfile(fid);
+  const neynarProfile = fid ? await lookupNeynarProfile(fid) : null;
   const privyFarcaster = input.user.farcaster ?? null;
+  const privyTwitter = input.user.twitter ?? null;
+  const linkedTwitter = findTwitterAccount(input.linkedAccounts);
   const username =
     neynarProfile?.username ??
     (typeof privyFarcaster?.username === "string" ? privyFarcaster.username : null);
+  const twitterUsername =
+    (typeof privyTwitter?.username === "string" ? privyTwitter.username : null) ??
+    (typeof linkedTwitter?.username === "string" ? linkedTwitter.username : null);
   const displayName =
     neynarProfile?.displayName ??
     (typeof privyFarcaster?.displayName === "string"
       ? privyFarcaster.displayName
       : typeof privyFarcaster?.display_name === "string"
         ? privyFarcaster.display_name
-        : username);
+        : null) ??
+    (typeof privyTwitter?.name === "string" ? privyTwitter.name : null) ??
+    (typeof linkedTwitter?.name === "string" ? linkedTwitter.name : null) ??
+    username ??
+    twitterUsername;
   const pfpUrl =
     neynarProfile?.pfpUrl ??
     (typeof privyFarcaster?.pfpUrl === "string"
       ? privyFarcaster.pfpUrl
       : typeof privyFarcaster?.pfp === "string"
         ? privyFarcaster.pfp
-        : null);
+        : null) ??
+    (typeof privyTwitter?.profilePictureUrl === "string"
+      ? privyTwitter.profilePictureUrl
+      : typeof linkedTwitter?.profilePictureUrl === "string"
+        ? linkedTwitter.profilePictureUrl
+        : typeof linkedTwitter?.profile_picture_url === "string"
+          ? linkedTwitter.profile_picture_url
+          : null);
   const usernameLower = typeof username === "string" ? username.toLowerCase() : null;
+  const twitterUsernameLower =
+    typeof twitterUsername === "string" ? twitterUsername.toLowerCase() : null;
   const primaryAddress = findPrimaryPrivyWalletAddress(input.linkedAccounts);
+  const socialType = fid ? "farcaster" : twitterUsername ? "twitter" : null;
 
   const client = await clientPromise;
   const db = client.db();
@@ -236,10 +268,13 @@ export async function syncCanonicalUserProfileFromPrivyUser(input: {
         fid,
         username,
         usernameLower,
+        twitterUsername,
+        twitterUsernameLower,
         displayName,
         pfpUrl,
         primaryAddress,
-        usernameSource: "farcaster",
+        socialType,
+        usernameSource: fid ? "farcaster" : null,
         updatedAt: now,
         lastSyncedAt: now,
       },

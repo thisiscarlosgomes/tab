@@ -14,7 +14,13 @@ type ClientTransferBody = {
   recipientPfp?: string | null;
   senderUsername?: string | null;
   senderPfp?: string | null;
-  recipientResolutionSource?: "address" | "ens" | "tab" | "farcaster" | null;
+  recipientResolutionSource?:
+    | "address"
+    | "ens"
+    | "tab"
+    | "farcaster"
+    | "twitter"
+    | null;
   timestamp?: string;
 };
 
@@ -78,7 +84,8 @@ export async function POST(req: NextRequest) {
     body?.recipientResolutionSource === "address" ||
     body?.recipientResolutionSource === "ens" ||
     body?.recipientResolutionSource === "tab" ||
-    body?.recipientResolutionSource === "farcaster"
+    body?.recipientResolutionSource === "farcaster" ||
+    body?.recipientResolutionSource === "twitter"
       ? body.recipientResolutionSource
       : null;
 

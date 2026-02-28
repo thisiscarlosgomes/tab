@@ -6,11 +6,12 @@ import {
   getCanonicalUserProfileByFid,
   getCanonicalUserProfileByUsername,
 } from "@/lib/user-profile";
+import { resolveTwitterRecipientByUsername } from "@/lib/twitter";
 
 export type ResolvedRecipient = {
   address: string;
   username: string | null;
-  source: "address" | "ens" | "tab" | "farcaster";
+  source: "address" | "ens" | "tab" | "farcaster" | "twitter";
   fid?: number | null;
 };
 
@@ -57,6 +58,8 @@ export async function resolveRecipient(params: {
   recipientAddress?: string;
   recipientUsername?: string;
   recipientEns?: string;
+  recipientProvider?: "farcaster" | "twitter" | null;
+  actorUserId?: string | null;
 }): Promise<ResolvedRecipient | null> {
   const directAddress =
     normalizeAddress(params.recipientAddress) ??
@@ -109,6 +112,12 @@ export async function resolveRecipient(params: {
     normalizeUsername(params.recipient);
   if (!usernameCandidate) return null;
 
+  if (params.recipientProvider === "twitter") {
+    return resolveTwitterRecipientByUsername(usernameCandidate, {
+      actorUserId: params.actorUserId ?? null,
+    });
+  }
+
   const localProfile = await getCanonicalUserProfileByUsername(usernameCandidate);
   if (
     localProfile?.primaryAddress &&
@@ -130,7 +139,9 @@ export async function resolveRecipient(params: {
     if (!resolvedAddress) return null;
 
     const profile =
-      user && typeof user === "object" ? (user as Record<string, unknown>) : {};
+      user && typeof user === "object"
+        ? (user as unknown as Record<string, unknown>)
+        : {};
 
     const fidRaw = profile.fid;
     const fid = Number.isFinite(Number(fidRaw)) ? Number(fidRaw) : null;
