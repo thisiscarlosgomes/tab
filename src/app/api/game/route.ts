@@ -7,6 +7,7 @@ import { writeActivity } from "@/lib/writeActivity";
 import { requireTrustedRequest } from "@/lib/security";
 import { getCanonicalUserProfileByFid } from "@/lib/user-profile";
 import { sendWebNotificationToUser } from "@/lib/user-notifications";
+import { resolveTwitterRecipientByUsername } from "@/lib/twitter";
 
 /* =========================
    Helpers
@@ -58,6 +59,10 @@ async function resolvePreferredGamePlayer(player: any) {
 async function resolvePreferredInvitedPlayer(invited: any) {
   const fallbackAddress = normalizeAddress(invited?.address);
   const fid = normalizeFid(invited?.fid);
+  const provider =
+    typeof invited?.provider === "string" && invited.provider
+      ? invited.provider
+      : null;
   const name =
     typeof invited?.name === "string" && invited.name.trim()
       ? invited.name.trim()
@@ -80,6 +85,27 @@ async function resolvePreferredInvitedPlayer(invited: any) {
       pfp,
       address: tabAddress ?? fallbackAddress,
       payoutAddressSource: tabAddress ? "tab_wallet" : "farcaster_verified",
+      farcasterVerifiedAddress: fallbackAddress,
+    };
+  }
+
+  if (
+    provider === "twitter" &&
+    typeof invited?.username === "string" &&
+    invited.username.trim()
+  ) {
+    const resolved = await resolveTwitterRecipientByUsername(invited.username).catch(
+      () => null
+    );
+    return {
+      fid: null,
+      name,
+      pfp,
+      address: normalizeAddress(resolved?.address) ?? fallbackAddress,
+      payoutAddressSource: resolved?.address ? "twitter" : "twitter_pending",
+      twitter_subject:
+        typeof invited?.twitter_subject === "string" ? invited.twitter_subject : null,
+      username: invited.username,
       farcasterVerifiedAddress: fallbackAddress,
     };
   }
@@ -172,8 +198,10 @@ export async function POST(req: NextRequest) {
     .filter((entry): entry is NonNullable<typeof entry> => Boolean(entry))
     .filter((entry) => {
       if (
-        creatorFid != null &&
-        entry.fid != null &&
+        creatorFid !== null &&
+        creatorFid !== undefined &&
+        entry.fid !== null &&
+        entry.fid !== undefined &&
         Number(entry.fid) === Number(creatorFid)
       ) {
         return false;
@@ -184,7 +212,10 @@ export async function POST(req: NextRequest) {
       ) {
         return false;
       }
-      const key = entry.fid != null ? `fid:${entry.fid}` : `addr:${entry.address ?? entry.name}`;
+      const key =
+        entry.fid !== null && entry.fid !== undefined
+          ? `fid:${entry.fid}`
+          : `addr:${entry.address ?? entry.name}`;
       if (seenInviteKeys.has(key)) return false;
       seenInviteKeys.add(key);
       return true;

@@ -520,17 +520,17 @@ export async function POST(req: NextRequest) {
         limit: z.number().int().min(1).max(20).optional(),
       }),
       execute: async (input) => {
-        if (!primaryAddress && !farcaster.fid) {
+        if (!primaryAddress) {
           return {
             ok: false,
-            error: "Missing wallet address and Farcaster account for split lookup.",
+            error: "Missing wallet address for split lookup.",
           };
         }
 
-        const params = new URLSearchParams();
-        if (primaryAddress) params.set("address", primaryAddress);
-        if (farcaster.fid) params.set("fid", String(farcaster.fid));
-        params.set("limit", String(input?.limit ?? 10));
+        const params = new URLSearchParams({
+          address: primaryAddress,
+          limit: String(input?.limit ?? 10),
+        });
 
         const result = await callJson(req, `/api/user-bills?${params.toString()}`, {
           headers: { ...getInternalRequestHeaders() },
@@ -594,42 +594,12 @@ export async function POST(req: NextRequest) {
 
     get_jackpot_status: tool({
       description:
-        "Get whether jackpot/spin is active for the user and their latest spin status.",
+        "Get current jackpot activity and recent participant count.",
       inputSchema: z.object({}),
       execute: async () => {
-        if (!farcaster.fid) {
-          return {
-            ok: false,
-            error: "Missing Farcaster account required for jackpot status.",
-          };
-        }
-
-        const [spinResult, recentResult] = await Promise.all([
-          callJson(req, `/api/daily-spin?fid=${farcaster.fid}`, {
-            headers: { ...getInternalRequestHeaders() },
-          }),
-          callJson(req, "/api/jackpot", {
-            headers: { ...getInternalRequestHeaders() },
-          }),
-        ]);
-
-        if (!spinResult.ok) {
-          return toolFailure(
-            "get_jackpot_status",
-            spinResult.status,
-            spinResult.data,
-            "Failed to fetch jackpot status"
-          );
-        }
-
-        const spin = (spinResult.data ?? {}) as {
-          canSpin?: boolean;
-          nextEligibleSpinAt?: string | null;
-          latestResult?: { reward?: string } | null;
-          spinsToday?: number;
-          totalSpins?: number;
-          streak?: number;
-        };
+        const recentResult = await callJson(req, "/api/jackpot", {
+          headers: { ...getInternalRequestHeaders() },
+        });
 
         const recentUsers =
           recentResult.ok && recentResult.data && typeof recentResult.data === "object"
@@ -640,14 +610,8 @@ export async function POST(req: NextRequest) {
 
         return {
           ok: true,
-          canSpin: Boolean(spin.canSpin),
-          nextEligibleSpinAt: spin.nextEligibleSpinAt ?? null,
-          latestResult: spin.latestResult ?? null,
-          spinsToday: Number(spin.spinsToday ?? 0),
-          totalSpins: Number(spin.totalSpins ?? 0),
-          streak: Number(spin.streak ?? 0),
           recentParticipants: recentUsers,
-          active: Boolean(spin.canSpin),
+          active: recentUsers > 0,
           preferToolCardOnly: true,
         };
       },
@@ -806,12 +770,12 @@ export async function POST(req: NextRequest) {
         }
 
         const portfolioParams = new URLSearchParams({ address: primaryAddress });
-        const splitParams = new URLSearchParams();
-        splitParams.set("address", primaryAddress);
-        if (farcaster.fid) splitParams.set("fid", String(farcaster.fid));
-        splitParams.set("limit", "10");
+        const splitParams = new URLSearchParams({
+          address: primaryAddress,
+          limit: "10",
+        });
 
-        const [portfolioResult, activityResult, splitResult, earnResult, spinResult] = await Promise.all([
+        const [portfolioResult, activityResult, splitResult, earnResult] = await Promise.all([
           callJson(req, `/api/moralis/portfolio?${portfolioParams.toString()}`, {
             headers: { ...getInternalRequestHeaders() },
           }),
@@ -822,11 +786,6 @@ export async function POST(req: NextRequest) {
           callJson(req, `/api/earn/${primaryAddress}?limit=10`, {
             headers: { ...getInternalRequestHeaders() },
           }),
-          farcaster.fid
-            ? callJson(req, `/api/daily-spin?fid=${farcaster.fid}`, {
-                headers: { ...getInternalRequestHeaders() },
-              })
-            : Promise.resolve({ ok: false, status: 400, data: { error: "Missing fid" } }),
         ]);
 
         if (!portfolioResult.ok) {
@@ -858,10 +817,6 @@ export async function POST(req: NextRequest) {
           | { total?: number; deposits?: Array<{ amount?: number; timestamp?: string; txHash?: string | null }> }
           | null;
 
-        const spin = (spinResult.ok ? spinResult.data : null) as
-          | { canSpin?: boolean; nextEligibleSpinAt?: string | null; spinsToday?: number; totalSpins?: number; streak?: number }
-          | null;
-
         const tokens = Array.isArray(portfolio.tokens) ? portfolio.tokens : [];
         const visibleTokens = filterVisibleWalletTokens(tokens);
 
@@ -890,14 +845,6 @@ export async function POST(req: NextRequest) {
               Array.isArray(earn?.deposits) && earn!.deposits!.length > 0
                 ? earn!.deposits![0]
                 : null,
-          },
-          jackpot: {
-            active: Boolean(spin?.canSpin),
-            canSpin: Boolean(spin?.canSpin),
-            nextEligibleSpinAt: spin?.nextEligibleSpinAt ?? null,
-            spinsToday: Number(spin?.spinsToday ?? 0),
-            totalSpins: Number(spin?.totalSpins ?? 0),
-            streak: Number(spin?.streak ?? 0),
           },
         };
       },

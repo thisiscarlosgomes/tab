@@ -9,7 +9,6 @@ interface Participant {
   name?: string;
   address: string;
   pfp?: string;
-  fid?: number;
 }
 
 interface Paid {
@@ -43,7 +42,6 @@ function ensureRoomIndexes(collection: Collection<GameRoom>) {
       await collection.createIndexes([
         { key: { "participants.address": 1, createdAt: -1 } },
         { key: { "invited.address": 1, createdAt: -1 } },
-        { key: { "invited.fid": 1, createdAt: -1 } },
         { key: { admin: 1, createdAt: -1 } },
       ]);
     })().catch(() => {
@@ -60,8 +58,6 @@ export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url);
 
   const address = searchParams.get("address")?.toLowerCase();
-  const fidParam = Number(searchParams.get("fid") ?? "");
-  const fid = Number.isFinite(fidParam) && fidParam > 0 ? fidParam : null;
   const limit = Number(searchParams.get("limit") ?? DEFAULT_LIMIT);
   const before = searchParams.get("before");
 
@@ -79,11 +75,6 @@ export async function GET(req: NextRequest) {
     { admin: address },
     { "invited.address": address },
   ];
-  if (fid) {
-    orFilters.push({ "participants.fid": fid });
-    orFilters.push({ "invited.fid": fid });
-  }
-
   const query: {
     $or: Array<Record<string, string | number>>;
     createdAt?: { $lt: Date };

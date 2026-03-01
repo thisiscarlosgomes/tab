@@ -43,11 +43,11 @@ export default function GroupClaimPage() {
       const data = await res.json();
       setDrops(data.drops || []);
 
-      if (fid || address) {
+      if (address || fid) {
         const claimedByUser = data.drops.some(
           (d: any) =>
             d.claimed &&
-            ((fid != null && d.claimedByFid === fid) ||
+            ((fid !== null && fid !== undefined && d.claimedByFid === fid) ||
               (address &&
                 d.claimedBy?.toLowerCase?.() === address.toLowerCase()))
         );
@@ -56,13 +56,13 @@ export default function GroupClaimPage() {
     };
 
     if (groupId) fetchGroupDrops();
-  }, [groupId, fid]);
+  }, [groupId, fid, address]);
 
   const unclaimedDrop = drops.find((d) => !d.claimed);
 
   const handleClaim = async () => {
-    if (!address || !groupId || fid == null) {
-      toast.error("Still loading user info. Please try again in a moment.");
+    if (!address || !groupId) {
+      toast.error("Still loading wallet info. Please try again in a moment.");
       return;
     }
 
@@ -187,7 +187,6 @@ export default function GroupClaimPage() {
 
       {status === "idle" &&
         drops.length > 0 &&
-        fid !== null &&
         !unclaimedDrop &&
         hasAlreadyClaimed && (
           <div className="max-w-sm w-full mx-auto space-y-3 text-center">
@@ -234,7 +233,6 @@ export default function GroupClaimPage() {
 
       {status === "idle" &&
         drops.length > 0 &&
-        fid !== null &&
         !unclaimedDrop &&
         !hasAlreadyClaimed && (
           <div className="max-w-sm w-full mx-auto space-y-3 text-center">

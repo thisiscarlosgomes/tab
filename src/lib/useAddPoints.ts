@@ -5,7 +5,6 @@ export async function useAddPoints(
     | "create_tab"
     | "spin"
     | "spin_win"
-    | "daily_spin_win"
     | "send_token"
     | "add_frame"
     | "share_frame"

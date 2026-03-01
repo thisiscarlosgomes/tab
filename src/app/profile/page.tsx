@@ -3,7 +3,7 @@
 import { useEffect, useState, useCallback, useMemo, useRef } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useIdentityToken, useToken } from "@privy-io/react-auth";
+import { useIdentityToken, useToken, useUser } from "@privy-io/react-auth";
 import { useTabIdentity } from "@/lib/useTabIdentity";
 import { UserAvatar } from "@/components/ui/user-avatar";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -52,6 +52,7 @@ type FarcasterHeroState = {
   username: string | null;
   pfpUrl: string | null;
   bio: string | null;
+  provider: "farcaster" | "twitter" | null;
   followerCount: number | null;
   joinedAt: string | null;
   followerPreviewPfps: string[];
@@ -75,6 +76,7 @@ export default function ProfilePage() {
     pfp,
     fid,
   } = useTabIdentity();
+  const { user } = useUser();
   const { identityToken } = useIdentityToken();
   const { getAccessToken } = useToken();
   const router = useRouter();
@@ -99,6 +101,45 @@ export default function ProfilePage() {
       notation: "compact",
       maximumFractionDigits: value >= 10000 ? 0 : 1,
     }).format(value);
+  };
+
+  const IdentityBadge = ({
+    provider,
+  }: {
+    provider: "farcaster" | "twitter" | null;
+  }) => {
+    const iconSrc =
+      provider === "twitter" ? "/x.svg" : provider === "farcaster" ? "/fc.svg" : null;
+    const label =
+      provider === "twitter"
+        ? "Connected with X"
+        : provider === "farcaster"
+          ? "Connected with Farcaster"
+          : null;
+
+    if (!iconSrc || !label) return null;
+
+    if (provider === "twitter") {
+      return (
+        <span
+          className="inline-flex h-7 w-7 items-center justify-center rounded-full border border-white/10 bg-white/[0.05] text-white/70"
+          aria-label={label}
+          title={label}
+        >
+          <img src={iconSrc} alt="" aria-hidden="true" width={14} height={14} className="h-3.5 w-3.5" />
+        </span>
+      );
+    }
+
+    return (
+      <span
+        className="inline-flex h-7 w-7 items-center justify-center rounded-full border border-white/10 bg-[#855DFF]/15 text-[#C9B8FF]"
+        aria-label={label}
+        title={label}
+      >
+        <img src={iconSrc} alt="" aria-hidden="true" width={14} height={14} className="h-3.5 w-3.5" />
+      </span>
+    );
   };
 
   useEffect(() => {
@@ -189,6 +230,7 @@ export default function ProfilePage() {
         username: nestedUsername,
         pfpUrl: nestedPfp,
         bio: bioText,
+        provider: "farcaster",
         followerCount,
         joinedAt,
         followerPreviewPfps: [],
@@ -198,21 +240,30 @@ export default function ProfilePage() {
     const loadFarcasterHero = async () => {
       if (cachedHero) {
         setFarcasterHero(cachedHero.hero);
-        if (Date.now() - cachedHero.ts < PROFILE_HERO_CACHE_TTL_MS) {
+        if (
+          Date.now() - cachedHero.ts < PROFILE_HERO_CACHE_TTL_MS &&
+          cachedHero.hero.bio
+        ) {
           setFarcasterHeroLoading(false);
           return;
         }
       } else {
         setFarcasterHeroLoading(true);
       }
-      let canonicalUsername: string | null = username ?? null;
+      let farcasterUsername: string | null =
+        typeof user?.farcaster?.username === "string" ? user.farcaster.username : fid ? username : null;
       let canonicalFid: number | null = fid ?? null;
+      let twitterUsername: string | null =
+        typeof user?.twitter?.username === "string" ? user.twitter.username : !fid ? username : null;
+      let provider: "farcaster" | "twitter" | null =
+        fid ? "farcaster" : twitterUsername ? "twitter" : null;
 
       let hero: FarcasterHeroState = {
         displayName: displayName ?? null,
-        username: username ?? null,
+        username: provider === "twitter" ? twitterUsername ?? username ?? null : username ?? null,
         pfpUrl: pfp ?? null,
         bio: null,
+        provider,
         followerCount: null,
         joinedAt: null,
         followerPreviewPfps: [],
@@ -221,7 +272,7 @@ export default function ProfilePage() {
       try {
         const shouldFetchMe =
           Boolean(agentAuthToken) &&
-          (!canonicalUsername || !canonicalFid || !hero.displayName || !hero.pfpUrl);
+          (!farcasterUsername || !canonicalFid || !twitterUsername || !hero.displayName || !hero.pfpUrl || !hero.bio);
 
         if (shouldFetchMe && agentAuthToken) {
           const meRes = await fetch("/api/user/me", {
@@ -236,34 +287,72 @@ export default function ProfilePage() {
             const meDisplayName = readString(me?.displayName);
             const mePfpUrl = readString(me?.pfpUrl);
             const meFid = readNumber(me?.fid);
+            const meTwitterUsername = readString(me?.twitterUsername);
+            const meTwitterBio = readString(me?.twitterBio);
+            const meSocialType =
+              me?.socialType === "farcaster" || me?.socialType === "twitter"
+                ? me.socialType
+                : null;
 
-            canonicalUsername = meUsername ?? canonicalUsername;
+            farcasterUsername =
+              meSocialType === "farcaster" || meFid ? meUsername ?? farcasterUsername : farcasterUsername;
             canonicalFid = meFid ?? canonicalFid;
+            twitterUsername = meTwitterUsername ?? twitterUsername;
+            provider = meSocialType ?? (meFid ? "farcaster" : meTwitterUsername ? "twitter" : provider);
             hero = {
               ...hero,
-              username: meUsername ?? hero.username,
+              username:
+                provider === "twitter"
+                  ? meTwitterUsername ?? twitterUsername ?? hero.username
+                  : meUsername ?? hero.username,
               displayName: meDisplayName ?? hero.displayName,
               pfpUrl: mePfpUrl ?? hero.pfpUrl,
+              bio: meTwitterBio ?? hero.bio,
+              provider,
             };
           }
         }
 
-        if (canonicalUsername) {
+        if (farcasterUsername) {
           const res = await fetch(
-            `/api/neynar/user/by-username?username=${encodeURIComponent(canonicalUsername)}`,
+            `/api/neynar/user/by-username?username=${encodeURIComponent(farcasterUsername)}`,
             { signal: controller.signal }
           );
           if (res.ok) {
             const user = await res.json();
             if (user && typeof user === "object") {
               hero = parseHeroFromUser(user);
+              provider = "farcaster";
+            }
+          }
+        }
+
+        if (!hero.bio && twitterUsername) {
+          const twitterRes = await fetch(
+            `/api/twitter/user/by-username?username=${encodeURIComponent(twitterUsername)}`,
+            agentAuthToken
+              ? {
+                  headers: {
+                    Authorization: `Bearer ${agentAuthToken}`,
+                  },
+                  signal: controller.signal,
+                }
+              : { signal: controller.signal }
+          );
+          if (twitterRes.ok) {
+            const twitterData = await twitterRes.json().catch(() => null);
+            const twitterUser =
+              twitterData?.user && typeof twitterData.user === "object" ? twitterData.user : null;
+            const twitterBio = readString(twitterUser?.bio) ?? readString(twitterUser?.description);
+            if (twitterBio) {
+              hero = { ...hero, bio: twitterBio, provider: hero.provider ?? "twitter" };
             }
           }
         }
 
         const qs = new URLSearchParams();
         if (canonicalFid) qs.set("fid", String(canonicalFid));
-        else if (canonicalUsername) qs.set("username", canonicalUsername);
+        else if (farcasterUsername) qs.set("username", farcasterUsername);
         else if (address) qs.set("address", address);
 
         if (qs.toString()) {
@@ -301,23 +390,22 @@ export default function ProfilePage() {
       cancelled = true;
       controller.abort();
     };
-  }, [address, username, displayName, pfp, fid, agentAuthToken]);
+  }, [address, username, displayName, pfp, fid, agentAuthToken, user]);
 
   const fetchUserBills = useCallback(async () => {
-    if (!address && fid == null) {
+    if (!address) {
       setBillsLoading(false);
       return;
     }
 
-    const cacheKey = (address ?? `fid:${fid}`).toLowerCase();
+    const cacheKey = address.toLowerCase();
     const hasVisibleBills = billsLoaded || bills.length > 0;
     if (!hasVisibleBills) setBillsLoading(true);
     const controller = new AbortController();
     const timeoutId = window.setTimeout(() => controller.abort(), 10000);
     try {
       const qs = new URLSearchParams();
-      if (address) qs.set("address", address);
-      if (fid != null) qs.set("fid", String(fid));
+      qs.set("address", address);
       const res = await fetch(`/api/user-bills?${qs.toString()}`, {
         cache: "no-store",
         signal: controller.signal,
@@ -337,7 +425,7 @@ export default function ProfilePage() {
       setBillsLoading(false);
       setBillsLoaded(true);
     }
-  }, [address, fid, bills.length, billsLoaded]);
+  }, [address, bills.length, billsLoaded]);
 
   const fetchUserRooms = useCallback(async () => {
     if (!address) {
@@ -352,7 +440,6 @@ export default function ProfilePage() {
     const timeoutId = window.setTimeout(() => controller.abort(), 6000);
     try {
       const params = new URLSearchParams({ address });
-      if (fid != null) params.set("fid", String(fid));
       const res = await fetch(`/api/user-rooms?${params.toString()}`, {
         cache: "no-store",
         signal: controller.signal,
@@ -523,6 +610,7 @@ export default function ProfilePage() {
     const effectiveName =
       effectiveUsername ? `@${effectiveUsername}` : hero?.displayName ?? displayName ?? "Profile";
     const effectivePfp = hero?.pfpUrl ?? pfp ?? null;
+    const effectiveProvider = hero?.provider ?? (fid ? "farcaster" : null);
     const followerCountLabel = formatCompactNumber(hero?.followerCount);
     const joinedLabel = hero?.joinedAt
       ? `Joined ${new Date(hero.joinedAt).toLocaleDateString(undefined, {
@@ -566,9 +654,12 @@ export default function ProfilePage() {
           </div>
 
           <div className="min-w-0 flex-1">
-            <h1 className="text-xl sm:text-2xl font-semibold tracking-tight text-white truncate">
-              {effectiveName}
-            </h1>
+            <div className="flex items-center gap-2 min-w-0">
+              <h1 className="text-xl sm:text-2xl font-semibold tracking-tight text-white truncate">
+                {effectiveName}
+              </h1>
+              <IdentityBadge provider={effectiveProvider} />
+            </div>
             {!effectiveUsername && (
               <div className="mt-2 text-white/50 text-base truncate">
                 No Farcaster handle
@@ -597,7 +688,7 @@ export default function ProfilePage() {
             </p>
           ) : (
             <p className="text-md leading-snug text-white/40">
-              Add a Farcaster bio to personalize your profile.
+              Add a Farcaster or Twitter bio to personalize your profile.
             </p>
           )}
 

@@ -25,7 +25,6 @@ const POINTS_MAP: Record<string, number> = {
   top_10_week: 500,
   share_frame: 50,
   add_frame: 50,
-  daily_spin_win: 10,
   earn_deposit: 200,
 };
 
@@ -126,23 +125,22 @@ export async function POST(req: NextRequest) {
   // const points = typeof body.amount === "number" ? body.amount : POINTS_MAP[action];
   const points = typeof amount === "number" ? amount : POINTS_MAP[action];
 
-
-await collection.updateOne(
-  { address },
-  {
-    $inc: { points },
-    $push: {
-      history: {
-        action,
-        points,
-        tabId,
-        splitId,
-        timestamp: new Date(),
+  await collection.updateOne(
+    { address },
+    {
+      $inc: { points },
+      $push: {
+        history: {
+          action,
+          points,
+          tabId,
+          splitId,
+          timestamp: new Date(),
+        },
       },
     },
-  },
-  { upsert: true }
-);
+    { upsert: true }
+  );
 
   const updated = await collection.findOne(
     { address },

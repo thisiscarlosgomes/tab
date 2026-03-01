@@ -1,7 +1,6 @@
 // components/app/participantList.tsx
 import { Avatar, AvatarImage } from "@/components/ui/avatar";
 import { shortAddress } from "@/lib/shortAddress";
-import { BellRing } from "lucide-react";
 
 interface Participant {
   name: string;
@@ -21,8 +20,6 @@ interface ParticipantListProps {
   participants: Participant[];
   invitedParticipants?: InvitedParticipant[];
   adminAddress: string;
-  isAdmin?: boolean;
-  onNotify?: (fid: number) => void; // ✅ FIX
 
 
   /** ✅ NEW */
@@ -33,8 +30,6 @@ export function ParticipantList({
   participants,
   invitedParticipants = [],
   adminAddress,
-  isAdmin,
-  onNotify,
   paidAddresses, // ✅ ADD THIS
 }: ParticipantListProps) {
   const totalCount = participants.length + invitedParticipants.length;

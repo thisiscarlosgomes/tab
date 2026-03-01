@@ -15,7 +15,6 @@ import { LoaderCircle, Loader } from "lucide-react";
 import { SuccessShareDrawer } from "@/components/app/SuccessShareDrawer";
 import { createPublicClient, http, erc20Abi } from "viem";
 import { Drawer } from "vaul";
-import sdk from "@farcaster/frame-sdk";
 import { REFERRER_ADDRESS, USDC_DECIMALS } from "@/lib/constants";
 import { getPreferredConnector } from "@/lib/wallet";
 import { usePrivy } from "@privy-io/react-auth";
@@ -771,11 +770,20 @@ export default function JackpotPage() {
               const txLinks = entry.claimTransactionHashes || [];
 
               const handleSharePrize = async () => {
+                const text = `🎁 I won ${prizeAmount} USDC from lottery on @usetab! Claimed on ${claimedDate}.`;
+                const url = "https://usetab.app/jackpot";
+
                 try {
-                  await sdk.actions.composeCast({
-                    text: `🎁 I won ${prizeAmount} USDC from lottery on @usetab! Claimed on ${claimedDate}.`,
-                    embeds: ["https://usetab.app/jackpot"],
-                  });
+                  if (navigator.share) {
+                    await navigator.share({
+                      title: "Tab Jackpot",
+                      text,
+                      url,
+                    });
+                    return;
+                  }
+
+                  await navigator.clipboard.writeText(`${text} ${url}`);
                 } catch (err) {
                   console.warn("Share failed or cancelled", err);
                 }

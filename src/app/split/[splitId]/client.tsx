@@ -75,6 +75,10 @@ interface SplitBill {
 
 type TokenName = (typeof tokenList)[number]["name"];
 
+function normalizeAddress(value?: string | null) {
+  return typeof value === "string" && value ? value.toLowerCase() : null;
+}
+
 export default function SplitPage() {
   const [userFid, setUserFid] = useState<number | null>(null);
 
@@ -86,6 +90,7 @@ export default function SplitPage() {
     fid: identityFid,
     username: identityUsername,
     pfp: identityPfp,
+    address: identityAddress,
   } = useTabIdentity();
 
   const [bill, setBill] = useState<SplitBill | null>(null);
@@ -104,11 +109,11 @@ export default function SplitPage() {
     ...bill,
     participants: bill.participants?.map((p) => ({
       ...p,
-      fid: p.fid != null ? Number(p.fid) : undefined,
+      fid: p.fid !== null && p.fid !== undefined ? Number(p.fid) : undefined,
     })),
     invited: bill.invited?.map((p) => ({
       ...p,
-      fid: p.fid != null ? Number(p.fid) : undefined,
+      fid: p.fid !== null && p.fid !== undefined ? Number(p.fid) : undefined,
     })),
     paid: bill.paid?.map((p) => ({
       ...p,
@@ -123,6 +128,11 @@ export default function SplitPage() {
   };
 
   useEffect(() => {
+    if (identityFid) {
+      setUserFid(identityFid);
+      return;
+    }
+
     let mounted = true;
 
     sdk.context
@@ -139,13 +149,7 @@ export default function SplitPage() {
     return () => {
       mounted = false;
     };
-  }, []);
-
-  useEffect(() => {
-    if (!userFid && identityFid) {
-      setUserFid(identityFid);
-    }
-  }, [identityFid, userFid]);
+  }, [identityFid]);
 
   const [paymentSuccess, setPaymentSuccess] = useState<{
     amount: number;
@@ -167,8 +171,36 @@ export default function SplitPage() {
 
   useEffect(() => {
     fetchBill();
-    const interval = setInterval(fetchBill, 5000);
-    return () => clearInterval(interval);
+
+    let interval: ReturnType<typeof setInterval> | null = null;
+
+    const startPolling = () => {
+      if (document.visibilityState !== "visible" || interval) return;
+      interval = setInterval(fetchBill, 15000);
+    };
+
+    const stopPolling = () => {
+      if (!interval) return;
+      clearInterval(interval);
+      interval = null;
+    };
+
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === "visible") {
+        fetchBill();
+        startPolling();
+      } else {
+        stopPolling();
+      }
+    };
+
+    startPolling();
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+
+    return () => {
+      stopPolling();
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+    };
   }, [safeSplitId]);
 
   const token = bill?.token ?? "ETH";
@@ -200,6 +232,37 @@ export default function SplitPage() {
 
   const paidList = bill?.paid ?? [];
   const participantList = bill?.participants ?? [];
+  const normalizedViewerAddress = normalizeAddress(address ?? identityAddress);
+
+  const matchesViewer = (entry?: { address?: string; fid?: number } | null) => {
+    const entryAddress = normalizeAddress(entry?.address);
+    if (normalizedViewerAddress && entryAddress === normalizedViewerAddress) {
+      return true;
+    }
+    return (
+      userFid !== null &&
+      userFid !== undefined &&
+      entry?.fid !== null &&
+      entry?.fid !== undefined &&
+      Number(entry.fid) === Number(userFid)
+    );
+  };
+
+  const sameEntry = (
+    a?: { address?: string; fid?: number } | null,
+    b?: { address?: string; fid?: number } | null
+  ) => {
+    const aAddress = normalizeAddress(a?.address);
+    const bAddress = normalizeAddress(b?.address);
+    if (aAddress && bAddress && aAddress === bAddress) return true;
+    return (
+      a?.fid !== null &&
+      a?.fid !== undefined &&
+      b?.fid !== null &&
+      b?.fid !== undefined &&
+      Number(a.fid) === Number(b.fid)
+    );
+  };
 
   //   const participantList = (bill?.participants ?? []).filter(
   //   (p) => p.fid !== bill?.recipient?.fid
@@ -212,8 +275,7 @@ export default function SplitPage() {
       : (bill?.invited?.[0]?.amount ?? 0);
 
   // viewer-specific (optional)
-  const myInvitedEntry =
-    userFid != null ? bill?.invited?.find((i) => i.fid === userFid) : null;
+  const myInvitedEntry = bill?.invited?.find((entry) => matchesViewer(entry)) ?? null;
 
   const myAmount = myInvitedEntry?.amount ?? perPersonAmount;
 
@@ -226,7 +288,7 @@ export default function SplitPage() {
     try {
       if (token === "ETH" || token === "WETH") {
         const amountValue =
-          qrAmount != null ? parseUnits(String(qrAmount), 18).toString() : null;
+          qrAmount !== null ? parseUnits(String(qrAmount), 18).toString() : null;
         return amountValue
           ? `ethereum:${recipientAddress}@8453?value=${amountValue}`
           : `ethereum:${recipientAddress}@8453`;
@@ -239,7 +301,7 @@ export default function SplitPage() {
       }
 
       const amountValue =
-        qrAmount != null ? parseUnits(String(qrAmount), decimals).toString() : null;
+        qrAmount !== null ? parseUnits(String(qrAmount), decimals).toString() : null;
 
       return amountValue
         ? `ethereum:${erc20Address}@8453/transfer?address=${recipientAddress}&uint256=${amountValue}`
@@ -256,21 +318,20 @@ export default function SplitPage() {
   //     p.address.toLowerCase() === address.toLowerCase()
   // );
 
-  const isPaid = userFid != null && paidList.some((p) => p.fid === userFid);
+  const isPaid = paidList.some((entry) => matchesViewer(entry));
 
   const hasJoined =
-    userFid != null &&
     participantList.some(
-      (p) => p.fid === userFid && p.fid !== bill?.recipient?.fid
+      (entry) => matchesViewer(entry) && !sameEntry(entry, bill?.recipient)
     );
 
   const isCreator =
-    address &&
-    bill?.creator?.address?.toLowerCase?.() === address.toLowerCase();
+    !!normalizedViewerAddress &&
+    bill?.creator?.address?.toLowerCase?.() === normalizedViewerAddress;
 
   const isRecipient =
-    address &&
-    bill?.recipient?.address?.toLowerCase?.() === address.toLowerCase();
+    !!normalizedViewerAddress &&
+    bill?.recipient?.address?.toLowerCase?.() === normalizedViewerAddress;
   const creatorNameLooksLikeAddress =
     !!bill?.creator?.name &&
     (bill.creator.name.startsWith("0x") || bill.creator.name.startsWith("@0x"));
@@ -297,10 +358,9 @@ const paidCount = bill?.paid?.length ?? 0;
   const allPaid = debtorCount > 0 && paidCount === debtorCount;
 
   const unpaidList = participantList.filter(
-    (p) =>
-      p.fid != null &&
-      p.fid !== bill?.recipient?.fid &&
-      !paidList.some((paid) => paid.fid === p.fid)
+    (entry) =>
+      !sameEntry(entry, bill?.recipient) &&
+      !paidList.some((paid) => sameEntry(paid, entry))
   );
 
   const timeAgo = (() => {
@@ -318,14 +378,14 @@ const paidCount = bill?.paid?.length ?? 0;
   })();
 
   const isInvited =
-  bill?.splitType !== "receipt_open" &&
-  userFid != null &&
-  bill?.invited?.some((i) => i.fid === userFid);
+    bill?.splitType !== "receipt_open" &&
+    (bill?.invited?.some((entry) => matchesViewer(entry)) ?? false);
 
 
   const isFull =
     bill?.splitType === "receipt_open" &&
-    bill.numPeople != null &&
+    bill.numPeople !== null &&
+    bill.numPeople !== undefined &&
     participantList.length >= bill.numPeople;
 
   const canJoin =
@@ -335,12 +395,11 @@ const paidCount = bill?.paid?.length ?? 0;
     !isFull &&
     (!bill?.invitedOnly || isInvited);
 
- const canPay =
-  userFid != null &&
-  hasJoined &&
-  !isPaid &&
-  !allPaid &&
-  (bill?.splitType === "receipt_open" || isInvited);
+  const canPay =
+    hasJoined &&
+    !isPaid &&
+    !allPaid &&
+    (bill?.splitType === "receipt_open" || isInvited);
 
 
   useEffect(() => {
@@ -388,28 +447,33 @@ const paidCount = bill?.paid?.length ?? 0;
 
   const invitedButNotJoined =
     bill?.invited?.filter(
-      (inv) => !participantList.some((p) => Number(inv.fid) === p.fid)
+      (invitedEntry) => !participantList.some((entry) => sameEntry(invitedEntry, entry))
     ) ?? [];
 
   const activityList = Array.from(
     new Map(
       [...participantList, ...invitedButNotJoined]
-        .filter((p) => p.fid)
-        .map((p) => [Number(p.fid), p])
+        .map((entry) => [
+          normalizeAddress(entry.address) ?? `fid:${entry.fid ?? entry.name}`,
+          entry,
+        ])
     ).values()
   );
 
   const handleJoin = async () => {
     let ctx: Awaited<typeof sdk.context> | null = null;
-    try {
-      ctx = await sdk.context;
-    } catch {
-      ctx = null;
+
+    if (!identityUsername && !identityPfp && !identityFid) {
+      try {
+        ctx = await sdk.context;
+      } catch {
+        ctx = null;
+      }
     }
 
     if (
       bill?.invitedOnly &&
-      !bill?.invited?.some((inv) => Number(inv.fid) === userFid)
+      !bill?.invited?.some((entry) => matchesViewer(entry))
     ) {
       toast("Only invited users can join this split.");
       return;
@@ -468,15 +532,23 @@ const paidCount = bill?.paid?.length ?? 0;
   const notifyUnpaid = async () => {
     if (!isCreator || unpaidList.length === 0) return;
 
+    const notifyTargets = unpaidList.filter(
+      (participant) => participant.address || participant.fid
+    );
+
+    if (notifyTargets.length === 0) {
+      toast.error("No reachable recipients to notify");
+      return;
+    }
+
     toast.promise(
       Promise.all(
-        unpaidList.map(async (p) => {
-          if (!p.fid) return;
+        notifyTargets.map(async (p) => {
           return fetch("/api/send-notif", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
-              fid: Number(p.fid), // ✅ REQUIRED
+              fid: p.fid ? Number(p.fid) : undefined,
               recipientAddress: p.address,
               title: "Reminder",
               message: `Hey @${p.name}, remember to settle your share for "${bill?.description}"`,
@@ -487,8 +559,8 @@ const paidCount = bill?.paid?.length ?? 0;
       ),
       {
         loading: "Sending reminders...",
-        success: `Notified ${unpaidList.length} friend${
-          unpaidList.length > 1 ? "s" : ""
+        success: `Notified ${notifyTargets.length} friend${
+          notifyTargets.length > 1 ? "s" : ""
         }`,
         error: "Something went wrong",
       }
@@ -537,7 +609,7 @@ const paidCount = bill?.paid?.length ?? 0;
                     <div className="flex -space-x-3">
                       {previewMembers.map((p) => (
                         <img
-                          key={p.fid}
+                          key={normalizeAddress(p.address) ?? `member:${p.fid ?? p.name}`}
                           src={
                             p.pfp ||
                             `https://api.dicebear.com/9.x/fun-emoji/svg?seed=${p.name}`
@@ -664,11 +736,13 @@ const paidCount = bill?.paid?.length ?? 0;
                         participantList.find(
                           (p) => p.address?.toLowerCase() === address.toLowerCase()
                         )?.name ?? "You",
-                      fid: userFid!,
+                      fid: userFid,
                     }}
                     onSuccess={(data) => setPaymentSuccess(data)}
                     creatorFid={
-                      bill.creator.fid != null ? Number(bill.creator.fid) : undefined
+                      bill.creator.fid !== null && bill.creator.fid !== undefined
+                        ? Number(bill.creator.fid)
+                        : undefined
                     }
                     description={bill.description}
                     ctaLabel="Contribute"
@@ -714,8 +788,8 @@ const paidCount = bill?.paid?.length ?? 0;
                   x.address.toLowerCase() === p.address.toLowerCase()
               );
 
-              const invitedEntry = bill.invited?.find((i) => i.fid === p.fid);
-              const participantEntry = participantList.find((x) => x.fid === p.fid);
+              const invitedEntry = bill.invited?.find((entry) => sameEntry(entry, p));
+              const participantEntry = participantList.find((entry) => sameEntry(entry, p));
               const paidAmount: number =
                 paid?.amount ?? participantEntry?.amount ?? invitedEntry?.amount ?? 0;
 

@@ -24,6 +24,10 @@ export function useTabIdentity() {
   const { wallets } = useWallets();
   const { user } = useUser();
   const fallbackAddress = wallets[0]?.address;
+  const hasLinkedFarcaster = Boolean(
+    user?.farcaster ||
+      user?.linkedAccounts?.some((account) => account.type === "farcaster")
+  );
 
   const address = useMemo(
     () => normalizeAddress(wagmiAddress ?? fallbackAddress) ?? null,
@@ -34,8 +38,9 @@ export function useTabIdentity() {
   const [isProfileLoading, setIsProfileLoading] = useState(false);
 
   useEffect(() => {
-    if (!address) {
+    if (!address || !hasLinkedFarcaster) {
       setProfile(null);
+      setIsProfileLoading(false);
       return;
     }
 
@@ -83,7 +88,7 @@ export function useTabIdentity() {
     return () => {
       cancelled = true;
     };
-  }, [address]);
+  }, [address, hasLinkedFarcaster]);
 
   const privyFarcaster = user?.farcaster ?? null;
   const privyTwitter = user?.twitter ?? null;

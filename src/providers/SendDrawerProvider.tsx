@@ -1,5 +1,5 @@
 "use client";
-import { createContext, useContext, useState, useRef } from "react";
+import { createContext, useCallback, useContext, useRef, useState } from "react";
 import { SocialUser } from "@/lib/social";
 
 type EnrichedCast = {
@@ -13,8 +13,21 @@ type EnrichedCast = {
   };
 };
 
+export type SendDrawerPreset = {
+  recipientAddress: `0x${string}`;
+  amount: string;
+  token: string;
+  splitId?: string;
+  billName?: string;
+  returnPath?: string | null;
+  lockRecipient?: boolean;
+  lockAmount?: boolean;
+  lockToken?: boolean;
+};
+
 const SendDrawerContext = createContext<{
   open: () => void;
+  openPreset: (preset: SendDrawerPreset) => void;
   close: () => void;
   isOpen: boolean;
 
@@ -38,8 +51,12 @@ const SendDrawerContext = createContext<{
 
   tokenType: string;
   setTokenType: (t: string) => void;
+
+  preset: SendDrawerPreset | null;
+  clearPreset: () => void;
 }>({
   open: () => {},
+  openPreset: () => {},
   close: () => {},
   isOpen: false,
   query: "",
@@ -58,6 +75,9 @@ const SendDrawerContext = createContext<{
 
   tokenType: "USDC",
   setTokenType: () => {},
+
+  preset: null,
+  clearPreset: () => {},
 });
 
 export function SendDrawerProvider({ children }: { children: React.ReactNode }) {
@@ -72,12 +92,16 @@ export function SendDrawerProvider({ children }: { children: React.ReactNode }) 
   const [selectedUser, setSelectedUser] = useState<SocialUser | null>(null);
   const [selectedToken, setSelectedToken] = useState<string | null>(null);
   const [tokenType, setTokenType] = useState<string>("USDC");
+  const [preset, setPreset] = useState<SendDrawerPreset | null>(null);
 
-  
+  const open = useCallback(() => setIsOpen(true), []);
+  const openPreset = useCallback((nextPreset: SendDrawerPreset) => {
+    setPreset(nextPreset);
+    setIsOpen(true);
+  }, []);
+  const clearPreset = useCallback(() => setPreset(null), []);
 
-  const open = () => setIsOpen(true);
-
-  const close = () => {
+  const close = useCallback(() => {
     setIsOpen(false);
     setQuery("");
     setScannedUsername(null);
@@ -87,12 +111,14 @@ export function SendDrawerProvider({ children }: { children: React.ReactNode }) 
     setSelectedUser(null);
     setSelectedToken(null);
     setTokenType("USDC");
-  };
+    setPreset(null);
+  }, []);
 
   return (
     <SendDrawerContext.Provider
       value={{
         open,
+        openPreset,
         close,
         isOpen,
 
@@ -115,6 +141,9 @@ export function SendDrawerProvider({ children }: { children: React.ReactNode }) 
 
         tokenType,
         setTokenType,
+
+        preset,
+        clearPreset,
       }}
     >
       {children}

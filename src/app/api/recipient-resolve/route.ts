@@ -14,15 +14,16 @@ export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url);
   const username = searchParams.get("username")?.trim() ?? "";
   const address = searchParams.get("address")?.trim() ?? "";
+  const ens = searchParams.get("ens")?.trim() ?? "";
   const providerParam = searchParams.get("provider")?.trim().toLowerCase() ?? "";
   const recipientProvider =
     providerParam === "twitter" || providerParam === "farcaster"
       ? providerParam
       : null;
 
-  if (!username && !address) {
+  if (!username && !address && !ens) {
     return Response.json(
-      { error: "Missing username or address" },
+      { error: "Missing username, ens, or address" },
       { status: 400 }
     );
   }
@@ -40,6 +41,12 @@ export async function GET(req: NextRequest) {
         recipientProvider,
         actorUserId,
       })
+    : ens
+      ? await resolveRecipient({
+          recipient: ens,
+          recipientEns: ens,
+          actorUserId,
+        })
     : await resolveRecipient({ recipient: address, recipientAddress: address, actorUserId });
 
   if (!resolved) {

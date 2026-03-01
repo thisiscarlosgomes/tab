@@ -4,7 +4,6 @@ import { privateKeyToAccount } from "viem/accounts";
 import { base } from "viem/chains";
 import { isAddress } from "viem";
 import erc20ABI from "@/lib/erc20-abi";
-import clientPromise from "@/lib/mongodb";
 import { requireTrustedRequest } from "@/lib/security";
 
 const ALCHEMY_URL = process.env.ALCHEMY_URL!;
@@ -79,36 +78,6 @@ export async function POST(req: NextRequest) {
     }
 
     const lowerTo = to.toLowerCase();
-
-    if (reason?.startsWith("daily_spin_")) {
-      const today = new Date().toISOString().slice(0, 10);
-      const db = (await clientPromise).db();
-      const tracker = await db
-        .collection("a-daily-token-tracker")
-        .findOne({ date: today });
-
-      type TrackerTx = {
-        to: string;
-        reason: string;
-        send?: boolean;
-      };
-
-      const alreadySent =
-        Array.isArray(tracker?.txs) &&
-        tracker.txs.some(
-          (tx: TrackerTx) =>
-            tx.to.toLowerCase() === lowerTo &&
-            tx.reason === `daily_spin_${today}` &&
-            tx.send === true
-        );
-
-      if (alreadySent) {
-        return new Response(
-          JSON.stringify({ error: "Already received today's spin reward" }),
-          { status: 403 }
-        );
-      }
-    }
 
     if (BANNED_ADDRESSES.has(lowerTo)) {
       return new Response(JSON.stringify({ error: "Blocked address" }), {

@@ -3,17 +3,17 @@
 import { Check } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
+import { getSocialUserKey, SocialUser } from "@/lib/social";
 import {
   ResponsiveDialog,
   ResponsiveDialogContent,
   ResponsiveDialogTitle,
 } from "@/components/ui/responsive-dialog";
 
-type BaseFriend = {
-  fid: number;
-  username: string;
-  pfp_url?: string;
-};
+type BaseFriend = Pick<
+  SocialUser,
+  "id" | "provider" | "fid" | "twitter_subject" | "username" | "display_name" | "pfp_url"
+>;
 
 type FriendsPickerDialogProps<T extends BaseFriend> = {
   open: boolean;
@@ -87,7 +87,10 @@ export function FriendsPickerDialog<T extends BaseFriend>({
             <div className="rounded-lg bg-white/5 px-4 py-3">
               <div className="flex flex-wrap gap-3">
                 {selectedUsers.map((u) => (
-                  <div key={`selected-${u.fid}`} className="relative h-[72px] w-12">
+                  <div
+                    key={`selected-${getSocialUserKey(u)}`}
+                    className="relative h-[72px] w-12"
+                  >
                     <img
                       src={
                         u.pfp_url ||
@@ -142,11 +145,14 @@ export function FriendsPickerDialog<T extends BaseFriend>({
             <div className="py-8 text-center text-sm text-white/40">No results</div>
           ) : (
             users.map((u) => {
-              const isSelected = selectedUsers.some((x) => x.fid === u.fid);
+              const userKey = getSocialUserKey(u);
+              const isSelected = selectedUsers.some(
+                (x) => getSocialUserKey(x) === userKey
+              );
               const disabled = Boolean(isUserDisabled?.(u));
               return (
                 <button
-                  key={u.fid}
+                  key={userKey}
                   type="button"
                   disabled={disabled}
                   onClick={() => onToggleUser(u)}

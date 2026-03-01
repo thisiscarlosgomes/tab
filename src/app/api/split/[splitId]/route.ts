@@ -5,6 +5,7 @@ import { requireTrustedRequest } from "@/lib/security";
 import { buildUserKey, resolveUserFid } from "@/lib/identity";
 import { getCanonicalUserProfileByFid } from "@/lib/user-profile";
 import { sendWebNotificationToUser } from "@/lib/user-notifications";
+import { resolveTwitterRecipientByUsername } from "@/lib/twitter";
 
 /* =========================
    Helpers
@@ -33,17 +34,27 @@ function normalizeFid(fid?: string | number) {
   return Number(fid);
 }
 
+function normalizeTwitterSubject(subject: unknown) {
+  return typeof subject === "string" && subject.trim() ? subject.trim() : null;
+}
+
 function normalizeUser(user: any) {
   if (!user) return user;
   const address = normalizeAddress(user.address);
   const fid = resolveUserFid({ fid: normalizeFid(user.fid), address });
+  const twitterSubject = normalizeTwitterSubject(user.twitter_subject);
+  const provider =
+    typeof user.provider === "string" && user.provider ? user.provider : null;
   const userKey =
     buildUserKey({ fid, address }) ??
+    (twitterSubject ? `twitter:${twitterSubject}` : null) ??
     (typeof user.userKey === "string" ? user.userKey.toLowerCase() : null);
   return {
     ...user,
     fid,
     address,
+    provider,
+    twitter_subject: twitterSubject,
     userKey,
   };
 }
@@ -68,6 +79,11 @@ function getUserKeys(user: any) {
   if (normalizedAddress) keys.add(`wallet:${normalizedAddress}`);
   if (normalizedFid && Number.isFinite(normalizedFid)) {
     keys.add(`fid:${Number(normalizedFid)}`);
+  }
+  const twitterSubject = normalizeTwitterSubject(user.twitter_subject);
+  if (twitterSubject) keys.add(`twitter:${twitterSubject}`);
+  if (user.provider === "twitter" && typeof user.username === "string" && user.username) {
+    keys.add(`twitter-username:${user.username.trim().replace(/^@+/, "").toLowerCase()}`);
   }
 
   return keys;
@@ -105,6 +121,23 @@ async function resolvePreferredSplitUser(user: any) {
         address: profile.primaryAddress,
         payoutAddressSource: "tab_wallet",
         farcasterVerifiedAddress: normalized.address ?? null,
+      });
+    }
+  }
+
+  if (
+    normalized.provider === "twitter" &&
+    typeof normalized.username === "string" &&
+    normalized.username.trim()
+  ) {
+    const resolved = await resolveTwitterRecipientByUsername(normalized.username).catch(
+      () => null
+    );
+    if (resolved?.address) {
+      return normalizeUser({
+        ...normalized,
+        address: resolved.address,
+        payoutAddressSource: "twitter",
       });
     }
   }

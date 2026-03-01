@@ -6,6 +6,17 @@ import {
   syncCanonicalUserProfileFromPrivyUser,
 } from "@/lib/user-profile";
 
+function normalizeUsername(value: string | null | undefined) {
+  return typeof value === "string" && value.trim()
+    ? value.trim().replace(/^@+/, "").toLowerCase()
+    : null;
+}
+
+function normalizeFid(value: number | string | null | undefined) {
+  const n = Number(value);
+  return Number.isFinite(n) && n > 0 ? n : null;
+}
+
 export async function GET(req: NextRequest) {
   const denied = requireTrustedRequest(req, {
     bucket: "user-me-get",
@@ -26,7 +37,33 @@ export async function GET(req: NextRequest) {
   }
 
   const profile = await getCanonicalUserProfileByUserId(userId);
-  if (profile) return Response.json(profile);
+  const linkedTwitterUsername =
+    normalizeUsername(authed.user.twitter?.username) ??
+    normalizeUsername(
+      Array.isArray(authed.linkedAccounts)
+        ? (authed.linkedAccounts.find((account) => account.type === "twitter_oauth") as {
+            username?: string | null;
+          } | null)?.username
+        : null
+    );
+  const linkedFid =
+    normalizeFid(authed.user.farcaster?.fid) ??
+    normalizeFid(
+      Array.isArray(authed.linkedAccounts)
+        ? (authed.linkedAccounts.find((account) => account.type === "farcaster") as {
+            fid?: number | string | null;
+          } | null)?.fid
+        : null
+    );
+
+  const profileNeedsSync =
+    !profile ||
+    (linkedFid !== null && profile.fid !== linkedFid) ||
+    (linkedTwitterUsername !== null &&
+      normalizeUsername(profile.twitterUsername) !== linkedTwitterUsername) ||
+    (linkedTwitterUsername !== null && typeof profile.twitterBio === "undefined");
+
+  if (profile && !profileNeedsSync) return Response.json(profile);
 
   const result = await syncCanonicalUserProfileFromPrivyUser({
     user: authed.user,

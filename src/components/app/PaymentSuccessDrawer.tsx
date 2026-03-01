@@ -1,11 +1,16 @@
 "use client";
 
 import { useEffect } from "react";
-import { Drawer } from "vaul";
 import { useCallback } from "react";
 import { Button } from "@/components/ui/button";
+import {
+  ResponsiveDialog,
+  ResponsiveDialogContent,
+  ResponsiveDialogDescription,
+  ResponsiveDialogHeader,
+  ResponsiveDialogTitle,
+} from "@/components/ui/responsive-dialog";
 import confetti from "canvas-confetti";
-import { useAccount } from "wagmi";
 
 interface PaymentSuccessDrawerProps {
   isOpen: boolean;
@@ -14,11 +19,6 @@ interface PaymentSuccessDrawerProps {
   description?: string;
   recipientUsername?: string;
   txHash?: string;
-  recipient?: {
-  username?: string;
-  address?: string;
-};
-
 }
 
 export function PaymentSuccessDrawer({
@@ -29,15 +29,6 @@ export function PaymentSuccessDrawer({
   recipientUsername,
   txHash,
 }: PaymentSuccessDrawerProps) {
-  const { address } = useAccount();
-
-  const handleAddFrame = useCallback(async () => {
-    if (isOpen) setIsOpen(false);
-    if (typeof window !== "undefined") {
-      window.open("https://warpcast.com/miniapps/VQkdXWdIPV4K/tab", "_blank");
-    }
-  }, [setIsOpen, isOpen]);
-
   const handleShare = useCallback(async () => {
     if (isOpen) setIsOpen(false);
 
@@ -72,82 +63,62 @@ export function PaymentSuccessDrawer({
   }, [isOpen]);
 
   return (
-    <Drawer.Root
+    <ResponsiveDialog
       open={isOpen}
       onOpenChange={(open) => {
         if (!open) setIsOpen(false);
       }}
     >
-      <Drawer.Portal>
-        <Drawer.Overlay className="fixed inset-0 bg-[#4E4C52]/60 backdrop-blur-[7.5px] z-20" />
-        <Drawer.Content className="z-40 bg-background rounded-t-3xl p-4 fixed bottom-0 w-full max-h-[85vh] overflow-y-auto pb-8 mb-4">
-          <div className="mx-auto w-12 h-1.5 rounded-full bg-white/10 mb-4" />
+      <ResponsiveDialogContent className="top-auto bottom-0 w-full rounded-t-3xl border-white/10 bg-background px-4 pb-8 pt-2 md:top-1/2 md:bottom-auto md:max-w-md md:-translate-y-1/2 md:rounded-3xl md:px-6 md:pt-6">
+        <ResponsiveDialogHeader className="items-center space-y-3 pb-2 text-center">
+          <ResponsiveDialogTitle className="text-center text-xl font-semibold tracking-tight text-white">
+            That&apos;s settled
+          </ResponsiveDialogTitle>
+          <ResponsiveDialogDescription className="text-center text-base text-white/50">
+            Your payment went through successfully
+          </ResponsiveDialogDescription>
+        </ResponsiveDialogHeader>
 
-          <div className="flex flex-col items-center pt-2 pb-1">
-            <div className="flex items-center gap-1">
-              <span className="text-xl font-semibold">That’s settled</span>
-            </div>
+        <div className="px-0 py-3">
+          <div className="w-full rounded-2xl border border-white/6 bg-white/[0.03] px-5 py-6 text-center">
+            <p className="text-base text-white/45">You paid</p>
+            {description ? (
+              <p className="mt-2 text-2xl font-semibold tracking-tight text-primary">
+                {description}
+              </p>
+            ) : null}
+            {recipientUsername ? (
+              <p className="mt-2 text-base text-white/45">to @{recipientUsername}</p>
+            ) : null}
           </div>
+        </div>
 
-          <div className="py-2 px-3 space-y-4 rounded-t-[10px] flex-1 space-y-4">
-            <p className="text-md text-center text-muted mb-4">
-              Your payment went through successfully
-            </p>
+        <div className="mt-4 flex flex-col gap-3">
+          <Button className="w-full" onClick={() => setIsOpen(false)}>
+            Done
+          </Button>
 
-            <div className="w-full bg-white/[2%] rounded-xl p-4 mb-4 text-center">
-              <p className="text-md text-muted">You paid</p>
-              {description && (
-                <p className="text-lg text-primary font-semibold">
-                  {description}
-                </p>
-              )}
-
-              {recipientUsername && (
-                <p className="text-md text-muted">to @{recipientUsername}</p>
-              )}
-            </div>
-
-            <Button className="w-full mb-2" onClick={() => setIsOpen(false)}>
-              Done
-            </Button>
-
-            {txHash && (
-              <Button
-                variant="ghost"
-                className="hidden w-full mb-2"
-                onClick={openTx}
-              >
-                View transaction
-              </Button>
-            )}
-
+          {txHash ? (
             <Button
-              variant="outline"
+              variant="ghost"
               className="hidden w-full"
-              onClick={handleShare}
+              onClick={openTx}
             >
-              Share (optional)
+              View transaction
             </Button>
+          ) : null}
 
-            {/* {txHash && (
-              <Button
-                variant="outline"
-                className="w-full mt-4 mb-2"
-                onClick={() => {
-                  sdk.actions.openUrl(`https://basescan.org/tx/${txHash}`);
-                }}
-              >
-                View tx
-              </Button>
-            )}
-            <Button className="w-full bg-white mb-6 pb-6" onClick={handleShare}>
-              🎊 Share to Feed
-            </Button> */}
-          </div>
+          <Button
+            variant="outline"
+            className="hidden w-full"
+            onClick={handleShare}
+          >
+            Share (optional)
+          </Button>
+        </div>
 
-          <div className="pb-[env(safe-area-inset-bottom)]" />
-        </Drawer.Content>
-      </Drawer.Portal>
-    </Drawer.Root>
+        <div className="pb-[env(safe-area-inset-bottom)]" />
+      </ResponsiveDialogContent>
+    </ResponsiveDialog>
   );
 }

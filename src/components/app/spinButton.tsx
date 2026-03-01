@@ -95,24 +95,6 @@ export function SpinButton({
       localStorage.setItem(localStorageKey, Date.now().toString());
       setCooldown(SPIN_COOLDOWN);
 
-      if (picked.fid) {
-        try {
-          await fetch("/api/send-notif", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              fid: picked.fid,
-              recipientAddress: picked.address,
-              title: "Spin to pay",
-              message: "You got the tab for this group",
-              targetUrl: `https://usetab.app/game/${encodeURIComponent(roomId)}`,
-            }),
-          });
-        } catch {
-          console.warn("Failed to notify selected user");
-        }
-      }
-
       onPick();
     } catch (err) {
       console.error(err);

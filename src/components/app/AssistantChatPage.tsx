@@ -340,8 +340,6 @@ export function AssistantChatPage() {
 
       try {
         const splitParams = new URLSearchParams({ address: primaryAddress, limit: "20" });
-        const fid = Number(user?.farcaster?.fid ?? 0);
-        if (Number.isFinite(fid) && fid > 0) splitParams.set("fid", String(fid));
 
         const resolveTopRecipient = async (topAddress: string) => {
           try {

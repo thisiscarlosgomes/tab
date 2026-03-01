@@ -3,22 +3,25 @@
 import { useEffect, useRef, useState, useMemo } from "react";
 import { useSendDrawer } from "@/providers/SendDrawerProvider";
 import { useAccount, useConnect, useSendTransaction } from "wagmi";
+import { useRouter } from "next/navigation";
 
 import { Button } from "../ui/button";
 import { shortAddress } from "@/lib/shortAddress";
 import { PaymentSuccessDrawer } from "@/components/app/PaymentSuccessDrawer";
 import sdk from "@farcaster/frame-sdk";
 import { NumericFormat } from "react-number-format";
-import { getTokenBalance } from "@/lib/getTokenBalance";
 import { tokenList } from "@/lib/tokens"; // or define inline
 import { getTokenPrices } from "@/lib/getTokenPrices"; // or define inline
-import { useWriteContract } from "wagmi";
-import { createPublicClient, erc20Abi, http, isAddress, parseUnits } from "viem";
-import { mainnet } from "viem/chains";
-import { normalize } from "viem/ens";
+import {
+  encodeFunctionData,
+  erc20Abi,
+  isAddress,
+  parseUnits,
+} from "viem";
 import { useIdentityToken, usePrivy, useToken, useWallets } from "@privy-io/react-auth";
 
-import { LoaderCircle } from "lucide-react";
+import { Check, LoaderCircle, ReceiptText } from "lucide-react";
+import { toast } from "sonner";
 // import { useAddPoints } from "@/lib/useAddPoints";
 
 import { getTokenBalances } from "@/hooks/getTokenBalances";
@@ -51,6 +54,15 @@ type RecipientResolutionSource =
   | "farcaster"
   | "twitter";
 
+type Participant = {
+  address: string;
+  name: string;
+  pfp?: string;
+  fid?: string;
+};
+
+const ensSearchCache = new Map<string, SocialUser | null>();
+
 const getTokenSuffix = (token: string) => {
   switch (token) {
     case "ETH":
@@ -70,6 +82,7 @@ export function GlobalSendDrawer() {
   const {
     isOpen,
     close,
+    preset,
     query,
     setQuery,
     scannedUsername,
@@ -80,6 +93,7 @@ export function GlobalSendDrawer() {
     tokenType,
     setTokenType,
   } = useSendDrawer();
+  const router = useRouter();
 
   const { isConnected, address } = useAccount();
   const { user } = usePrivy();
@@ -148,14 +162,22 @@ export function GlobalSendDrawer() {
     {}
   );
 
-  const { writeContractAsync } = useWriteContract();
   const [sharedCast, setSharedCast] = useState<EnrichedCast | null>(null);
   const [resolvedRecipientAddress, setResolvedRecipientAddress] = useState<
     `0x${string}` | null
   >(null);
   const [isRecipientResolving, setIsRecipientResolving] = useState(false);
+  const [recipientResolveError, setRecipientResolveError] = useState<string | null>(
+    null
+  );
   const [recipientResolutionSource, setRecipientResolutionSource] =
     useState<RecipientResolutionSource>("farcaster");
+  const [participants, setParticipants] = useState<Participant[]>([]);
+  const [invitedOnly, setInvitedOnly] = useState(false);
+  const [invited, setInvited] = useState<Participant[]>([]);
+  const [creator, setCreator] = useState<string | null>(null);
+  const [verifiedEthAddresses, setVerifiedEthAddresses] = useState<string[]>([]);
+  const [isBlocked, setIsBlocked] = useState(false);
 
   useEffect(() => {
     const detectShareContext = async () => {
@@ -238,17 +260,80 @@ export function GlobalSendDrawer() {
   }, [isOpen, scannedUsername, selectedUser, sendDrawerOpen]);
 
   useEffect(() => {
+    if (!isOpen || !preset) return;
+
+    let cancelled = false;
+    const loadPresetRecipient = async () => {
+      const presetAmount = String(preset.amount ?? "").trim();
+      if (!cancelled && presetAmount) setAmount(presetAmount);
+      if (!cancelled) {
+        setSelectedToken(preset.token);
+        setTokenType(preset.token);
+      }
+
+      try {
+        const res = await fetch(`/api/neynar/user/by-address/${preset.recipientAddress}`);
+        const data = await res.json().catch(() => null);
+        if (cancelled) return;
+
+        if (data?.username) {
+          setSelectedUser({
+            ...data,
+            id:
+              typeof data?.fid === "number"
+                ? `farcaster:${data.fid}`
+                : `address:${preset.recipientAddress.toLowerCase()}`,
+            provider: "farcaster",
+            verified_addresses:
+              data?.verified_addresses && typeof data.verified_addresses === "object"
+                ? data.verified_addresses
+                : {
+                    primary: {
+                      eth_address: preset.recipientAddress,
+                    },
+                  },
+          });
+          return;
+        }
+      } catch {
+        // fall through to address-only recipient
+      }
+
+      if (!cancelled) {
+        setSelectedUser({
+          id: `address:${preset.recipientAddress.toLowerCase()}`,
+          provider: "address",
+          username: shortAddress(preset.recipientAddress),
+          display_name: shortAddress(preset.recipientAddress),
+          pfp_url: "",
+          verified_addresses: {
+            primary: {
+              eth_address: preset.recipientAddress,
+            },
+          },
+        });
+      }
+    };
+
+    void loadPresetRecipient();
+    return () => {
+      cancelled = true;
+    };
+  }, [isOpen, preset, setSelectedToken, setSelectedUser, setTokenType]);
+
+  useEffect(() => {
     if (!selectedUser) return;
-    if (!walletAddress) return;
-    if (Object.keys(tokenBalances).length === 0) return;
+    if (!preset && !walletAddress) return;
+    if (!preset && Object.keys(tokenBalances).length === 0) return;
 
     setSendDrawerOpen(true);
-  }, [selectedUser, walletAddress, tokenBalances]);
+  }, [selectedUser, walletAddress, tokenBalances, preset]);
 
   useEffect(() => {
     if (!selectedUser) {
       setResolvedRecipientAddress(null);
       setIsRecipientResolving(false);
+      setRecipientResolveError(null);
       setRecipientResolutionSource("farcaster");
       return;
     }
@@ -259,10 +344,21 @@ export function GlobalSendDrawer() {
         | `0x${string}`
         | undefined) ?? null;
 
+    if (selectedUser.provider === "address" && fallbackAddress) {
+      setResolvedRecipientAddress(fallbackAddress);
+      setIsRecipientResolving(false);
+      setRecipientResolveError(null);
+      setRecipientResolutionSource(
+        selectedUser.username?.toLowerCase().endsWith(".eth") ? "ens" : "address"
+      );
+      return;
+    }
+
     const resolvePreferredRecipient = async () => {
       if (!cancelled) {
         setIsRecipientResolving(true);
         setResolvedRecipientAddress(null);
+        setRecipientResolveError(null);
       }
       try {
         const qs = new URLSearchParams();
@@ -283,6 +379,7 @@ export function GlobalSendDrawer() {
 
         if (data?.resolved?.address) {
           setResolvedRecipientAddress(data.resolved.address);
+          setRecipientResolveError(null);
           setRecipientResolutionSource(
             (data.resolved.source as RecipientResolutionSource) ??
               (selectedUser.provider === "twitter" ? "twitter" : "farcaster")
@@ -290,19 +387,32 @@ export function GlobalSendDrawer() {
           setIsRecipientResolving(false);
           return;
         }
+
+        if (selectedUser.provider === "twitter") {
+          setRecipientResolveError(
+            typeof data?.error === "string"
+              ? data.error
+              : "Unable to prepare a wallet for this Twitter user right now."
+          );
+        }
       } catch {
-        // fall through to fallback
+        if (!cancelled && selectedUser.provider === "twitter") {
+          setRecipientResolveError(
+            "Unable to prepare a wallet for this Twitter user right now."
+          );
+        }
       }
 
       if (!cancelled) {
-        setResolvedRecipientAddress(fallbackAddress);
-        setRecipientResolutionSource(
-          selectedUser.provider === "twitter"
-            ? "twitter"
-            : selectedUser.provider === "address"
-              ? "address"
-              : "farcaster"
-        );
+        if (selectedUser.provider === "twitter") {
+          setResolvedRecipientAddress(null);
+          setRecipientResolutionSource("twitter");
+        } else {
+          setResolvedRecipientAddress(fallbackAddress);
+          setRecipientResolutionSource(
+            selectedUser.provider === "address" ? "address" : "farcaster"
+          );
+        }
         setIsRecipientResolving(false);
       }
     };
@@ -312,6 +422,122 @@ export function GlobalSendDrawer() {
       cancelled = true;
     };
   }, [selectedUser, identityToken, getAccessToken]);
+
+  useEffect(() => {
+    if (!preset?.splitId) {
+      setParticipants([]);
+      setInvitedOnly(false);
+      setInvited([]);
+      setCreator(null);
+      return;
+    }
+
+    let cancelled = false;
+    const fetchSplitMeta = async () => {
+      try {
+        const res = await fetch(`/api/split/${preset.splitId}`);
+        const data = await res.json().catch(() => null);
+        if (cancelled) return;
+
+        setParticipants(Array.isArray(data?.participants) ? data.participants : []);
+        setInvitedOnly(Boolean(data?.invitedOnly));
+        setInvited(Array.isArray(data?.invited) ? data.invited : []);
+        setCreator(
+          typeof data?.creator?.address === "string"
+            ? data.creator.address.toLowerCase()
+            : null
+        );
+      } catch {
+        if (cancelled) return;
+        setParticipants([]);
+        setInvitedOnly(false);
+        setInvited([]);
+        setCreator(null);
+      }
+    };
+
+    void fetchSplitMeta();
+    return () => {
+      cancelled = true;
+    };
+  }, [preset?.splitId]);
+
+  useEffect(() => {
+    if (!preset?.splitId) {
+      setVerifiedEthAddresses([]);
+      return;
+    }
+
+    let cancelled = false;
+    const resolveVerifiedAddresses = async () => {
+      let username = identityUsername;
+      if (!username) {
+        try {
+          const context = await sdk.context;
+          username = context?.user?.username ?? null;
+        } catch {
+          username = null;
+        }
+      }
+
+      if (username) {
+        try {
+          const res = await fetch(`/api/neynar/user/by-username?username=${username}`);
+          const data = await res.json().catch(() => null);
+          if (cancelled) return;
+          const verified = data?.verified_addresses?.primary?.eth_address;
+          const allEth = Array.isArray(data?.verified_addresses?.eth_addresses)
+            ? data.verified_addresses.eth_addresses
+            : [];
+          const next = [
+            ...(typeof verified === "string" ? [verified] : []),
+            ...allEth.filter((value: unknown): value is string => typeof value === "string"),
+          ].map((value) => value.toLowerCase());
+          setVerifiedEthAddresses(Array.from(new Set(next)));
+          return;
+        } catch {
+          // fallback below
+        }
+      }
+
+      const fallback = [identityAddress, walletAddress]
+        .filter((value): value is string => typeof value === "string")
+        .map((value) => value.toLowerCase());
+      if (!cancelled) {
+        setVerifiedEthAddresses(Array.from(new Set(fallback)));
+      }
+    };
+
+    void resolveVerifiedAddresses();
+    return () => {
+      cancelled = true;
+    };
+  }, [preset?.splitId, identityAddress, identityUsername, walletAddress]);
+
+  useEffect(() => {
+    if (!invitedOnly || verifiedEthAddresses.length === 0) {
+      setIsBlocked(false);
+      return;
+    }
+
+    const invitedMatch = invited.some((entry) =>
+      verifiedEthAddresses.includes(entry.address.toLowerCase())
+    );
+    const creatorMatch = creator ? verifiedEthAddresses.includes(creator) : false;
+    const participantMatch = participants.some((entry) =>
+      verifiedEthAddresses.includes(entry.address.toLowerCase())
+    );
+
+    setIsBlocked(!(invitedMatch || creatorMatch || participantMatch));
+  }, [creator, invited, invitedOnly, participants, verifiedEthAddresses]);
+
+  const handleClose = (shouldRedirect = true) => {
+    const returnPath = preset?.returnPath ?? null;
+    close();
+    if (shouldRedirect && returnPath) {
+      router.push(returnPath);
+    }
+  };
 
   useEffect(() => {
     if (!isOpen || mode !== "search" || query.trim() !== "") return;
@@ -416,52 +642,48 @@ export function GlobalSendDrawer() {
 
           if (normalizedQuery.toLowerCase().endsWith(".eth")) {
             try {
-              const ensClient = createPublicClient({
-                chain: mainnet,
-                transport: http(),
-              });
-              const ensAddress = await ensClient.getEnsAddress({
-                name: normalize(normalizedQuery.toLowerCase()),
-              });
+              const ensQuery = normalizedQuery.toLowerCase();
+              if (ensSearchCache.has(ensQuery)) {
+                setResults(ensSearchCache.get(ensQuery) ? [ensSearchCache.get(ensQuery)!] : []);
+                return;
+              }
+              const token = await getAuthToken();
+              const res = await fetch(
+                `/api/recipient-resolve?ens=${encodeURIComponent(
+                  ensQuery
+                )}`,
+                token
+                  ? {
+                      headers: {
+                        Authorization: `Bearer ${token}`,
+                      },
+                    }
+                  : undefined
+              );
+              const data = await res.json().catch(() => null);
+              const ensAddress = data?.resolved?.address;
 
-              if (!ensAddress) {
+              if (!ensAddress || !isAddress(ensAddress)) {
+                ensSearchCache.set(ensQuery, null);
                 setResults([]);
                 return;
               }
 
-              const profileRes = await fetch(
-                `/api/neynar/user/by-address/${ensAddress}`
-              );
-              const profile = await profileRes.json().catch(() => null);
-
               const ensResult: SocialUser = {
                 id: `address:${ensAddress.toLowerCase()}`,
                 provider: "address",
-                fid:
-                  typeof profile?.fid === "number" && Number.isFinite(profile.fid)
-                    ? profile.fid
-                    : undefined,
-                username:
-                  typeof profile?.username === "string" && profile.username
-                    ? profile.username
-                    : normalizedQuery,
-                display_name:
-                  typeof profile?.display_name === "string" &&
-                  profile.display_name
-                    ? profile.display_name
-                    : normalizedQuery,
-                pfp_url:
-                  typeof profile?.pfp_url === "string" ? profile.pfp_url : "",
+                username: ensQuery,
+                display_name: ensQuery,
+                pfp_url: "",
                 verified_addresses:
-                  profile?.verified_addresses && typeof profile.verified_addresses === "object"
-                    ? profile.verified_addresses
-                    : {
-                        primary: {
-                          eth_address: ensAddress,
-                        },
-                      },
+                  {
+                    primary: {
+                      eth_address: ensAddress,
+                    },
+                  },
               };
 
+              ensSearchCache.set(ensQuery, ensResult);
               setResults([ensResult]);
               return;
             } catch {
@@ -643,12 +865,14 @@ export function GlobalSendDrawer() {
       alert("Please select a token.");
       return;
     }
+    if (isBlocked) return;
 
     setSendStatus("confirming");
 
     const token = tokenList.find((t) => t.name === selectedToken);
     const decimals = token?.decimals ?? 18;
     const rawAmount = parseUnits(amount, decimals);
+    const sendingToastId = toast.loading("Sending...");
 
     try {
       let txHash: `0x${string}`;
@@ -663,11 +887,13 @@ export function GlobalSendDrawer() {
       } else {
         if (!token?.address) throw new Error("Token address missing");
 
-        const tx = await writeContractAsync({
-          address: token.address as `0x${string}`,
-          abi: erc20Abi,
-          functionName: "transfer",
-          args: [recipient, rawAmount],
+        const tx = await sendTransactionAsync({
+          to: token.address as `0x${string}`,
+          data: encodeFunctionData({
+            abi: erc20Abi,
+            functionName: "transfer",
+            args: [recipient, rawAmount],
+          }),
           chainId: 8453,
         });
 
@@ -691,9 +917,12 @@ export function GlobalSendDrawer() {
       setAmount("0");
       setSendDrawerOpen(false);
       setShowSuccess(true);
-      close();
+      toast.success("Sent", {
+        id: sendingToastId,
+        icon: <Check className="h-4 w-4" />,
+      });
 
-      if (walletAddress) {
+      if (walletAddress && !preset?.splitId) {
         void fetch("/api/activity/client-transfer", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -713,9 +942,68 @@ export function GlobalSendDrawer() {
         }).catch(() => {});
       }
 
+      if (preset?.splitId) {
+        let context: Awaited<typeof sdk.context> | null = null;
+        try {
+          context = await sdk.context;
+        } catch {
+          context = null;
+        }
+
+        const fid = context?.user?.fid ?? identityFid ?? undefined;
+        const username = context?.user?.username ?? identityUsername ?? null;
+        const senderPfp = context?.user?.pfpUrl ?? identityPfp ?? "";
+
+        let senderAddress = (
+          identityAddress ??
+          walletAddress ??
+          address ??
+          preset.recipientAddress
+        ).toLowerCase();
+
+        if (username) {
+          try {
+            const res = await fetch(`/api/neynar/user/by-username?username=${username}`);
+            const data = await res.json().catch(() => null);
+            const verified = data?.verified_addresses?.primary?.eth_address;
+            if (typeof verified === "string" && verified) {
+              senderAddress = verified.toLowerCase();
+            }
+          } catch {
+            // keep fallback sender address
+          }
+        }
+
+        const participant = {
+          fid,
+          address: senderAddress,
+          name: username ?? senderAddress.slice(0, 6),
+          pfp: senderPfp,
+        };
+
+        await fetch(`/api/split/${preset.splitId}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            participant,
+            payment: {
+              fid,
+              address: senderAddress,
+              name: participant.name,
+              txHash,
+              token: selectedToken,
+              amount: parsedAmount,
+              pfp: senderPfp,
+            },
+          }),
+        });
+      }
+
       // Incoming payment notifications are sent by the Moralis webhook to avoid duplicates.
+      handleClose(Boolean(preset?.returnPath));
     } catch (err) {
       console.error("Send failed:", err);
+      toast.error("Transaction failed.", { id: sendingToastId });
     } finally {
       setSendStatus("idle");
     }
@@ -746,7 +1034,9 @@ export function GlobalSendDrawer() {
 
   const isDisabled =
     sendStatus !== "idle" ||
+    isBlocked ||
     isRecipientResolving ||
+    Boolean(recipientResolveError) ||
     !amount ||
     isNaN(amountNumber) ||
     amountNumber <= 0 ||
@@ -760,19 +1050,28 @@ export function GlobalSendDrawer() {
         | `0x${string}`
         | undefined) ??
       null;
+  const searchPlaceholder = prefersTwitterGraph
+    ? "twitter @, ens, or 0x..."
+    : "social @, ens, or 0x...";
+  const suggestionsLabel =
+    prefersTwitterGraph && query.trim() === ""
+      ? "Twitter following"
+      : !prefersTwitterGraph && query.trim() === ""
+        ? "People you follow"
+        : null;
 
   return (
     <>
       <ResponsiveDialog
         open={isOpen}
         onOpenChange={(v) => {
-          if (!v) close();
+          if (!v) handleClose();
         }}
       >
         <ResponsiveDialogContent className="scroll-smooth top-[80px] bottom-0 p-4 flex flex-col md:top-1/2 md:bottom-auto md:w-full md:max-w-md md:max-h-[85vh] md:overflow-hidden">
           <ResponsiveDialogTitle className="sr-only">Send</ResponsiveDialogTitle>
 
-            {!scannedUsername && !sendDrawerOpen && (
+            {!preset && !scannedUsername && !sendDrawerOpen && (
               <>
                 {/* Fixed top section */}
                 <div className="pt-2 sticky top-0 bg-background z-10">
@@ -784,7 +1083,7 @@ export function GlobalSendDrawer() {
                     <input
                       ref={inputRef}
                       type="text"
-                      placeholder="social @, ens, or 0x..."
+                      placeholder={searchPlaceholder}
                       value={query}
                       onFocus={() => {
                         if (mode === "token") {
@@ -822,6 +1121,11 @@ export function GlobalSendDrawer() {
                   <div className="h-4" /> {/* spacer */}
                 </div>
                 <div className="flex-1 min-h-0 overflow-y-auto pb-8 space-y-2">
+                  {mode === "search" && suggestionsLabel ? (
+                    <div className="px-1 pb-1 text-xs uppercase tracking-wide text-white/35">
+                      {suggestionsLabel}
+                    </div>
+                  ) : null}
                   {mode === "search" && query.trim() !== "" && isSearching &&
                     Array.from({ length: 4 }).map((_, idx) => (
                       <div
@@ -935,7 +1239,7 @@ export function GlobalSendDrawer() {
 
                   // Close the parent search dialog too, so it doesn't reappear
                   // when the send details dialog is dismissed.
-                  close();
+                  handleClose();
 
                   // Provider state (selected user/query/etc.) is reset by close().
                 }
@@ -945,29 +1249,69 @@ export function GlobalSendDrawer() {
                   <ResponsiveDialogTitle className="text-lg text-center font-medium">
                     <div className="p-4 flex flex-col items-center space-y-1">
                       <div className="relative w-16 h-16 rounded-full bg-purple-100 text-purple-800 flex items-center justify-center">
-                        <UserAvatar
-                          src={selectedUser?.pfp_url}
-                          seed={
-                            selectedUser?.username ??
-                            selectedUser?.fid ??
-                            selectedUser?.id
-                          }
-                          width={64}
-                          alt={selectedUser?.username ?? "Recipient"}
-                          className="w-16 h-16 rounded-full object-cover"
-                        />
-                        <img
-                          src={
-                            tokenList.find((t) => t.name === selectedToken)
-                              ?.icon!
-                          }
-                          alt={selectedToken!}
-                          className="absolute bottom-0 -right-2 w-6 h-6 rounded-full border-2 border-card mb-2"
-                        />
+                        {preset?.splitId ? (
+                          <>
+                            <ReceiptText className="w-7 h-7" />
+                            {selectedToken ? (
+                              <img
+                                src={tokenList.find((t) => t.name === selectedToken)?.icon ?? ""}
+                                alt={selectedToken}
+                                className="absolute bottom-0 -right-2 w-6 h-6 rounded-full border-2 border-card mb-2"
+                              />
+                            ) : null}
+                          </>
+                        ) : (
+                          <>
+                            <UserAvatar
+                              src={selectedUser?.pfp_url}
+                              seed={
+                                selectedUser?.username ??
+                                selectedUser?.fid ??
+                                selectedUser?.id
+                              }
+                              width={64}
+                              alt={selectedUser?.username ?? "Recipient"}
+                              className="w-16 h-16 rounded-full object-cover"
+                            />
+                            <img
+                              src={
+                                tokenList.find((t) => t.name === selectedToken)
+                                  ?.icon!
+                              }
+                              alt={selectedToken!}
+                              className="absolute bottom-0 -right-2 w-6 h-6 rounded-full border-2 border-card mb-2"
+                            />
+                          </>
+                        )}
                       </div>
 
+                      {preset?.billName ? (
+                        <p className="text-white text-xl mt-4">{`Group Bill: ${preset.billName}`}</p>
+                      ) : null}
+
+                      {participants.length > 0 ? (
+                        <div className="flex justify-center -space-x-3 mt-2">
+                          {participants.slice(0, 8).map((participant) => (
+                            <img
+                              key={participant.address}
+                              src={
+                                participant.pfp ||
+                                `https://api.dicebear.com/9.x/glass/svg?seed=${participant.address}`
+                              }
+                              alt={participant.address}
+                              className="w-8 h-8 rounded-full border-2 border-white object-cover"
+                            />
+                          ))}
+                          {participants.length > 8 ? (
+                            <span className="w-8 h-8 flex items-center justify-center bg-card text-white text-xs font-medium rounded-full border-2 border-white">
+                              +{participants.length - 8}
+                            </span>
+                          ) : null}
+                        </div>
+                      ) : null}
+
                       <ResponsiveDialogTitle className="text-lg font-medium text-center mt-4 pt-4">
-                        You're sending {""}
+                        {preset?.splitId ? "You’re paying " : "You're sending "}
                         <span className="text-primary mt-2">
                           {selectedUser?.provider === "address"
                             ? selectedUser?.display_name ?? selectedUser?.username
@@ -978,13 +1322,21 @@ export function GlobalSendDrawer() {
                       <p className="text-white/30 text-sm break-all text-center">
                         {isRecipientResolving ? (
                           <span className="text-white/40 text-sm">
-                            Resolving wallet...
+                            {selectedUser?.provider === "twitter"
+                              ? "Preparing wallet..."
+                              : "Resolving wallet..."}
+                          </span>
+                        ) : recipientResolveError ? (
+                          <span className="text-red-400 text-sm">
+                            {recipientResolveError}
                           </span>
                         ) : displayedRecipientAddress ? (
                           shortAddress(displayedRecipientAddress)
                         ) : (
                           <span className="text-red-400 text-sm">
-                            This user has no connected wallet
+                            {selectedUser?.provider === "twitter"
+                              ? "Unable to prepare wallet for this user"
+                              : "This user has no connected wallet"}
                           </span>
                         )}
                       </p>
@@ -996,6 +1348,7 @@ export function GlobalSendDrawer() {
                         inputMode="decimal"
                         pattern="[0-9]*"
                         value={amount}
+                        readOnly={Boolean(preset?.lockAmount)}
                         onValueChange={(values) => {
                           setAmount(values.value);
                         }}
@@ -1026,14 +1379,16 @@ export function GlobalSendDrawer() {
                                 ? "Loading balance..."
                                 : `Balance: ${formatAmount(tokenBalances[selectedToken])} ${selectedToken}`}
                             </span>
-                            <span
-                              className="ml-1 text-primary"
-                              onClick={() => {
-                                setTokenDrawerOpen(true);
-                              }}
-                            >
-                              Change
-                            </span>
+                            {!preset?.lockToken ? (
+                              <span
+                                className="ml-1 text-primary"
+                                onClick={() => {
+                                  setTokenDrawerOpen(true);
+                                }}
+                              >
+                                Change
+                              </span>
+                            ) : null}
                           </>
                         )}
 
@@ -1098,6 +1453,11 @@ export function GlobalSendDrawer() {
                         `Send`
                       )}
                     </Button>
+                    {isBlocked ? (
+                      <p className="text-center text-red-400 text-sm mt-2">
+                        Only invited users can pay this group bill.
+                      </p>
+                    ) : null}
                     {/* {selectedToken && (
                       <p className="text-center text-sm text-white/30 mt-2">
                         Balance:{" "}

@@ -20,7 +20,7 @@ export async function POST(
     const groupId = params.groupId?.toLowerCase();
     const { address, fid } = await req.json();
 
-    if (!groupId || !address || !fid) {
+    if (!groupId || !address) {
       return Response.json(
         { error: "Missing required fields" },
         { status: 400 }
@@ -32,10 +32,16 @@ export async function POST(
     const db = client.db();
     const collection = db.collection("a-claim-drops");
 
-    // ✅ Check if this fid has already claimed from this group
+    const existingClaimFilters: Record<string, unknown>[] = [
+      { claimedBy: normalizedAddress },
+    ];
+    if (typeof fid === "number" && Number.isFinite(fid) && fid > 0) {
+      existingClaimFilters.push({ claimedByFid: fid });
+    }
+
     const existingClaim = await collection.findOne({
       groupId,
-      claimedByFid: fid,
+      $or: existingClaimFilters,
     });
 
     if (existingClaim) {
@@ -91,11 +97,13 @@ export async function POST(
           claimed: true,
           claimedBy: normalizedAddress,
           claimedAt: new Date(),
-          claimedByFid: fid,
           txHash: sendResult.hash,
           txTo: normalizedAddress,
           txAmount: drop.amount,
           txTimestamp: new Date().toISOString(),
+          ...(typeof fid === "number" && Number.isFinite(fid) && fid > 0
+            ? { claimedByFid: fid }
+            : {}),
         },
       }
     );

@@ -17,6 +17,7 @@ import {
 import { useFundWallet, useIdentityToken, useToken } from "@privy-io/react-auth";
 import { NumericFormat } from "react-number-format";
 import { base } from "viem/chains";
+import { toast } from "sonner";
 import { ReceiveDrawerController } from "@/components/app/ReceiveDrawerController";
 import { MorphoDepositDrawer } from "@/components/app/LendingMorpho";
 import { PaymentTokenPickerDialog } from "@/components/app/PaymentTokenPickerDialog";
@@ -781,6 +782,7 @@ export default function WalletPage() {
       if (!address) return;
       try {
         await navigator.clipboard.writeText(address);
+        toast.success("Link copied");
         setWalletAddressCopied(true);
         if (copyResetTimeoutRef.current) {
           window.clearTimeout(copyResetTimeoutRef.current);

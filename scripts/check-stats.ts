@@ -36,50 +36,6 @@ const run = async () => {
   const totalDepositorsAllTime = depositAllAgg.length;
   const totalAmountDepositedAllTime = depositAllAgg.reduce((sum, d) => sum + d.totalDeposited, 0);
 
-
-  let totalSpinsToday = 0;
-  let totalWinnersToday = 0;
-  let totalSpinsAllTime = 0;
-  let totalWinnersAllTime = 0;
-
-  const spinsCursor = await db.collection("a-daily-spins").find({});
-  for await (const doc of spinsCursor) {
-    const spins = doc.spins || {};
-    for (const date in spins) {
-      const entries = spins[date];
-      totalSpinsAllTime += entries.length;
-      totalWinnersAllTime += entries.filter(
-        (s: any) => s.reward !== "Nothing today"
-      ).length;
-
-      if (date === today) {
-        totalSpinsToday += entries.length;
-        totalWinnersToday += entries.filter(
-          (s: any) => s.reward !== "Nothing today"
-        ).length;
-      }
-    }
-  }
-
-  const tracker = await db
-    .collection("a-daily-token-tracker")
-    .findOne({ date: today });
-  const allTrackers = await db
-    .collection("a-daily-token-tracker")
-    .find({})
-    .toArray();
-
-  // const totalDistributedToday = tracker?.total ?? 0;
-  const totalDistributedToday =
-    tracker?.txs
-      ?.filter((tx: any) => tx.send === true)
-      .reduce((sum: number, tx: any) => sum + tx.amount, 0) ?? 0;
-
-  const totalDistributedAllTime = allTrackers.reduce(
-    (sum, t) => sum + (t.total || 0),
-    0
-  );
-
   const splitToday = await db
     .collection("a-split-game")
     .countDocuments({ createdAt: { $gte: startOfToday, $lte: endOfToday } });
@@ -140,9 +96,6 @@ const run = async () => {
 
   console.log(`-------------`);
   console.log(`\n📅 Daily Stats for ${today}`);
-  console.log(`🎯 Spins Today: ${totalSpinsToday}`);
-  console.log(`🏆 Winners Today: ${totalWinnersToday}`);
-  console.log(`🪙 $TAB Distributed Today: ${totalDistributedToday}`);
   console.log(`💸 Tables Created Today: ${splitToday}`);
   console.log(`🧾 Bills Created Today: ${billToday}`);
   console.log(`🏦 Depositors Today: ${totalDepositorsToday}`);
@@ -150,9 +103,6 @@ console.log(`💰 Deposited Today: ${totalAmountDepositedToday.toFixed(2)}`);
 
   console.log(`-------------`);
   console.log(`\n📊 All-Time Stats`);
-  console.log(`🎯 Total Spins: ${totalSpinsAllTime}`);
-  console.log(`🏆 Total Winners: ${totalWinnersAllTime}`);
-  console.log(`🪙 Total $TAB Distributed: ${totalDistributedAllTime}`);
   console.log(`💸 Total Tables: ${splitAll}`);
   console.log(`🧾 Total Bills: ${billAll}`);
   console.log(`📣 Total Users with Notifications: ${totalNotifFIDs}`);

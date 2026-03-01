@@ -7,9 +7,8 @@ import sdk from "@farcaster/frame-sdk";
 import { NumericFormat } from "react-number-format";
 import { parseUnits } from "viem";
 import { Button } from "@/components/ui/button";
-import { SendToAddressDrawer } from "@/components/app/SendToAddressDrawer";
-import { SendToRawAddressDrawer } from "@/components/app/SendToRawAddressDrawer";
 import { useFrameSplash } from "@/providers/FrameSplashProvider";
+import { useSendDrawer } from "@/providers/SendDrawerProvider";
 import { tokenList } from "@/lib/tokens";
 import { useAccount, useConnect, useDisconnect } from "wagmi";
 import { injected } from "wagmi/connectors";
@@ -44,6 +43,7 @@ export default function Page() {
   const wallet = wallets?.[0];
   const { isConnected: wagmiConnected, address: wagmiAddress } = useAccount();
   const { revokeWallets } = useHeadlessDelegatedActions();
+  const { open: openSendDrawer, openPreset, setQuery } = useSendDrawer();
 
   const [recipient, setRecipient] = useState("");
   const [recipientFromContext, setRecipientFromContext] = useState(false);
@@ -55,15 +55,6 @@ export default function Page() {
   const [resolvedAddress, setResolvedAddress] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
 
-  const [scannedSplit, setScannedSplit] = useState<{
-    splitId: string;
-    payTo: `0x${string}`;
-    amount: string;
-    token: string;
-    billName?: string;
-  } | null>(null);
-
-  const [showSplitDrawer, setShowSplitDrawer] = useState(false);
   const [triggeredByQuery, setTriggeredByQuery] = useState(false);
 
   const address = useMemo(() => {
@@ -148,18 +139,33 @@ export default function Page() {
     const urlAmount = searchParams.get("amount");
     const token = searchParams.get("token") ?? "ETH";
 
-    if (payTo && !triggeredByQuery) {
-      setScannedSplit({
-        payTo: payTo as `0x${string}`,
-        amount: urlAmount ?? "",
+    if (payTo && urlAmount && !triggeredByQuery) {
+      openPreset({
+        recipientAddress: payTo as `0x${string}`,
+        amount: urlAmount,
         token,
-        splitId: "",
+        splitId: undefined,
+        billName: undefined,
+        lockRecipient: true,
+        lockAmount: true,
+        lockToken: true,
       });
-      setShowSplitDrawer(true);
       setTriggeredByQuery(true);
       router.replace("/r", { scroll: false });
     }
-  }, [searchParams, triggeredByQuery]);
+  }, [searchParams, triggeredByQuery, router, openPreset]);
+
+  useEffect(() => {
+    const payTo = searchParams.get("payTo");
+    const urlAmount = searchParams.get("amount");
+
+    if (!payTo || triggeredByQuery || urlAmount) return;
+
+    setQuery(payTo);
+    openSendDrawer();
+    setTriggeredByQuery(true);
+    router.replace("/r", { scroll: false });
+  }, [searchParams, triggeredByQuery, openSendDrawer, router, setQuery]);
 
   const handleLogout = async () => {
     try {
@@ -371,37 +377,6 @@ export default function Page() {
           </a>
         </div>
       </div>
-
-      {scannedSplit &&
-        (scannedSplit.amount && !isNaN(Number(scannedSplit.amount)) ? (
-          <SendToAddressDrawer
-            isOpen={showSplitDrawer}
-            onOpenChange={(v) => {
-              setShowSplitDrawer(v);
-              if (!v) {
-                setScannedSplit(null);
-                setTriggeredByQuery(false);
-              }
-            }}
-            address={scannedSplit.payTo}
-            amount={parseFloat(scannedSplit.amount)}
-            token={scannedSplit.token}
-            splitId={scannedSplit.splitId}
-            billName={scannedSplit.billName}
-          />
-        ) : (
-          <SendToRawAddressDrawer
-            isOpen={showSplitDrawer}
-            onOpenChange={(v) => {
-              setShowSplitDrawer(v);
-              if (!v) {
-                setScannedSplit(null);
-                setTriggeredByQuery(false);
-              }
-            }}
-            address={scannedSplit.payTo}
-          />
-        ))}
     </div>
   );
 }

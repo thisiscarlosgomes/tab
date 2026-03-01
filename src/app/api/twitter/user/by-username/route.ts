@@ -37,6 +37,7 @@ export async function GET(req: NextRequest) {
     username: profile.username,
     display_name: profile.name,
     pfp_url: profile.profilePictureUrl ?? undefined,
+    bio: profile.description ?? undefined,
     verified_addresses: {
       primary: {
         eth_address: null,

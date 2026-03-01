@@ -14,10 +14,10 @@ import { useSendTransaction, useWriteContract } from "wagmi";
 import { erc20Abi } from "viem";
 import { getTokenBalance } from "@/lib/getTokenBalance";
 import { DropSuccessDrawer } from "@/components/app/DropSuccessDrawer";
-import sdk from "@farcaster/frame-sdk";
 import { toast } from "sonner";
 import { shortAddress } from "@/lib/shortAddress";
 import { LoaderCircle } from "lucide-react";
+import { useTabIdentity } from "@/lib/useTabIdentity";
 
 const getTokenSuffix = (token: string) => {
   switch (token) {
@@ -48,9 +48,26 @@ type Drop = {
     address: string;
   };
 };
+
+type DropResponseItem = {
+  dropId: string;
+  claimToken?: string;
+  claimUrl?: string;
+};
+
+type GroupDropClaim = {
+  claimed?: boolean;
+  claimedBy?: string | null;
+};
+
 export default function DropCreatePage() {
   const { dismiss } = useFrameSplash();
   const { address } = useAccount();
+  const {
+    username: identityUsername,
+    pfp: identityPfp,
+    fid: identityFid,
+  } = useTabIdentity();
   const [creator, setCreator] = useState<{
     address: string;
     name?: string;
@@ -99,9 +116,17 @@ export default function DropCreatePage() {
       await Promise.all(
         unique.map(async (addr) => {
           try {
-            const res = await fetch(`/api/neynar/user/by-address/${addr}`);
-            const data = await res.json();
-            results[addr!] = data?.username ? `@${data.username}` : addr!;
+            const [tabRes, neynarRes] = await Promise.all([
+              fetch(`/api/user/by-address/${addr}`),
+              fetch(`/api/neynar/user/by-address/${addr}`),
+            ]);
+            const tabData = await tabRes.json().catch(() => null);
+            const neynarData = await neynarRes.json().catch(() => null);
+            const username =
+              (typeof tabData?.username === "string" && tabData.username.trim()) ||
+              (typeof neynarData?.username === "string" && neynarData.username.trim()) ||
+              null;
+            results[addr!] = username ? `@${username}` : addr!;
           } catch {
             results[addr!] = addr!;
           }
@@ -116,19 +141,18 @@ export default function DropCreatePage() {
   }, [myDrops]);
 
   useEffect(() => {
-    const fetchContext = async () => {
-      if (!address) return;
-      const context = await sdk.context;
-      setCreator({
-        address,
-        name: context.user?.username ?? address.slice(0, 6),
-        fid: context.user?.fid,
-        pfp: context.user?.pfpUrl ?? "",
-      });
-    };
+    if (!address) {
+      setCreator(null);
+      return;
+    }
 
-    fetchContext();
-  }, [address]);
+    setCreator({
+      address,
+      name: identityUsername ?? address.slice(0, 6),
+      fid: identityFid ?? undefined,
+      pfp: identityPfp ?? "",
+    });
+  }, [address, identityFid, identityPfp, identityUsername]);
 
   useEffect(() => {
     const fetchMyDrops = async () => {
@@ -147,16 +171,17 @@ export default function DropCreatePage() {
     if (!creator) return;
 
     const fetchBalances = async () => {
-      const balances: Record<string, string> = {};
-      for (const token of tokenList) {
-        const balance = await getTokenBalance({
-          tokenAddress: token.address as `0x${string}` | undefined,
-          userAddress: creator.address as `0x${string}`,
-          decimals: token.decimals,
-        });
-        balances[token.name] = balance;
-      }
-      setTokenBalances(balances);
+      const balances = await Promise.all(
+        tokenList.map(async (token) => {
+          const balance = await getTokenBalance({
+            tokenAddress: token.address as `0x${string}` | undefined,
+            userAddress: creator.address as `0x${string}`,
+            decimals: token.decimals,
+          });
+          return [token.name, balance] as const;
+        })
+      );
+      setTokenBalances(Object.fromEntries(balances));
     };
 
     fetchBalances();
@@ -220,14 +245,14 @@ export default function DropCreatePage() {
       const data = await res.json();
 
       if (res.ok && Array.isArray(data.drops)) {
-        data.drops.forEach(({ dropId, claimToken }: any) => {
+        data.drops.forEach(({ dropId, claimToken }: DropResponseItem) => {
           localStorage.setItem(`claimToken:${dropId}`, claimToken);
         });
 
         if (data.groupUrl) {
           setClaimUrl([data.groupUrl]); // ✅ only this
         } else {
-          setClaimUrl(data.drops.map((d: any) => d.claimUrl));
+          setClaimUrl(data.drops.map((d: DropResponseItem) => d.claimUrl ?? ""));
         }
       } else {
         alert("Drop creation failed");
@@ -262,8 +287,8 @@ export default function DropCreatePage() {
         const res = await fetch(`/api/drop/group/${groupId}`);
         const data = await res.json();
         const claimedAddresses = (data.drops || [])
-          .filter((d: any) => d.claimed && d.claimedBy)
-          .map((d: any) => d.claimedBy?.toLowerCase());
+          .filter((d: GroupDropClaim) => d.claimed && d.claimedBy)
+          .map((d: GroupDropClaim) => d.claimedBy?.toLowerCase());
         setClaimers([...new Set(claimedAddresses)] as string[]);
       };
       fetchGroup();

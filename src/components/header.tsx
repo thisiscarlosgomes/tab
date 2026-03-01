@@ -14,7 +14,6 @@ import {
   Bell,
 } from "lucide-react";
 import { usePrivy } from "@privy-io/react-auth";
-import { DailySpinDrawer } from "@/components/app/DailySpinDrawer";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useTabIdentity } from "@/lib/useTabIdentity";
@@ -75,7 +74,6 @@ export function Header() {
   const showMobileMainPageIcon = false;
   const [points, setPoints] = useState<number | null>(null);
   const [shake, setShake] = useState(false);
-  const [spinOpen, setSpinOpen] = useState(false);
   const [loggingOut, setLoggingOut] = useState(false);
 
   const [showReceiveDrawer, setShowReceiveDrawer] = useState(false);
@@ -319,9 +317,6 @@ export function Header() {
           isOpen={showReceiveDrawer}
           onOpenChange={setShowReceiveDrawer}
         />
-
-        <DailySpinDrawer isOpen={spinOpen} setIsOpen={setSpinOpen} />
-
       </header>
 
       {/* 🆕 About Drawer */}

@@ -85,7 +85,9 @@ export async function resolveRecipient(params: {
     try {
       const ensRpcUrl =
         process.env.ETHEREUM_RPC_URL ??
+        process.env.ALCHEMY_URL ??
         process.env.ALCHEMY_MAINNET_URL ??
+        process.env.NEXT_PUBLIC_ALCHEMY_URL ??
         "https://eth.llamarpc.com";
       const ensClient = createPublicClient({
         chain: mainnet,

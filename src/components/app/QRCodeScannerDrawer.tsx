@@ -3,22 +3,8 @@
 import { useEffect, useRef, useState, useCallback } from "react";
 import { Html5Qrcode, Html5QrcodeScannerState } from "html5-qrcode";
 import { Drawer } from "vaul";
-import { SendToUserDrawer } from "@/components/app/SendToUserDrawer";
-import { SendToAddressDrawer } from "@/components/app/SendToAddressDrawer";
-import { SendToRawAddressDrawer } from "@/components/app/SendToRawAddressDrawer";
-import { Image } from "lucide-react";
-
-type FarcasterUser = {
-  fid: number;
-  username: string;
-  display_name: string;
-  pfp_url: string;
-  verified_addresses?: {
-    primary?: {
-      eth_address?: string | null;
-    };
-  };
-};
+import { useSendDrawer } from "@/providers/SendDrawerProvider";
+import { ImageIcon } from "lucide-react";
 
 export function QRCodeScannerDrawer({
   isOpen,
@@ -27,24 +13,18 @@ export function QRCodeScannerDrawer({
   isOpen: boolean;
   setIsOpen: (v: boolean) => void;
 }) {
+  const {
+    open: openSendDrawer,
+    openPreset,
+    setQuery,
+    setSelectedUser,
+    setSelectedToken,
+    setTokenType,
+  } = useSendDrawer();
   const videoContainerId = "html5qr-reader";
   const scannerRef = useRef<Html5Qrcode | null>(null);
 
   const [error, setError] = useState("");
-  const [scannedUser, setScannedUser] = useState<FarcasterUser | null>(null);
-  const [sendOpen, setSendOpen] = useState(false);
-  const [payToAddress, setPayToAddress] = useState<`0x${string}` | null>(null);
-  const [showFlexibleDrawer, setShowFlexibleDrawer] = useState(false);
-
-  const [scannedSplit, setScannedSplit] = useState<{
-    splitId: string;
-    payTo: `0x${string}`;
-    amount: string;
-    billName?: string;
-    token: string; // ✅ Add this line
-  } | null>(null);
-
-  const [showSplitDrawer, setShowSplitDrawer] = useState(false);
 
   const stopScanner = async () => {
     if (!scannerRef.current) return;
@@ -99,15 +79,16 @@ export function QRCodeScannerDrawer({
           const token = data?.token ?? tokenParam;
 
           // ✅ Store it in scannedSplit state
-          setScannedSplit({
-            splitId,
-            payTo: payTo as `0x${string}`,
+          openPreset({
+            recipientAddress: payTo as `0x${string}`,
             amount,
-            token, // <-- add this
+            token,
+            splitId,
             billName,
+            lockRecipient: true,
+            lockAmount: true,
+            lockToken: true,
           });
-
-          setShowSplitDrawer(true);
           return;
         }
 
@@ -115,9 +96,8 @@ export function QRCodeScannerDrawer({
         if (payTo && !splitId && !amount) {
           await stopScanner();
           setIsOpen(false);
-
-          setPayToAddress(payTo as `0x${string}`);
-          setShowFlexibleDrawer(true);
+          setQuery(payTo);
+          openSendDrawer();
           return;
         }
 
@@ -128,15 +108,14 @@ export function QRCodeScannerDrawer({
           // fallback token if missing
           const token = parsedUrl.searchParams.get("token") ?? "ETH";
 
-          setScannedSplit({
-            splitId: "", // not relevant here
-            payTo: payTo as `0x${string}`,
+          openPreset({
+            recipientAddress: payTo as `0x${string}`,
             amount,
             token,
-            billName: undefined,
+            lockRecipient: true,
+            lockAmount: true,
+            lockToken: true,
           });
-
-          setShowSplitDrawer(true);
           return;
         }
 
@@ -155,15 +134,19 @@ export function QRCodeScannerDrawer({
         const data = await res.json();
 
         if (data?.username && data?.fid) {
-          setScannedUser({
+          setQuery("");
+          setSelectedUser({
+            id: `farcaster:${data.fid}`,
+            provider: "farcaster",
             fid: data.fid,
             username: data.username,
             display_name: data.display_name,
             pfp_url: data.pfp_url,
             verified_addresses: data.verified_addresses,
           });
-
-          setSendOpen(true);
+          setSelectedToken("USDC");
+          setTokenType("USDC");
+          openSendDrawer();
 
           // ✅ slight delay to let drawer mount before closing scanner
           setTimeout(() => {
@@ -177,7 +160,7 @@ export function QRCodeScannerDrawer({
         setError("Invalid QR code format");
       }
     },
-    [setIsOpen]
+    [openPreset, openSendDrawer, setIsOpen, setQuery, setSelectedToken, setSelectedUser, setTokenType]
   );
 
   useEffect(() => {
@@ -275,7 +258,7 @@ export function QRCodeScannerDrawer({
                     }
                     className="bg-white/20 text-white text-sm px-5 py-3 rounded-full hover:bg-white/20 transition"
                   >
-                    <Image className="w-5 h-5" />
+                    <ImageIcon className="w-5 h-5" />
                   </button>
                 </div>
 
@@ -300,43 +283,6 @@ export function QRCodeScannerDrawer({
           </Drawer.Content>
         </Drawer.Portal>
       </Drawer.Root>
-
-      {scannedUser && (
-        <SendToUserDrawer
-          user={scannedUser}
-          isOpen={sendOpen}
-          onOpenChange={(v) => {
-            setSendOpen(v);
-            if (!v) setScannedUser(null);
-          }}
-        />
-      )}
-
-      {scannedSplit && (
-        <SendToAddressDrawer
-          isOpen={showSplitDrawer}
-          onOpenChange={(v) => {
-            setShowSplitDrawer(v);
-            if (!v) setScannedSplit(null);
-          }}
-          address={scannedSplit.payTo}
-          amount={parseFloat(scannedSplit.amount)}
-          token={scannedSplit.token}
-          splitId={scannedSplit.splitId}
-          billName={scannedSplit.billName}
-        />
-      )}
-
-      {payToAddress && (
-        <SendToRawAddressDrawer
-          isOpen={showFlexibleDrawer}
-          onOpenChange={(v) => {
-            setShowFlexibleDrawer(v);
-            if (!v) setPayToAddress(null);
-          }}
-          address={payToAddress}
-        />
-      )}
     </>
   );
 }

@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useAccount } from "wagmi";
 import { useRouter } from "next/navigation";
+import { usePrivy } from "@privy-io/react-auth";
 import { Button } from "@/components/ui/button";
 import sdk from "@farcaster/frame-sdk";
 import { NumericFormat } from "react-number-format";
@@ -10,15 +11,12 @@ import { tokenList } from "@/lib/tokens";
 import { useTabIdentity } from "@/lib/useTabIdentity";
 import { PaymentTokenPickerDialog } from "@/components/app/PaymentTokenPickerDialog";
 import { FriendsPickerDialog } from "@/components/app/FriendsPickerDialog";
+import { getSocialUserKey, SocialUser } from "@/lib/social";
 import { ResponsiveDialog, ResponsiveDialogContent, ResponsiveDialogTitle } from "@/components/ui/responsive-dialog";
 
 import { LoaderCircle } from "lucide-react";
 
-type FarcasterUser = {
-  fid: number;
-  username: string;
-  display_name?: string;
-  pfp_url?: string;
+type InviteUser = SocialUser & {
   verified_addresses?: {
     primary?: {
       eth_address?: string | null;
@@ -29,6 +27,7 @@ type FarcasterUser = {
 
 export default function SplitPage() {
   const { address, isConnected } = useAccount();
+  const { user, getAccessToken } = usePrivy();
   const {
     username: tabUsername,
     pfp: tabPfp,
@@ -46,18 +45,46 @@ export default function SplitPage() {
   const [showSpinCreateIntroDialog, setShowSpinCreateIntroDialog] = useState(false);
   const [inviteDialogOpen, setInviteDialogOpen] = useState(false);
   const [inviteQuery, setInviteQuery] = useState("");
-  const [followers, setFollowers] = useState<FarcasterUser[]>([]);
-  const [filteredFollowers, setFilteredFollowers] = useState<FarcasterUser[]>([]);
-  const [selectedInvites, setSelectedInvites] = useState<FarcasterUser[]>([]);
+  const [followers, setFollowers] = useState<InviteUser[]>([]);
+  const [filteredFollowers, setFilteredFollowers] = useState<InviteUser[]>([]);
+  const [selectedInvites, setSelectedInvites] = useState<InviteUser[]>([]);
   const [invitesLoading, setInvitesLoading] = useState(false);
   const [inviteSearchLoading, setInviteSearchLoading] = useState(false);
 
   const selectedToken = tokenList.find((t) => t.name === tokenType);
   const [showHowItWorks, setShowHowItWorks] = useState(true);
 
+  const linkedFarcasterFid = user?.farcaster?.fid ?? null;
+  const linkedFarcasterUsername = user?.farcaster?.username ?? null;
+  const linkedTwitterSubject = user?.twitter?.subject ?? null;
+  const linkedTwitterUsername = user?.twitter?.username ?? null;
+  const hasLinkedFarcaster = Boolean(
+    user?.farcaster ||
+      user?.linkedAccounts?.some((account) => account.type === "farcaster")
+  );
+  const hasLinkedTwitter = Boolean(
+    user?.twitter ||
+      user?.linkedAccounts?.some((account) => account.type === "twitter_oauth")
+  );
+  const prefersTwitterGraph = hasLinkedTwitter && !hasLinkedFarcaster;
+
   const friendsCacheKey = useMemo(
-    () => (tabFid ? `fid:${tabFid}` : null) ?? tabUsername ?? address ?? null,
-    [tabFid, tabUsername, address]
+    () =>
+      (linkedFarcasterFid ? `fid:${linkedFarcasterFid}` : null) ??
+      linkedFarcasterUsername ??
+      (linkedTwitterSubject ? `twitter:${linkedTwitterSubject}` : null) ??
+      linkedTwitterUsername ??
+      tabUsername ??
+      address ??
+      null,
+    [
+      linkedFarcasterFid,
+      linkedFarcasterUsername,
+      linkedTwitterSubject,
+      linkedTwitterUsername,
+      tabUsername,
+      address,
+    ]
   );
 
   useEffect(() => {
@@ -78,7 +105,7 @@ export default function SplitPage() {
       if (!Array.isArray(parsed)) return;
       const next = parsed
         .map((entry) => entry?.user ?? entry)
-        .filter((u) => u && typeof u.fid === "number") as FarcasterUser[];
+        .filter((u): u is InviteUser => Boolean(u?.username && u?.provider));
       setFollowers(next);
       if (!inviteQuery.trim()) setFilteredFollowers(next);
     } catch {
@@ -88,6 +115,16 @@ export default function SplitPage() {
 
   useEffect(() => {
     let cancelled = false;
+    const mapFarcasterUser = (entry: unknown): InviteUser | null => {
+      if (!entry || typeof entry !== "object") return null;
+      const candidate = entry as SocialUser;
+      if (typeof candidate.fid !== "number") return null;
+      return {
+        ...candidate,
+        id: `farcaster:${candidate.fid}`,
+        provider: "farcaster",
+      };
+    };
     const q = inviteQuery.trim().toLowerCase().replace(/^@/, "");
     if (!q) {
       setInviteSearchLoading(false);
@@ -110,21 +147,41 @@ export default function SplitPage() {
 
     const timeout = setTimeout(async () => {
       try {
-        const res = await fetch(`/api/neynar/user/search?q=${encodeURIComponent(inviteQuery)}`);
-        const data = await res.json().catch(() => null);
-        const remoteUsers = Array.isArray(data)
-          ? data
-          : Array.isArray(data?.users)
-            ? data.users
-            : [];
-        const seen = new Set<number>();
-        const merged = [...localMatches, ...remoteUsers]
-          .filter((u): u is FarcasterUser => Boolean(u && typeof u.fid === "number"))
-          .filter((u) => {
-            if (seen.has(u.fid)) return false;
-            seen.add(u.fid);
-            return true;
-          });
+        let remoteMatches: InviteUser[] = [];
+        if (prefersTwitterGraph) {
+          const token = await getAccessToken().catch(() => null);
+          const res = await fetch(
+            `/api/twitter/user/by-username?username=${encodeURIComponent(inviteQuery)}`,
+            token
+              ? {
+                  headers: {
+                    Authorization: `Bearer ${token}`,
+                  },
+                }
+              : undefined
+          );
+          const data = await res.json().catch(() => null);
+          remoteMatches = data?.user ? [data.user as InviteUser] : [];
+        } else {
+          const res = await fetch(`/api/neynar/user/search?q=${encodeURIComponent(inviteQuery)}`);
+          const data = await res.json().catch(() => null);
+          const remoteUsers = Array.isArray(data)
+            ? data
+            : Array.isArray(data?.users)
+              ? data.users
+              : [];
+          remoteMatches = remoteUsers
+            .map(mapFarcasterUser)
+            .filter((user): user is InviteUser => Boolean(user));
+        }
+        const seen = new Set<string>();
+        const merged = [...localMatches, ...remoteMatches].filter((entry) => {
+          if (!entry) return false;
+          const key = getSocialUserKey(entry);
+          if (seen.has(key)) return false;
+          seen.add(key);
+          return true;
+        });
         if (!cancelled) {
           setFilteredFollowers(merged.slice(0, 50));
         }
@@ -145,7 +202,7 @@ export default function SplitPage() {
       clearTimeout(timeout);
       setInviteSearchLoading(false);
     };
-  }, [inviteQuery, followers]);
+  }, [inviteQuery, followers, prefersTwitterGraph, getAccessToken]);
 
   useEffect(() => {
     const loadFollowers = async () => {
@@ -172,17 +229,42 @@ export default function SplitPage() {
           : addr
             ? `address=${encodeURIComponent(addr)}`
             : null;
-      if (!query) return;
 
       setInvitesLoading(true);
       try {
-        const res = await fetch(`/api/neynar/user/following?${query}`);
-        const data = await res.json().catch(() => []);
-        if (!Array.isArray(data)) return;
-        const next = data
-          .map((entry) => entry?.user ?? entry)
-          .filter((u) => u && typeof u.fid === "number")
-          .slice(0, 50) as FarcasterUser[];
+        let next: InviteUser[] = [];
+        if (prefersTwitterGraph) {
+          const token = await getAccessToken().catch(() => null);
+          if (!token) return;
+          const res = await fetch("/api/twitter/following?limit=50", {
+            headers: {
+              Authorization: `Bearer ${token}`,
+            },
+          });
+          const data = await res.json().catch(() => []);
+          if (!Array.isArray(data)) return;
+          next = data
+            .filter((entry): entry is InviteUser => Boolean(entry?.username))
+            .slice(0, 50);
+        } else {
+          if (!query) return;
+          const res = await fetch(`/api/neynar/user/following?${query}`);
+          const data = await res.json().catch(() => []);
+          if (!Array.isArray(data)) return;
+          next = data
+            .map((entry) => entry?.user ?? entry)
+            .map((entry) =>
+              entry && typeof entry?.fid === "number"
+                ? {
+                    ...entry,
+                    id: `farcaster:${entry.fid}`,
+                    provider: "farcaster" as const,
+                  }
+                : null
+            )
+            .filter((entry): entry is InviteUser => Boolean(entry))
+            .slice(0, 50);
+        }
         setFollowers(next);
         if (!inviteQuery.trim()) setFilteredFollowers(next);
         if (friendsCacheKey && next.length > 0) {
@@ -196,15 +278,27 @@ export default function SplitPage() {
     };
 
     void loadFollowers();
-  }, [inviteDialogOpen, followers.length, tabFid, tabUsername, address, inviteQuery, friendsCacheKey]);
+  }, [
+    inviteDialogOpen,
+    followers.length,
+    tabFid,
+    tabUsername,
+    address,
+    inviteQuery,
+    friendsCacheKey,
+    prefersTwitterGraph,
+    getAccessToken,
+  ]);
 
   const buildPlayer = async () => {
     let context: Awaited<typeof sdk.context> | null = null;
 
-    try {
-      context = await sdk.context;
-    } catch {
-      context = null;
+    if (!tabUsername && !tabPfp && !tabFid) {
+      try {
+        context = await sdk.context;
+      } catch {
+        context = null;
+      }
     }
 
     const frameUser = context?.user;
@@ -237,7 +331,9 @@ export default function SplitPage() {
           spinToken: tokenType,
           player,
           invited: selectedInvites.map((u) => ({
-            fid: u.fid,
+            provider: u.provider,
+            fid: u.fid ?? null,
+            twitter_subject: u.twitter_subject ?? null,
             username: u.username,
             name: u.username,
             pfp: u.pfp_url ?? null,
@@ -265,8 +361,8 @@ export default function SplitPage() {
           window.location.assign(nextUrl);
         }
       }, 25);
-    } catch (err: any) {
-      setError(err.message ?? "Something went wrong");
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : "Something went wrong");
     } finally {
       if (shouldResetCreating) {
         setCreating(false);
@@ -365,7 +461,11 @@ export default function SplitPage() {
             className="w-full flex items-center justify-between p-4 rounded-lg bg-white/5"
           >
             <div className="flex items-center gap-2">
-              <img src={selectedToken?.icon} className="w-7 h-7 rounded-full" />
+              <img
+                src={selectedToken?.icon}
+                alt={selectedToken?.name ?? tokenType}
+                className="w-7 h-7 rounded-full"
+              />
               <span className="text-white">{tokenType}</span>
             </div>
             <span className="text-primary">Change</span>
@@ -394,7 +494,7 @@ export default function SplitPage() {
               <div className="mt-3 flex flex-wrap gap-2">
                 {selectedInvites.map((u) => (
                   <div
-                    key={u.fid}
+                    key={getSocialUserKey(u)}
                     className="flex items-center gap-2 rounded-full bg-white/5 pl-1 pr-2 py-1"
                   >
                     <img
@@ -410,7 +510,11 @@ export default function SplitPage() {
                       type="button"
                       className="text-white/50"
                       onClick={() =>
-                        setSelectedInvites((prev) => prev.filter((x) => x.fid !== u.fid))
+                        setSelectedInvites((prev) =>
+                          prev.filter(
+                            (x) => getSocialUserKey(x) !== getSocialUserKey(u)
+                          )
+                        )
                       }
                     >
                       ×
@@ -483,8 +587,10 @@ export default function SplitPage() {
         selectedUsers={selectedInvites}
         onToggleUser={(u) =>
           setSelectedInvites((prev) =>
-            prev.some((x) => x.fid === u.fid)
-              ? prev.filter((x) => x.fid !== u.fid)
+            prev.some((x) => getSocialUserKey(x) === getSocialUserKey(u))
+              ? prev.filter(
+                  (x) => getSocialUserKey(x) !== getSocialUserKey(u)
+                )
               : [...prev, u]
           )
         }

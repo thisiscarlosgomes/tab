@@ -376,6 +376,8 @@ export default function Home() {
   const authWelcomeSwipeHandledRef = useRef(false);
 
   const [friends, setFriends] = useState<SocialUser[]>([]);
+  const [friendsLoading, setFriendsLoading] = useState(false);
+  const [friendsError, setFriendsError] = useState<string | null>(null);
   const [multiBalances, setMultiBalances] = useState<MultiBalances | null>(null);
 
   const [shake, setShake] = useState(false);
@@ -698,6 +700,13 @@ export default function Home() {
     jackpotTickets === null;
 
   useEffect(() => {
+    if (!hasLinkedFarcaster && !hasLinkedTwitter) {
+      setFriends([]);
+      setFriendsLoading(false);
+      setFriendsError(null);
+      return;
+    }
+
     const friendsCacheKey =
       hasLinkedFarcaster
         ? (linkedFarcasterFid ? `farcaster:fid:${linkedFarcasterFid}` : null) ??
@@ -714,6 +723,7 @@ export default function Home() {
       const parsed = JSON.parse(cached);
       if (Array.isArray(parsed) && parsed.length > 0) {
         setFriends(parsed);
+        setFriendsError(null);
       }
     } catch {}
   }, [
@@ -732,10 +742,20 @@ export default function Home() {
     let cancelled = false;
 
     const fetchFriends = async () => {
+      if (!cancelled) {
+        setFriendsLoading(true);
+        setFriendsError(null);
+      }
       try {
         if (!hasLinkedFarcaster && hasLinkedTwitter) {
           const token = await getAuthToken();
-          if (!token) return;
+          if (!token) {
+            if (!cancelled) {
+              setFriends([]);
+              setFriendsError("Sign in again to load Twitter follows.");
+            }
+            return;
+          }
 
           const res = await fetch("/api/twitter/following?limit=10", {
             headers: { Authorization: `Bearer ${token}` },
@@ -744,15 +764,28 @@ export default function Home() {
 
           if (cancelled) return;
 
-          if (Array.isArray(data) && data.length > 0) {
+          if (Array.isArray(data)) {
             setFriends(data);
+            setFriendsError(null);
             const cacheKey =
               (linkedTwitterSubject ? `twitter:${linkedTwitterSubject}` : null) ??
               linkedTwitterUsername;
-            if (!cacheKey) return;
-            localStorage.setItem(
-              `tab_friends_${cacheKey}`,
-              JSON.stringify(data)
+            if (cacheKey) {
+              localStorage.setItem(
+                `tab_friends_${cacheKey}`,
+                JSON.stringify(data)
+              );
+            }
+          } else {
+            setFriends([]);
+            const message =
+              typeof data?.error === "string"
+                ? data.error
+                : "Unable to load Twitter follows.";
+            setFriendsError(
+              message.includes("CreditsDepleted")
+                ? "Twitter API credits are depleted for follows right now."
+                : message
             );
           }
           return;
@@ -782,6 +815,7 @@ export default function Home() {
               provider: "farcaster" as const,
             })) as SocialUser[];
           setFriends(next);
+          setFriendsError(null);
           const cacheKey =
             (linkedFarcasterFid ? `farcaster:fid:${linkedFarcasterFid}` : null) ??
             linkedFarcasterUsername ??
@@ -791,9 +825,19 @@ export default function Home() {
             `tab_friends_${cacheKey}`,
             JSON.stringify(next)
           );
+        } else {
+          setFriends([]);
+          setFriendsError(null);
         }
       } catch {
-        // ❌ do nothing — keep cached friends
+        if (!cancelled) {
+          setFriends([]);
+          setFriendsError("Unable to load friends right now.");
+        }
+      } finally {
+        if (!cancelled) {
+          setFriendsLoading(false);
+        }
       }
     };
 
@@ -1144,7 +1188,7 @@ export default function Home() {
                 : "Continue"}
             </Button>
             {authWelcomeStep >= AUTH_WELCOME_STEPS.length - 1 ? (
-              <p className="text-center text-sm text-white/35">
+              <p className="hidden text-center text-sm text-white/35">
                 Sign in with Twitter, Farcaster, or email.
               </p>
             ) : null}
@@ -1430,11 +1474,12 @@ export default function Home() {
           </div>
 
           <div className="flex gap-1 overflow-x-auto scrollbar-hide py-1 ml-1">
-            {!hasFriends
+            {friendsLoading && !hasFriends
               ? Array.from({ length: 6 }).map((_, i) => (
                   <FriendSkeleton key={i} />
                 ))
-              : friends.slice(0, 16).map((f) => (
+              : hasFriends
+                ? friends.slice(0, 16).map((f) => (
                   <button
                     key={getSocialUserKey(f)}
                     onClick={() => {
@@ -1457,7 +1502,12 @@ export default function Home() {
                       @{f.username ?? "user"}
                     </span>
                   </button>
-                ))}
+                ))
+                : (
+                  <div className="px-2 py-3 text-sm text-white/45">
+                    {friendsError ?? "No friends available yet."}
+                  </div>
+                )}
           </div>
         </div>
 

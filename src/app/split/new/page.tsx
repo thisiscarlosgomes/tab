@@ -24,12 +24,9 @@ import { getTokenPrices } from "@/lib/getTokenPrices";
 import { useTabIdentity } from "@/lib/useTabIdentity";
 import { PaymentTokenPickerDialog } from "@/components/app/PaymentTokenPickerDialog";
 import { FriendsPickerDialog } from "@/components/app/FriendsPickerDialog";
+import { getSocialUserKey, SocialUser } from "@/lib/social";
 
-type FarcasterUser = {
-  fid: number;
-  username: string;
-  display_name: string;
-  pfp_url: string;
+type InviteUser = SocialUser & {
   verified_addresses: {
     primary?: {
       eth_address?: string | null;
@@ -38,7 +35,7 @@ type FarcasterUser = {
   };
 };
 
-const getUserEthAddress = (user: FarcasterUser | null | undefined) => {
+const getUserEthAddress = (user: InviteUser | null | undefined) => {
   const primary = user?.verified_addresses?.primary?.eth_address ?? null;
   if (primary) return primary;
 
@@ -50,8 +47,43 @@ const getUserEthAddress = (user: FarcasterUser | null | undefined) => {
 
 type SplitType = "invited" | "pay_other" | "receipt_open";
 
+type ReceiptParseResult = {
+  total?: number | string | null;
+  merchant?: string | null;
+};
+
+type SplitCreatePayload = {
+  splitId: string;
+  creator: {
+    fid: number | null;
+    address: string;
+    name: string;
+    pfp: string;
+  };
+  recipient: {
+    address: string | null;
+    fid: number | null;
+    name: string;
+    pfp?: string;
+  };
+  description: string;
+  totalAmount: number;
+  token: string;
+  splitType: SplitType;
+  numPeople?: number;
+  invited?: Array<{
+    provider: InviteUser["provider"];
+    fid: number | null;
+    twitter_subject: string | null;
+    address: string | null;
+    name?: string | null;
+    pfp?: string | null;
+    username?: string | null;
+  }>;
+};
+
 // Receipt Upload Component
-function ReceiptUploader({ onParsed }: { onParsed: (data: any) => void }) {
+function ReceiptUploader({ onParsed }: { onParsed: (data: ReceiptParseResult) => void }) {
   const [file, setFile] = useState<File | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -88,8 +120,8 @@ function ReceiptUploader({ onParsed }: { onParsed: (data: any) => void }) {
 
       const data = await res.json();
       onParsed(data);
-    } catch (err: any) {
-      setError(err.message);
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : "Receipt parse failed");
     } finally {
       setLoading(false);
     }
@@ -148,7 +180,7 @@ export default function SplitNewPage() {
   const router = useRouter();
   const { address, isConnected } = useAccount();
   const { connect, connectors } = useConnect();
-  const { user } = usePrivy();
+  const { user, getAccessToken } = usePrivy();
   const {
     fid: identityFid,
     username: identityUsername,
@@ -157,6 +189,17 @@ export default function SplitNewPage() {
   } = useTabIdentity();
   const linkedFarcasterFid = user?.farcaster?.fid ?? null;
   const linkedFarcasterUsername = user?.farcaster?.username ?? null;
+  const linkedTwitterSubject = user?.twitter?.subject ?? null;
+  const linkedTwitterUsername = user?.twitter?.username ?? null;
+  const hasLinkedFarcaster = Boolean(
+    user?.farcaster ||
+      user?.linkedAccounts?.some((account) => account.type === "farcaster")
+  );
+  const hasLinkedTwitter = Boolean(
+    user?.twitter ||
+      user?.linkedAccounts?.some((account) => account.type === "twitter_oauth")
+  );
+  const prefersTwitterGraph = hasLinkedTwitter && !hasLinkedFarcaster;
 
   // ----------------------------
   // DEFAULT TOKEN = USDC
@@ -181,13 +224,9 @@ export default function SplitNewPage() {
   const [showHowItWorks, setShowHowItWorks] = useState(true);
 
   // Followers
-  const [followers, setFollowers] = useState<FarcasterUser[]>([]);
-  const [filteredFollowers, setFilteredFollowers] = useState<FarcasterUser[]>(
-    []
-  );
-  const [selectedFollowers, setSelectedFollowers] = useState<FarcasterUser[]>(
-    []
-  );
+  const [followers, setFollowers] = useState<InviteUser[]>([]);
+  const [filteredFollowers, setFilteredFollowers] = useState<InviteUser[]>([]);
+  const [selectedFollowers, setSelectedFollowers] = useState<InviteUser[]>([]);
   const invitedCount = selectedFollowers.length;
 
   const [query, setQuery] = useState("");
@@ -206,7 +245,7 @@ export default function SplitNewPage() {
   const [receiptDrawerOpen, setReceiptDrawerOpen] = useState(false);
   const [isParsingReceipt, setIsParsingReceipt] = useState(false);
 
-  const [parsedReceipt, setParsedReceipt] = useState<any | null>(null);
+  const [parsedReceipt, setParsedReceipt] = useState<ReceiptParseResult | null>(null);
 
   const [showAdvanced, setShowAdvanced] = useState(false);
 
@@ -255,6 +294,21 @@ export default function SplitNewPage() {
     }
   }, []);
 
+  const getAuthToken = useCallback(async () => {
+    return getAccessToken().catch(() => null);
+  }, [getAccessToken]);
+
+  const mapFarcasterUser = useCallback((entry: unknown): InviteUser | null => {
+    if (!entry || typeof entry !== "object") return null;
+    const candidate = entry as SocialUser;
+    if (typeof candidate.fid !== "number") return null;
+    return {
+      ...candidate,
+      id: `farcaster:${candidate.fid}`,
+      provider: "farcaster",
+    };
+  }, []);
+
   // --------------------------
   // Follower search
   // --------------------------
@@ -287,27 +341,45 @@ export default function SplitNewPage() {
       const requestId = ++followerSearchRequestRef.current;
 
       try {
-        const res = await fetch(
-          `/api/neynar/user/search?q=${encodeURIComponent(trimmedQuery)}`
-        );
-        const data = await res.json().catch(() => null);
-        const remoteUsers = Array.isArray(data)
-          ? data
-          : Array.isArray(data?.users)
-            ? data.users
-            : [];
+        let remoteMatches: InviteUser[] = [];
+
+        if (prefersTwitterGraph) {
+          const token = await getAuthToken();
+          const res = await fetch(
+            `/api/twitter/user/by-username?username=${encodeURIComponent(trimmedQuery)}`,
+            token
+              ? {
+                  headers: {
+                    Authorization: `Bearer ${token}`,
+                  },
+                }
+              : undefined
+          );
+          const data = await res.json().catch(() => null);
+          remoteMatches = data?.user ? [data.user as InviteUser] : [];
+        } else {
+          const res = await fetch(
+            `/api/neynar/user/search?q=${encodeURIComponent(trimmedQuery)}`
+          );
+          const data = await res.json().catch(() => null);
+          const remoteUsers = Array.isArray(data)
+            ? data
+            : Array.isArray(data?.users)
+              ? data.users
+              : [];
+          remoteMatches = remoteUsers
+            .map(mapFarcasterUser)
+            .filter((user): user is InviteUser => Boolean(user));
+        }
 
         if (requestId !== followerSearchRequestRef.current) return;
 
-        const remoteMatches = remoteUsers.filter(
-          (u: FarcasterUser) => Boolean(u && typeof u.fid === "number")
-        );
-
-        const seen = new Set<number>();
-        const merged = [...localMatches, ...remoteMatches].filter((u) => {
-          if (!u || typeof u.fid !== "number") return false;
-          if (seen.has(u.fid)) return false;
-          seen.add(u.fid);
+        const seen = new Set<string>();
+        const merged = [...localMatches, ...remoteMatches].filter((entry) => {
+          if (!entry) return false;
+          const key = getSocialUserKey(entry);
+          if (seen.has(key)) return false;
+          seen.add(key);
           return true;
         });
 
@@ -325,7 +397,7 @@ export default function SplitNewPage() {
       clearTimeout(delay);
       setFollowerSearchLoading(false);
     };
-  }, [query, followers]);
+  }, [query, followers, getAuthToken, mapFarcasterUser, prefersTwitterGraph]);
 
   // --------------------------
   // Load followers (AUTO POPULATE)
@@ -334,6 +406,8 @@ export default function SplitNewPage() {
     const friendsCacheKey =
       (linkedFarcasterFid ? `fid:${linkedFarcasterFid}` : null) ??
       linkedFarcasterUsername ??
+      (linkedTwitterSubject ? `twitter:${linkedTwitterSubject}` : null) ??
+      linkedTwitterUsername ??
       identityUsername ??
       identityAddress;
     if (!friendsCacheKey) return;
@@ -345,7 +419,7 @@ export default function SplitNewPage() {
       if (!Array.isArray(parsed) || parsed.length === 0) return;
       const next = parsed
         .map((entry) => entry?.user ?? entry)
-        .filter((u) => u && typeof u.fid === "number") as FarcasterUser[];
+        .filter((u): u is InviteUser => Boolean(u?.username && u?.provider));
       setFollowers(next);
       if (!query.trim()) {
         setFilteredFollowers(next);
@@ -356,6 +430,8 @@ export default function SplitNewPage() {
   }, [
     linkedFarcasterFid,
     linkedFarcasterUsername,
+    linkedTwitterSubject,
+    linkedTwitterUsername,
     identityUsername,
     identityAddress,
     query,
@@ -363,6 +439,39 @@ export default function SplitNewPage() {
 
   const loadFollowers = useCallback(async () => {
     try {
+      if (prefersTwitterGraph) {
+        const token = await getAuthToken();
+        if (!token) return;
+
+        const res = await fetch("/api/twitter/following?limit=50", {
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        });
+        const data = await res.json().catch(() => []);
+
+        if (Array.isArray(data)) {
+          const top = data
+            .filter((entry): entry is InviteUser => Boolean(entry?.username))
+            .slice(0, 50);
+
+          setFollowers(top);
+          if (!query.trim()) {
+            setFilteredFollowers(top);
+          }
+
+          const cacheKey =
+            (linkedTwitterSubject ? `twitter:${linkedTwitterSubject}` : null) ??
+            linkedTwitterUsername ??
+            identityUsername ??
+            identityAddress;
+          if (cacheKey && top.length > 0) {
+            localStorage.setItem(`tab_friends_${cacheKey}`, JSON.stringify(top));
+          }
+        }
+        return;
+      }
+
       let fid = linkedFarcasterFid ?? identityFid;
       let username = linkedFarcasterUsername ?? identityUsername;
       let address = identityAddress;
@@ -393,7 +502,8 @@ export default function SplitNewPage() {
       if (Array.isArray(data)) {
         const top = data
           .map((e) => e?.user ?? e)
-          .filter((u) => u && typeof u?.fid === "number")
+          .map(mapFarcasterUser)
+          .filter((user): user is InviteUser => Boolean(user))
           .slice(0, 50);
 
         setFollowers(top);
@@ -414,11 +524,16 @@ export default function SplitNewPage() {
       // best-effort
     }
   }, [
+    getAuthToken,
     linkedFarcasterFid,
     linkedFarcasterUsername,
+    linkedTwitterSubject,
+    linkedTwitterUsername,
     identityFid,
     identityUsername,
     identityAddress,
+    mapFarcasterUser,
+    prefersTwitterGraph,
     query,
   ]);
 
@@ -450,11 +565,14 @@ export default function SplitNewPage() {
       if (!address) throw new Error("No wallet address");
 
       let frameUser: Awaited<typeof sdk.context>["user"] | undefined;
-      try {
-        const context = await sdk.context;
-        frameUser = context?.user;
-      } catch {
-        frameUser = undefined;
+
+      if (!identityFid && !identityUsername && !identityPfp) {
+        try {
+          const context = await sdk.context;
+          frameUser = context?.user;
+        } catch {
+          frameUser = undefined;
+        }
       }
 
       const splitId = nanoid();
@@ -480,7 +598,7 @@ export default function SplitNewPage() {
           }
           : creator;
 
-      let payload: any = {
+      let payload: SplitCreatePayload = {
         splitId,
         creator,
         recipient,
@@ -508,12 +626,21 @@ export default function SplitNewPage() {
         payload.invited = selectedFollowers
           .map((f) => {
             const invitedAddress = getUserEthAddress(f);
-            if (!invitedAddress && typeof f.fid !== "number") return null;
+            if (
+              !invitedAddress &&
+              typeof f.fid !== "number" &&
+              !(f.provider === "twitter" && f.username)
+            ) {
+              return null;
+            }
             return {
-              fid: f.fid, // ✅ number
+              provider: f.provider,
+              fid: f.fid ?? null,
+              twitter_subject: f.twitter_subject ?? null,
               address: invitedAddress ?? null,
               name: f.username,
               pfp: f.pfp_url,
+              username: f.username,
             };
           })
           .filter(Boolean);
@@ -692,10 +819,11 @@ export default function SplitNewPage() {
               className="flex items-center justify-between w-full p-4 bg-white/5 rounded-lg"
             >
               <div className="flex items-center gap-2">
-                <img
-                  src={selectedTokenInfo?.icon}
-                  className="w-7 h-7 rounded-full"
-                />
+              <img
+                src={selectedTokenInfo?.icon}
+                alt={selectedTokenInfo?.name ?? tokenType}
+                className="w-7 h-7 rounded-full"
+              />
                 <span className="text-white">{tokenType}</span>
               </div>
               <span className="text-primary">Change</span>
@@ -777,8 +905,12 @@ export default function SplitNewPage() {
           <div className="flex items-center justify-center -space-x-3">
             {selectedFollowers.slice(0, 6).map((f) => (
               <img
-                key={f.fid}
-                src={f.pfp_url}
+                key={getSocialUserKey(f)}
+                src={
+                  f.pfp_url ||
+                  `https://api.dicebear.com/9.x/fun-emoji/svg?seed=${f.username}`
+                }
+                alt={f.username}
                 className="w-10 h-10 rounded-full border-2 border-white object-cover"
               />
             ))}
@@ -905,18 +1037,27 @@ export default function SplitNewPage() {
         users={filteredFollowers}
         selectedUsers={selectedFollowers}
         onToggleUser={(f) => {
-          const isSelected = selectedFollowers.some((x) => x.fid === f.fid);
-          const isPayable = Boolean(getUserEthAddress(f));
-          if (!isPayable) return;
+          const nextKey = getSocialUserKey(f);
+          const isSelected = selectedFollowers.some(
+            (x) => getSocialUserKey(x) === nextKey
+          );
           setSelectedFollowers((prev) =>
-            isSelected ? prev.filter((x) => x.fid !== f.fid) : [...prev, f]
+            isSelected
+              ? prev.filter((x) => getSocialUserKey(x) !== nextKey)
+              : [...prev, f]
           );
         }}
         onDone={() => setFollowerDrawerOpen(false)}
         loading={false}
         searching={followerSearchLoading}
-        isUserDisabled={(f) => !Boolean(getUserEthAddress(f))}
-        disabledLabel="No linked wallet"
+        isUserDisabled={(f) =>
+          !Boolean(
+            getUserEthAddress(f) ||
+              typeof f.fid === "number" ||
+              (f.provider === "twitter" && f.username)
+          )
+        }
+        disabledLabel="Unavailable"
       />
 
       {/* Receipt Drawer */}

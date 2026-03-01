@@ -1,6 +1,10 @@
 import clientPromise from "@/lib/mongodb";
 import { neynarApi } from "@/lib/neynar";
 import { getBearerToken, getPrivyServerClient } from "@/lib/privy-server";
+import {
+  fetchTwitterUserByUsername,
+  getTwitterIdentityByUsername,
+} from "@/lib/twitter";
 
 type LinkedAccountLike = {
   type?: string;
@@ -43,6 +47,7 @@ export type UserProfileDoc = {
   usernameLower: string | null;
   twitterUsername: string | null;
   twitterUsernameLower: string | null;
+  twitterBio: string | null;
   displayName: string | null;
   pfpUrl: string | null;
   primaryAddress: string | null;
@@ -191,6 +196,7 @@ function sanitizeProfile(doc: UserProfileDoc) {
     fid: doc.fid,
     username: doc.username,
     twitterUsername: doc.twitterUsername,
+    twitterBio: doc.twitterBio,
     displayName: doc.displayName,
     pfpUrl: doc.pfpUrl,
     primaryAddress: doc.primaryAddress,
@@ -224,6 +230,18 @@ export async function syncCanonicalUserProfileFromPrivyUser(input: {
   const twitterUsername =
     (typeof privyTwitter?.username === "string" ? privyTwitter.username : null) ??
     (typeof linkedTwitter?.username === "string" ? linkedTwitter.username : null);
+  const twitterProfile = twitterUsername
+    ? await fetchTwitterUserByUsername(twitterUsername, { actorUserId: userId }).catch(() => null)
+    : null;
+  const storedTwitterIdentity =
+    twitterUsername && !twitterProfile
+      ? await getTwitterIdentityByUsername(twitterUsername).catch(() => null)
+      : null;
+  const twitterBio =
+    twitterProfile?.description ??
+    (typeof storedTwitterIdentity?.description === "string"
+      ? storedTwitterIdentity.description
+      : null);
   const displayName =
     neynarProfile?.displayName ??
     (typeof privyFarcaster?.displayName === "string"
@@ -270,6 +288,7 @@ export async function syncCanonicalUserProfileFromPrivyUser(input: {
         usernameLower,
         twitterUsername,
         twitterUsernameLower,
+        twitterBio,
         displayName,
         pfpUrl,
         primaryAddress,

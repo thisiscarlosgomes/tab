@@ -6,13 +6,11 @@ import clientPromise from "@/lib/mongodb";
 interface Participant {
   name: string;
   address?: string | null;
-  fid?: number | string | null;
   pfp?: string;
 }
 
 interface Payment {
   address?: string | null;
-  fid?: number | string | null;
   name?: string;
   txHash: string;
   status?: string;
@@ -23,7 +21,7 @@ interface Bill {
   splitId: string;
   code: string;
   description: string;
-  creator: { address?: string | null; fid?: number | string | null };
+  creator: { address?: string | null };
   participants: Participant[];
   invited?: Participant[];
   paid?: Payment[];
@@ -41,11 +39,8 @@ function ensureBillsIndexes(collection: Collection<Bill>) {
     ensureBillsIndexesPromise = (async () => {
       await collection.createIndexes([
         { key: { "creator.address": 1, createdAt: -1 } },
-        { key: { "creator.fid": 1, createdAt: -1 } },
         { key: { "participants.address": 1, createdAt: -1 } },
-        { key: { "participants.fid": 1, createdAt: -1 } },
         { key: { "invited.address": 1, createdAt: -1 } },
-        { key: { "invited.fid": 1, createdAt: -1 } },
       ]);
     })().catch(() => {
       ensureBillsIndexesPromise = null;
@@ -57,7 +52,6 @@ function ensureBillsIndexes(collection: Collection<Bill>) {
 export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url);
   const rawAddress = searchParams.get("address");
-  const rawFid = searchParams.get("fid");
 
   const limit = Number(searchParams.get("limit") ?? DEFAULT_LIMIT);
   const before = searchParams.get("before");
@@ -66,11 +60,9 @@ export async function GET(req: NextRequest) {
     typeof rawAddress === "string" && rawAddress.trim()
       ? rawAddress.trim().toLowerCase()
       : null;
-  const fid = Number(rawFid);
-  const normalizedFid = Number.isFinite(fid) && fid > 0 ? fid : null;
 
-  if (!address && !normalizedFid) {
-    return Response.json({ error: "Missing address or fid" }, { status: 400 });
+  if (!address) {
+    return Response.json({ error: "Missing address" }, { status: 400 });
   }
 
   const client = await clientPromise;
@@ -78,21 +70,11 @@ export async function GET(req: NextRequest) {
   const collection = db.collection<Bill>("a-split-bill");
   await ensureBillsIndexes(collection);
 
-  const orClauses: Array<Record<string, string | number>> = [];
-  if (address) {
-    orClauses.push(
-      { "creator.address": address },
-      { "participants.address": address },
-      { "invited.address": address }
-    );
-  }
-  if (normalizedFid) {
-    orClauses.push(
-      { "creator.fid": normalizedFid },
-      { "participants.fid": normalizedFid },
-      { "invited.fid": normalizedFid }
-    );
-  }
+  const orClauses: Array<Record<string, string>> = [
+    { "creator.address": address },
+    { "participants.address": address },
+    { "invited.address": address },
+  ];
 
   const query: {
     $or: Array<Record<string, string | number>>;
@@ -131,23 +113,14 @@ export async function GET(req: NextRequest) {
     const addr = address;
     const matchesAddress = (value?: string | null) =>
       Boolean(addr && typeof value === "string" && value.toLowerCase() === addr);
-    const matchesFid = (value?: number | string | null) =>
-      Boolean(normalizedFid != null && Number(value) === normalizedFid);
 
-    const isCreator =
-      matchesAddress(bill.creator?.address) || matchesFid(bill.creator?.fid);
+    const isCreator = matchesAddress(bill.creator?.address);
 
     const isParticipant =
-      bill.participants?.some(
-        (p: Participant) => matchesAddress(p.address) || matchesFid(p.fid)
-      ) ??
-      false;
+      bill.participants?.some((p: Participant) => matchesAddress(p.address)) ?? false;
 
     const isInvited =
-      bill.invited?.some(
-        (i: Participant) => matchesAddress(i.address) || matchesFid(i.fid)
-      ) ??
-      false;
+      bill.invited?.some((i: Participant) => matchesAddress(i.address)) ?? false;
 
     const userStatus: "creator" | "participant" | "invited" | null = isCreator
       ? "creator"
@@ -159,10 +132,7 @@ export async function GET(req: NextRequest) {
 
     const hasPaid = isCreator
       ? true // creator already paid IRL
-      : (bill.paid?.some(
-          (p: Payment) => matchesAddress(p.address) || matchesFid(p.fid)
-        ) ??
-        false);
+      : (bill.paid?.some((p: Payment) => matchesAddress(p.address)) ?? false);
 
     const debtorCount = bill.invited?.length ?? 0;
     const perPersonAmount =

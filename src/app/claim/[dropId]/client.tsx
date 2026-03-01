@@ -4,7 +4,6 @@ import { useEffect, useState } from "react";
 import { useParams, useSearchParams } from "next/navigation";
 import { usePrivy } from "@privy-io/react-auth";
 import { Button } from "@/components/ui/button";
-import sdk from "@farcaster/frame-sdk";
 import { useFrameSplash } from "@/providers/FrameSplashProvider";
 import confetti from "canvas-confetti"; // ✅ import confetti
 import { getShareUrl } from "@/lib/share";
@@ -135,14 +134,6 @@ export default function ClaimPage() {
 
   const handleShare = async () => {
     const text = `Thanks @${drop?.creator?.name || "someone"} for the ${drop?.amount} ${drop?.token}!`;
-    try {
-      await sdk.actions.composeCast({
-        text,
-        embeds: [],
-      });
-      return;
-    } catch {}
-
     try {
       if (navigator.share) {
         await navigator.share({ text, url: window.location.href });

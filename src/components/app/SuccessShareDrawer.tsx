@@ -1,12 +1,9 @@
 "use client";
 
-import { useEffect, useRef, useCallback } from "react";
+import { useEffect, useCallback } from "react";
 import { Drawer } from "vaul";
 import confetti from "canvas-confetti";
 import { Button } from "@/components/ui/button";
-import { useAccount } from "wagmi";
-import sdk from "@farcaster/frame-sdk";
-import { getShareUrl } from "@/lib/share";
 
 interface SuccessShareDrawerProps {
   isOpen: boolean;
@@ -33,23 +30,28 @@ export function SuccessShareDrawer({
   extraNote,
   embeds,
 }: SuccessShareDrawerProps) {
-  const { address } = useAccount();
-  const hasGivenPoints = useRef(false);
-
   const handleShare = useCallback(async () => {
     if (isOpen) setIsOpen(false);
 
     const text = `${shareText}`;
+    const shareUrl = embeds?.[0] ?? (typeof window !== "undefined" ? window.location.href : undefined);
 
     try {
-      await sdk.actions.composeCast({
-        text,
-        embeds,
-      });
+      if (navigator.share) {
+        await navigator.share({
+          title,
+          text,
+          url: shareUrl,
+        });
+        return;
+      }
+
+      const fallbackText = shareUrl ? `${text} ${shareUrl}` : text;
+      await navigator.clipboard.writeText(fallbackText);
     } catch (err) {
-      console.error("Failed to compose cast", err);
+      console.error("Failed to share", err);
     }
-  }, [isOpen, shareText, embeds, setIsOpen]);
+  }, [embeds, isOpen, setIsOpen, shareText, title]);
 
   useEffect(() => {
     if (
@@ -90,9 +92,7 @@ export function SuccessShareDrawer({
               <Button
                 variant="outline"
                 className="w-full mb-2"
-                onClick={() =>
-                  sdk.actions.openUrl(`https://basescan.org/tx/${txHash}`)
-                }
+                onClick={() => window.open(`https://basescan.org/tx/${txHash}`, "_blank", "noopener,noreferrer")}
               >
                 View Tx ({txHash.slice(0, 6)}...{txHash.slice(-4)})
               </Button>

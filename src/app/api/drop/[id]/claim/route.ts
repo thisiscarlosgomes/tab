@@ -2,6 +2,7 @@ import clientPromise from "@/lib/mongodb";
 import { createHash } from "crypto";
 import { NextRequest } from "next/server";
 import { tokenList } from "@/lib/tokens";
+import { getAddress } from "viem";
 
 function getTokenAddress(name: string) {
   return tokenList.find((t) => t.name === name)?.address ?? undefined;
@@ -18,12 +19,14 @@ export async function POST(req: NextRequest) {
 
     const { address, claimToken, fid } = await req.json();
 
-    if (!address || !claimToken || !fid) {
+    if (!address || !claimToken) {
       return Response.json(
-        { error: "Missing address, fid or token" },
+        { error: "Missing address or token" },
         { status: 400 }
       );
     }
+
+    const normalizedAddress = getAddress(address);
 
     const claimTokenHash = createHash("sha256")
       .update(claimToken)
@@ -50,11 +53,17 @@ export async function POST(req: NextRequest) {
     // 2. Enforce one claim per fid per group
     const groupId = drop.groupId;
     if (!groupId) {
-      console.warn(`[DROP ${dropId}] missing groupId — skipping fid enforcement`);
+      console.warn(`[DROP ${dropId}] missing groupId — skipping claimant enforcement`);
     } else {
+      const alreadyClaimedFilters: Record<string, unknown>[] = [
+        { claimedBy: normalizedAddress },
+      ];
+      if (typeof fid === "number" && Number.isFinite(fid) && fid > 0) {
+        alreadyClaimedFilters.push({ claimedByFid: fid });
+      }
       const alreadyClaimed = await collection.findOne({
         groupId,
-        claimedByFid: fid,
+        $or: alreadyClaimedFilters,
       });
 
       if (alreadyClaimed) {
@@ -78,7 +87,7 @@ export async function POST(req: NextRequest) {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        to: address,
+        to: normalizedAddress,
         amount: drop.amount,
         type: drop.token === "ETH" ? "eth" : "erc20",
         tokenAddress: getTokenAddress(drop.token),
@@ -103,13 +112,15 @@ export async function POST(req: NextRequest) {
       {
         $set: {
           claimed: true,
-          claimedBy: address,
-          claimedByFid: fid, // ✅ record the claiming user
+          claimedBy: normalizedAddress,
           claimedAt: new Date(),
           txHash: sendResult.hash,
-          txTo: address,
+          txTo: normalizedAddress,
           txAmount: drop.amount,
           txTimestamp: new Date().toISOString(),
+          ...(typeof fid === "number" && Number.isFinite(fid) && fid > 0
+            ? { claimedByFid: fid }
+            : {}),
         },
       }
     );

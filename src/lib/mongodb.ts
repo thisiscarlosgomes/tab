@@ -108,6 +108,12 @@ async function ensureIndexes(mongoClient: MongoClient) {
     db
       .collection("a-twitter-identity")
       .createIndex({ walletAddress: 1 }, { sparse: true }),
+    db
+      .collection("a-twitter-following-cache")
+      .createIndex({ userId: 1, subject: 1, limit: 1 }, { unique: true }),
+    db
+      .collection("a-twitter-following-cache")
+      .createIndex({ expiresAt: 1 }, { expireAfterSeconds: 0 }),
   ]);
 }
 

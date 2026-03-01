@@ -35,6 +35,7 @@ export type TwitterIdentityProfile = {
   username: string;
   name: string;
   profilePictureUrl: string | null;
+  description?: string | null;
 };
 
 export type TwitterIdentityDoc = {
@@ -43,10 +44,28 @@ export type TwitterIdentityDoc = {
   usernameLower: string;
   name: string | null;
   profilePictureUrl: string | null;
+  description: string | null;
   privyUserId: string | null;
   walletAddress: string | null;
   walletId: string | null;
   updatedAt: Date;
+  createdAt: Date;
+};
+
+type TwitterFollowingCacheProfile = {
+  subject: string;
+  username: string;
+  name: string;
+  profilePictureUrl: string | null;
+};
+
+type TwitterFollowingCacheDoc = {
+  userId: string;
+  subject: string;
+  limit: number;
+  profiles: TwitterFollowingCacheProfile[];
+  updatedAt: Date;
+  expiresAt: Date;
   createdAt: Date;
 };
 
@@ -71,6 +90,7 @@ type XUserResponse = {
     username?: string;
     name?: string;
     profile_image_url?: string;
+    description?: string;
   };
 };
 
@@ -87,6 +107,8 @@ type XFollowingResponse = {
 };
 
 const X_API_BASE_URL = process.env.X_API_BASE_URL?.trim() || "https://api.x.com/2";
+const TWITTER_IDENTITY_CACHE_TTL_MS = 1000 * 60 * 60 * 24;
+const TWITTER_FOLLOWING_CACHE_TTL_MS = 1000 * 60 * 30;
 
 function normalizeTwitterUsername(username: string) {
   return username.trim().replace(/^@+/, "").toLowerCase();
@@ -105,8 +127,20 @@ async function getCollections() {
   const db = client.db();
   return {
     identities: db.collection<TwitterIdentityDoc>("a-twitter-identity"),
+    followingCache:
+      db.collection<TwitterFollowingCacheDoc>("a-twitter-following-cache"),
     oauth: db.collection<TwitterOAuthDoc>("a-twitter-oauth"),
   };
+}
+
+function isFreshDate(
+  value: Date | string | null | undefined,
+  maxAgeMs: number
+) {
+  if (!value) return false;
+  const timestamp = value instanceof Date ? value.getTime() : new Date(value).getTime();
+  if (!Number.isFinite(timestamp)) return false;
+  return Date.now() - timestamp <= maxAgeMs;
 }
 
 function buildExpiryDate(seconds?: number) {
@@ -250,6 +284,7 @@ export async function saveTwitterOAuthTokensForUser(input: {
         usernameLower: normalizeTwitterUsername(twitter.username),
         name: twitter.name ?? null,
         profilePictureUrl: twitter.profilePictureUrl ?? null,
+        description: null,
         updatedAt: now,
       },
       $setOnInsert: {
@@ -285,6 +320,7 @@ export async function upsertTwitterIdentity(profile: TwitterIdentityProfile) {
         usernameLower: normalizeTwitterUsername(profile.username),
         name: profile.name ?? null,
         profilePictureUrl: profile.profilePictureUrl ?? null,
+        description: profile.description ?? null,
         updatedAt: now,
       },
       $setOnInsert: {
@@ -305,11 +341,24 @@ export async function fetchTwitterUserByUsername(
 ) {
   const cleaned = normalizeTwitterUsername(username);
   if (!cleaned) return null;
+  const cachedIdentity = await getTwitterIdentityByUsername(cleaned);
+  if (
+    cachedIdentity &&
+    isFreshDate(cachedIdentity.updatedAt, TWITTER_IDENTITY_CACHE_TTL_MS)
+  ) {
+    return {
+      subject: cachedIdentity.subject,
+      username: cachedIdentity.username,
+      name: cachedIdentity.name ?? cachedIdentity.username,
+      profilePictureUrl: cachedIdentity.profilePictureUrl ?? null,
+      description: cachedIdentity.description ?? null,
+    } satisfies TwitterIdentityProfile;
+  }
 
   const actorToken =
     options?.actorUserId ? (await getTwitterOAuthDocForUser(options.actorUserId))?.accessToken ?? null : null;
   const response = await xFetchJson<XUserResponse>(`users/by/username/${encodeURIComponent(cleaned)}`, {
-    searchParams: { "user.fields": "profile_image_url" },
+    searchParams: { "user.fields": "profile_image_url,description" },
     userAccessToken: actorToken,
   });
 
@@ -321,6 +370,7 @@ export async function fetchTwitterUserByUsername(
     username: data.username,
     name: data.name,
     profilePictureUrl: data.profile_image_url ?? null,
+    description: data.description ?? null,
   } satisfies TwitterIdentityProfile;
 
   await upsertTwitterIdentity(profile);
@@ -349,7 +399,6 @@ async function ensureTwitterUserWalletRecord(input: {
           ...(input.profilePictureUrl ? { profile_picture_url: input.profilePictureUrl } : {}),
         },
       ],
-      wallets: [{ chain_type: "ethereum" }],
     });
   }
 
@@ -381,6 +430,7 @@ async function ensureTwitterUserWalletRecord(input: {
         usernameLower: normalizeTwitterUsername(input.username),
         name: input.name,
         profilePictureUrl: input.profilePictureUrl,
+        description: null,
         privyUserId: userId,
         walletAddress: primaryWallet.walletAddress,
         walletId: primaryWallet.walletId ?? null,
@@ -445,8 +495,19 @@ export async function fetchTwitterFollowingForUser(input: {
   subject: string;
   limit?: number;
 }) {
-  const oauth = await getTwitterOAuthDocForUser(input.userId);
   const limit = Math.max(1, Math.min(200, Math.floor(input.limit ?? 50)));
+  const { followingCache } = await getCollections();
+  const cached = await followingCache.findOne({
+    userId: input.userId,
+    subject: input.subject,
+    limit,
+    expiresAt: { $gt: new Date() },
+  });
+  if (cached?.profiles?.length) {
+    return cached.profiles;
+  }
+
+  const oauth = await getTwitterOAuthDocForUser(input.userId);
   const results: TwitterIdentityProfile[] = [];
   let nextToken: string | undefined;
   let userAccessToken = oauth?.accessToken ?? null;
@@ -498,9 +559,29 @@ export async function fetchTwitterFollowingForUser(input: {
     nextToken = response?.meta?.next_token;
   } while (nextToken && results.length < limit);
 
-  for (const profile of results) {
-    await upsertTwitterIdentity(profile);
-  }
+  const now = new Date();
+  await followingCache.updateOne(
+    { userId: input.userId, subject: input.subject, limit },
+    {
+      $set: {
+        userId: input.userId,
+        subject: input.subject,
+        limit,
+        profiles: results.map((profile) => ({
+          subject: profile.subject,
+          username: profile.username,
+          name: profile.name,
+          profilePictureUrl: profile.profilePictureUrl ?? null,
+        })),
+        updatedAt: now,
+        expiresAt: new Date(now.getTime() + TWITTER_FOLLOWING_CACHE_TTL_MS),
+      },
+      $setOnInsert: {
+        createdAt: now,
+      },
+    },
+    { upsert: true }
+  );
 
   return results;
 }

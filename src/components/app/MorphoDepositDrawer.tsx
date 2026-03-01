@@ -28,7 +28,6 @@ import {
 } from "@/chain/yield";
 import { useBalance } from "@/chain/balance";
 import { formatDistanceToNow } from "date-fns";
-import { sdk } from "@farcaster/frame-sdk";
 
 const USDC_DECIMALS = 6;
 
@@ -182,8 +181,10 @@ export function AaveDepositDrawer({
               className="text-green-400"
               onClick={(e) => {
                 e.preventDefault();
-                sdk.actions.openUrl(
-                  "https://app.aave.com/reserve-overview/?underlyingAsset=0x833589fcd6edb6e08f4c7c32d4f71b54bda02913&marketName=proto_base_v3"
+                window.open(
+                  "https://app.aave.com/reserve-overview/?underlyingAsset=0x833589fcd6edb6e08f4c7c32d4f71b54bda02913&marketName=proto_base_v3",
+                  "_blank",
+                  "noopener,noreferrer"
                 );
               }}
             >
@@ -273,7 +274,7 @@ export function AaveDepositDrawer({
                     href={deposit.url}
                     onClick={(e) => {
                       e.preventDefault();
-                      sdk.actions.openUrl(deposit.url);
+                      window.open(deposit.url, "_blank", "noopener,noreferrer");
                     }}
                     className="flex justify-between text-sm py-3 px-2 rounded hover:bg-white/5 transition-colors"
                   >

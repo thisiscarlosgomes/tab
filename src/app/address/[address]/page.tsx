@@ -7,14 +7,12 @@ import { useParams } from "next/navigation";
 import { QRCode } from "react-qrcode-logo";
 import { Loader } from "lucide-react";
 import { shortAddress } from "@/lib/shortAddress";
-import { SendToAddressDrawer } from "@/components/app/SendToAddressDrawer";
 
 export default function ReceiveByAddressPage() {
   const { address } = useParams();
   const [valid, setValid] = useState(false);
   const [pfpUrl, setPfpUrl] = useState<string | null>(null);
   const [username, setUsername] = useState<string | null>(null);
-  const [drawerOpen, setDrawerOpen] = useState(false);
 
   useEffect(() => {
     if (!address || typeof address !== "string") return;
@@ -84,14 +82,6 @@ export default function ReceiveByAddressPage() {
       ) : (
         <Loader className="animate-spin opacity-30 mt-20" />
       )}
-
-      <SendToAddressDrawer
-        isOpen={drawerOpen}
-        onOpenChange={setDrawerOpen}
-        address={address as `0x${string}`}
-        amount={0.01} // default, could be user-editable
-      />
-
       <div className="text-center fixed bottom-0 inset-x-0 p-2 pb-6 flex justify-around z-1">
         <a
           href={`https://warpcast.com/~/channel/tab`}

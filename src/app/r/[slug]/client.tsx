@@ -13,9 +13,7 @@ import Link from "next/link";
 import Tilt from "react-parallax-tilt";
 import { useFrameSplash } from "@/providers/FrameSplashProvider";
 import { getShareUrl } from "@/lib/share";
-import sdk from "@farcaster/frame-sdk";
 import { Button } from "@/components/ui/button";
-import { SendToRawAddressDrawer } from "@/components/app/SendToRawAddressDrawer";
 import { useSearchParams } from "next/navigation";
 
 export default function ReceivePageClient() {
@@ -26,7 +24,6 @@ export default function ReceivePageClient() {
   const [valid, setValid] = useState(false);
   const { dismiss } = useFrameSplash();
   const [copiedCode, setCopiedCode] = useState<string | null>(null);
-  const [sendDrawerOpen, setSendDrawerOpen] = useState(false);
   const searchParams = useSearchParams();
   const token = searchParams.get("token") ?? "ETH";
   const amount = searchParams.get("amount");
@@ -108,10 +105,7 @@ export default function ReceivePageClient() {
           url: fullUrl,
         });
       } else {
-        await sdk.actions.composeCast({
-          text: `${shareText}`,
-          embeds: [fullUrl],
-        });
+        await navigator.clipboard.writeText(`${shareText} ${fullUrl}`);
       }
     } catch (err) {
       console.warn("Share failed or cancelled", err);
@@ -240,14 +234,6 @@ export default function ReceivePageClient() {
           </a>
         </div>
       </div>
-
-      {address?.startsWith("0x") && (
-        <SendToRawAddressDrawer
-          isOpen={sendDrawerOpen}
-          onOpenChange={setSendDrawerOpen}
-          address={address as `0x${string}`}
-        />
-      )}
     </div>
   );
 }

@@ -6,6 +6,7 @@ export type SocialUser = {
   username: string;
   display_name?: string;
   pfp_url?: string;
+  bio?: string;
   verified_addresses?: {
     primary?: {
       eth_address?: string | null;

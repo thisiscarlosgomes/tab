@@ -76,7 +76,13 @@ export default function RoomPage() {
   const viewerAddress = (address ?? identityAddress ?? "").toLowerCase();
   const hasJoined = participants.some((p) => {
     if (viewerAddress && p.address?.toLowerCase?.() === viewerAddress) return true;
-    if (identityFid != null && p.fid != null && Number(p.fid) === Number(identityFid)) {
+    if (
+      identityFid !== null &&
+      identityFid !== undefined &&
+      p.fid !== null &&
+      p.fid !== undefined &&
+      Number(p.fid) === Number(identityFid)
+    ) {
       return true;
     }
     return false;
@@ -87,10 +93,13 @@ export default function RoomPage() {
     if (hasJoined) return;
 
     let ctx: Awaited<typeof sdk.context> | null = null;
-    try {
-      ctx = await sdk.context;
-    } catch {
-      ctx = null;
+
+    if (!identityUsername && !identityPfp && !identityFid) {
+      try {
+        ctx = await sdk.context;
+      } catch {
+        ctx = null;
+      }
     }
 
     const player = {
@@ -214,7 +223,7 @@ export default function RoomPage() {
   if (!game) {
     return (
       <div className="min-h-screen w-full flex flex-col items-center justify-center p-6 text-center">
-        <img src="/vpush.png" className="w-14 h-14 opacity-60 mb-4" />
+        <img src="/vpush.png" alt="" className="w-14 h-14 opacity-60 mb-4" />
         <h1 className="text-lg font-semibold">This page was deleted</h1>
         <p className="text-sm text-white/40 mt-2">
           This group no longer exists.
@@ -232,13 +241,22 @@ export default function RoomPage() {
   ---------------------------------- */
   const handleShare = async () => {
     try {
-      await sdk.actions.composeCast({
-        text: `🎲 Spin the tab — ${participants.length} in, who’s paying?`,
+      if (navigator.share) {
+        await navigator.share({
+          title: game?.name?.trim() || "Spin tab",
+          text: `Spin the tab with ${participants.length} people.`,
+          url: copyUrl,
+        });
+        return;
+      }
+    } catch {}
 
-        embeds: [copyUrl],
-      });
+    try {
+      await navigator.clipboard.writeText(copyUrl);
+      toast.success("Link copied");
     } catch (err) {
-      console.warn("Feed share cancelled or failed", err);
+      console.warn("Share fallback failed", err);
+      toast.error("Unable to share");
     }
   };
 
@@ -249,35 +267,15 @@ export default function RoomPage() {
     setTimeout(() => setCopied(false), 1500);
   };
 
-  /* ----------------------------------
-     NOTIFICATIONS
-  ---------------------------------- */
-  const notifyUser = async (fid: number) => {
-    try {
-      await fetch("/api/send-notif", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          fid, // number, as required by Farcaster
-          title: "🎲 Spin the tab",
-          message: "We’re spinning soon",
-          targetUrl: copyUrl,
-        }),
-      });
-
-      toast.success("Notification sent");
-    } catch {
-      toast.error("Failed to notify");
-    }
-  };
-
   const paidAddresses = game?.paid?.map((p) => p.address.toLowerCase()) ?? [];
   const pendingInvites = invited.filter((invitedUser) => {
     const invitedAddress = invitedUser.address?.toLowerCase?.() ?? null;
     return !participants.some((p) => {
       if (
-        invitedUser.fid != null &&
-        p.fid != null &&
+        invitedUser.fid !== null &&
+        invitedUser.fid !== undefined &&
+        p.fid !== null &&
+        p.fid !== undefined &&
         Number(invitedUser.fid) === Number(p.fid)
       ) {
         return true;
@@ -338,8 +336,6 @@ export default function RoomPage() {
           participants={participants}
           invitedParticipants={pendingInvites}
           adminAddress={game.admin}
-          isAdmin={isAdmin}
-          onNotify={notifyUser}
           paidAddresses={paidAddresses} // ✅
         />
 
@@ -409,7 +405,7 @@ export default function RoomPage() {
         ) : (
           <Button onClick={handleShare} className="w-full bg-white text-black">
             <Share className="mr-2 h-4 w-4" />
-            Share to feed
+            Share link
           </Button>
         )}
 
