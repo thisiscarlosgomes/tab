@@ -122,11 +122,19 @@ export default function ActivityTransferDetailPage() {
       ? shortAddress(tx.fromAddress)
       : "Someone";
 
+  const outgoingRecipientLabel = tx?.recipientUsername
+    ? tx.recipientUsername.startsWith("0x")
+      ? shortAddress(tx.recipientUsername)
+      : `@${tx.recipientUsername.replace(/^@/, "")}`
+    : tx?.toAddress
+      ? shortAddress(tx.toAddress)
+      : "someone";
+
   const title = tx
     ? tx.amount !== null && tx.token
       ? isOutgoing
-        ? `You transfered ${formatAmount(tx.amount)} ${tx.token}`
-        : `${incomingSenderLabel} transfered ${formatAmount(tx.amount)} ${tx.token}`
+        ? `You transferred ${formatAmount(tx.amount)} ${tx.token} to ${outgoingRecipientLabel}`
+        : `${incomingSenderLabel} transferred ${formatAmount(tx.amount)} ${tx.token} to you`
       : "Transfer"
     : "Transfer";
 

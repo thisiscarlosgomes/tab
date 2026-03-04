@@ -1586,7 +1586,7 @@ export default function Home() {
   return (
     <ReceiveDrawerController>
       {({ openReceiveDrawer }) => (
-        <main className="min-h-screen w-full flex flex-col items-center justify-start p-4 pt-[calc(4rem+env(safe-area-inset-top))] pb-[calc(4rem+env(safe-area-inset-bottom))] overflow-y-auto scrollbar-hide">
+        <main className="min-h-screen w-full flex flex-col items-center justify-start p-4 pt-[calc(4rem+env(safe-area-inset-top))] pb-[calc(6rem+env(safe-area-inset-bottom))] overflow-y-auto scrollbar-hide">
           <div className="w-full max-w-md space-y-8">
         <div className="w-full space-y-2">
           {/* BALANCE CARD */}
@@ -1669,10 +1669,10 @@ export default function Home() {
 
                   <div className="min-w-0">
                     <p className="text-base font-medium text-white">
-                      Tab Agent
+                      Agent Access
                     </p>
                     <p className="text-md text-white/40 mt-0.5 truncate">
-                      Link your account to your openclaw agent
+                      Link your openclaw agent to tab
                     </p>
                   </div>
                 </button>
@@ -1681,7 +1681,7 @@ export default function Home() {
                   type="button"
                   aria-label="Dismiss Tab Agent"
                   onClick={dismissTabAgentPromo}
-                  className="absolute right-5 top-1/2 -translate-y-1/2 inline-flex h-8 w-8 items-center justify-center rounded-full text-white/45 bg-white/5 hover:text-white/70"
+                  className="absolute right-4 top-1/2 -translate-y-1/2 inline-flex h-8 w-8 items-center justify-center rounded-full text-white/45 bg-white/5 hover:text-white/70"
                 >
                   <X className="h-4 w-4" />
                 </button>

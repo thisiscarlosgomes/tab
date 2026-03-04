@@ -461,7 +461,7 @@ export default function AgentAccessPage() {
                 Setup instructions
               </p>
               <p className="text-xs text-white/50 mt-1">
-                Use your AI agent with tab
+                 Connect your AI agent to tab
               </p>
             </div>
           </div>
@@ -485,7 +485,7 @@ export default function AgentAccessPage() {
           <p className="text-white/50 text-sm">
             Your AI agent executes from this delegated wallet with strict limits.
           </p>
-          <p className="text-white/40 text-sm">
+          <p className="hidden text-white/40 text-sm">
             Delegated wallet:{" "}
             <span className="text-white/80">
               {state?.address
