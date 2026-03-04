@@ -542,13 +542,18 @@ export function GlobalSendDrawer() {
   useEffect(() => {
     if (!isOpen || mode !== "search" || query.trim() !== "") return;
 
-    const cacheKey =
-      (linkedFarcasterFid ? `farcaster:fid:${linkedFarcasterFid}` : null) ??
-      linkedFarcasterUsername ??
-      (linkedTwitterSubject ? `twitter:${linkedTwitterSubject}` : null) ??
-      linkedTwitterUsername ??
-      identityUsername ??
-      identityAddress;
+    const cacheKey = prefersTwitterGraph
+      ? (linkedTwitterSubject ? `twitter:followers:${linkedTwitterSubject}` : null) ??
+        (linkedTwitterUsername ? `twitter:followers:${linkedTwitterUsername.toLowerCase()}` : null) ??
+        identityUsername ??
+        identityAddress
+      : (linkedFarcasterFid ? `farcaster:mutuals:fid:${linkedFarcasterFid}` : null) ??
+        (linkedFarcasterUsername
+          ? `farcaster:mutuals:username:${linkedFarcasterUsername.toLowerCase()}`
+          : null) ??
+        (identityFid ? `farcaster:mutuals:fid:${identityFid}` : null) ??
+        (identityUsername ? `farcaster:mutuals:username:${identityUsername.toLowerCase()}` : null) ??
+        (identityAddress ? `farcaster:mutuals:address:${identityAddress.toLowerCase()}` : null);
 
     if (!cacheKey) return;
 
@@ -732,7 +737,7 @@ export function GlobalSendDrawer() {
               setResults([]);
               return;
             }
-            const res = await fetch("/api/twitter/following?limit=20", {
+            const res = await fetch("/api/twitter/followers?limit=20", {
               headers: {
                 Authorization: `Bearer ${token}`,
               },
@@ -742,8 +747,10 @@ export function GlobalSendDrawer() {
               setResults(data);
 
               const cacheKey =
-                (linkedTwitterSubject ? `twitter:${linkedTwitterSubject}` : null) ??
-                linkedTwitterUsername ??
+                (linkedTwitterSubject ? `twitter:followers:${linkedTwitterSubject}` : null) ??
+                (linkedTwitterUsername
+                  ? `twitter:followers:${linkedTwitterUsername.toLowerCase()}`
+                  : null) ??
                 identityUsername ??
                 identityAddress;
               if (cacheKey) {
@@ -772,7 +779,7 @@ export function GlobalSendDrawer() {
             return;
           }
 
-          const res = await fetch(`/api/neynar/user/following?${followingQuery}`);
+          const res = await fetch(`/api/neynar/user/mutuals?${followingQuery}`);
           const data = await res.json();
 
           if (Array.isArray(data)) {
@@ -791,10 +798,17 @@ export function GlobalSendDrawer() {
             setResults(next);
 
             const cacheKey =
-              (linkedFarcasterFid ? `farcaster:fid:${linkedFarcasterFid}` : null) ??
-              linkedFarcasterUsername ??
-              identityUsername ??
-              identityAddress;
+              (linkedFarcasterFid ? `farcaster:mutuals:fid:${linkedFarcasterFid}` : null) ??
+              (linkedFarcasterUsername
+                ? `farcaster:mutuals:username:${linkedFarcasterUsername.toLowerCase()}`
+                : null) ??
+              (identityFid ? `farcaster:mutuals:fid:${identityFid}` : null) ??
+              (identityUsername
+                ? `farcaster:mutuals:username:${identityUsername.toLowerCase()}`
+                : null) ??
+              (identityAddress
+                ? `farcaster:mutuals:address:${identityAddress.toLowerCase()}`
+                : null);
             if (cacheKey) {
               localStorage.setItem(`tab_friends_${cacheKey}`, JSON.stringify(next));
             }

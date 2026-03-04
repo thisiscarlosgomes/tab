@@ -52,18 +52,19 @@ export type TwitterIdentityDoc = {
   createdAt: Date;
 };
 
-type TwitterFollowingCacheProfile = {
+type TwitterGraphCacheProfile = {
   subject: string;
   username: string;
   name: string;
   profilePictureUrl: string | null;
 };
 
-type TwitterFollowingCacheDoc = {
+type TwitterGraphCacheDoc = {
   userId: string;
   subject: string;
   limit: number;
-  profiles: TwitterFollowingCacheProfile[];
+  kind: "following" | "followers";
+  profiles: TwitterGraphCacheProfile[];
   updatedAt: Date;
   expiresAt: Date;
   createdAt: Date;
@@ -94,7 +95,7 @@ type XUserResponse = {
   };
 };
 
-type XFollowingResponse = {
+type XFollowListResponse = {
   data?: Array<{
     id?: string;
     username?: string;
@@ -128,7 +129,7 @@ async function getCollections() {
   return {
     identities: db.collection<TwitterIdentityDoc>("a-twitter-identity"),
     followingCache:
-      db.collection<TwitterFollowingCacheDoc>("a-twitter-following-cache"),
+      db.collection<TwitterGraphCacheDoc>("a-twitter-following-cache"),
     oauth: db.collection<TwitterOAuthDoc>("a-twitter-oauth"),
   };
 }
@@ -495,12 +496,39 @@ export async function fetchTwitterFollowingForUser(input: {
   subject: string;
   limit?: number;
 }) {
+  return fetchTwitterGraphForUser({
+    ...input,
+    kind: "following",
+    path: "following",
+  });
+}
+
+export async function fetchTwitterFollowersForUser(input: {
+  userId: string;
+  subject: string;
+  limit?: number;
+}) {
+  return fetchTwitterGraphForUser({
+    ...input,
+    kind: "followers",
+    path: "followers",
+  });
+}
+
+async function fetchTwitterGraphForUser(input: {
+  userId: string;
+  subject: string;
+  limit?: number;
+  kind: "following" | "followers";
+  path: "following" | "followers";
+}) {
   const limit = Math.max(1, Math.min(200, Math.floor(input.limit ?? 50)));
   const { followingCache } = await getCollections();
   const cached = await followingCache.findOne({
     userId: input.userId,
     subject: input.subject,
     limit,
+    kind: input.kind,
     expiresAt: { $gt: new Date() },
   });
   if (cached?.profiles?.length) {
@@ -513,10 +541,10 @@ export async function fetchTwitterFollowingForUser(input: {
   let userAccessToken = oauth?.accessToken ?? null;
 
   do {
-    let response: XFollowingResponse;
+    let response: XFollowListResponse;
     try {
-      response = await xFetchJson<XFollowingResponse>(
-        `users/${encodeURIComponent(input.subject)}/following`,
+      response = await xFetchJson<XFollowListResponse>(
+        `users/${encodeURIComponent(input.subject)}/${input.path}`,
         {
           searchParams: {
             "user.fields": "profile_image_url",
@@ -532,8 +560,8 @@ export async function fetchTwitterFollowingForUser(input: {
       }
 
       userAccessToken = null;
-      response = await xFetchJson<XFollowingResponse>(
-        `users/${encodeURIComponent(input.subject)}/following`,
+      response = await xFetchJson<XFollowListResponse>(
+        `users/${encodeURIComponent(input.subject)}/${input.path}`,
         {
           searchParams: {
             "user.fields": "profile_image_url",
@@ -561,12 +589,13 @@ export async function fetchTwitterFollowingForUser(input: {
 
   const now = new Date();
   await followingCache.updateOne(
-    { userId: input.userId, subject: input.subject, limit },
+    { userId: input.userId, subject: input.subject, limit, kind: input.kind },
     {
       $set: {
         userId: input.userId,
         subject: input.subject,
         limit,
+        kind: input.kind,
         profiles: results.map((profile) => ({
           subject: profile.subject,
           username: profile.username,

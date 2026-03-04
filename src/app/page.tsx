@@ -709,11 +709,15 @@ export default function Home() {
 
     const friendsCacheKey =
       hasLinkedFarcaster
-        ? (linkedFarcasterFid ? `farcaster:fid:${linkedFarcasterFid}` : null) ??
-          linkedFarcasterUsername ??
-          address
-        : (linkedTwitterSubject ? `twitter:${linkedTwitterSubject}` : null) ??
-          linkedTwitterUsername;
+        ? (linkedFarcasterFid ? `farcaster:mutuals:fid:${linkedFarcasterFid}` : null) ??
+          (linkedFarcasterUsername
+            ? `farcaster:mutuals:username:${linkedFarcasterUsername.toLowerCase()}`
+            : null) ??
+          (address ? `farcaster:mutuals:address:${address.toLowerCase()}` : null)
+        : (linkedTwitterSubject ? `twitter:followers:${linkedTwitterSubject}` : null) ??
+          (linkedTwitterUsername
+            ? `twitter:followers:${linkedTwitterUsername.toLowerCase()}`
+            : null);
     if (!friendsCacheKey) return;
 
     const cached = localStorage.getItem(`tab_friends_${friendsCacheKey}`);
@@ -757,7 +761,7 @@ export default function Home() {
             return;
           }
 
-          const res = await fetch("/api/twitter/following?limit=10", {
+          const res = await fetch("/api/twitter/followers?limit=10", {
             headers: { Authorization: `Bearer ${token}` },
           });
           const data = await res.json().catch(() => null);
@@ -768,8 +772,10 @@ export default function Home() {
             setFriends(data);
             setFriendsError(null);
             const cacheKey =
-              (linkedTwitterSubject ? `twitter:${linkedTwitterSubject}` : null) ??
-              linkedTwitterUsername;
+              (linkedTwitterSubject ? `twitter:followers:${linkedTwitterSubject}` : null) ??
+              (linkedTwitterUsername
+                ? `twitter:followers:${linkedTwitterUsername.toLowerCase()}`
+                : null);
             if (cacheKey) {
               localStorage.setItem(
                 `tab_friends_${cacheKey}`,
@@ -796,7 +802,7 @@ export default function Home() {
           : linkedFarcasterUsername
             ? `username=${encodeURIComponent(linkedFarcasterUsername)}`
             : `address=${encodeURIComponent(address!)}`;
-        const res = await fetch(`/api/neynar/user/following?${query}`);
+        const res = await fetch(`/api/neynar/user/mutuals?${query}`);
         const data = await res.json();
 
         if (cancelled) return;
@@ -817,9 +823,11 @@ export default function Home() {
           setFriends(next);
           setFriendsError(null);
           const cacheKey =
-            (linkedFarcasterFid ? `farcaster:fid:${linkedFarcasterFid}` : null) ??
-            linkedFarcasterUsername ??
-            address;
+            (linkedFarcasterFid ? `farcaster:mutuals:fid:${linkedFarcasterFid}` : null) ??
+            (linkedFarcasterUsername
+              ? `farcaster:mutuals:username:${linkedFarcasterUsername.toLowerCase()}`
+              : null) ??
+            (address ? `farcaster:mutuals:address:${address.toLowerCase()}` : null);
           if (!cacheKey) return;
           localStorage.setItem(
             `tab_friends_${cacheKey}`,

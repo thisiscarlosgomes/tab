@@ -403,13 +403,18 @@ export default function SplitNewPage() {
   // Load followers (AUTO POPULATE)
   // --------------------------
   useEffect(() => {
-    const friendsCacheKey =
-      (linkedFarcasterFid ? `fid:${linkedFarcasterFid}` : null) ??
-      linkedFarcasterUsername ??
-      (linkedTwitterSubject ? `twitter:${linkedTwitterSubject}` : null) ??
-      linkedTwitterUsername ??
-      identityUsername ??
-      identityAddress;
+    const friendsCacheKey = prefersTwitterGraph
+      ? (linkedTwitterSubject ? `twitter:followers:${linkedTwitterSubject}` : null) ??
+        (linkedTwitterUsername ? `twitter:followers:${linkedTwitterUsername.toLowerCase()}` : null) ??
+        identityUsername ??
+        identityAddress
+      : (linkedFarcasterFid ? `farcaster:mutuals:fid:${linkedFarcasterFid}` : null) ??
+        (linkedFarcasterUsername
+          ? `farcaster:mutuals:username:${linkedFarcasterUsername.toLowerCase()}`
+          : null) ??
+        (identityFid ? `farcaster:mutuals:fid:${identityFid}` : null) ??
+        (identityUsername ? `farcaster:mutuals:username:${identityUsername.toLowerCase()}` : null) ??
+        (identityAddress ? `farcaster:mutuals:address:${identityAddress.toLowerCase()}` : null);
     if (!friendsCacheKey) return;
 
     try {
@@ -443,7 +448,7 @@ export default function SplitNewPage() {
         const token = await getAuthToken();
         if (!token) return;
 
-        const res = await fetch("/api/twitter/following?limit=50", {
+        const res = await fetch("/api/twitter/followers?limit=50", {
           headers: {
             Authorization: `Bearer ${token}`,
           },
@@ -461,8 +466,10 @@ export default function SplitNewPage() {
           }
 
           const cacheKey =
-            (linkedTwitterSubject ? `twitter:${linkedTwitterSubject}` : null) ??
-            linkedTwitterUsername ??
+            (linkedTwitterSubject ? `twitter:followers:${linkedTwitterSubject}` : null) ??
+            (linkedTwitterUsername
+              ? `twitter:followers:${linkedTwitterUsername.toLowerCase()}`
+              : null) ??
             identityUsername ??
             identityAddress;
           if (cacheKey && top.length > 0) {
@@ -496,7 +503,7 @@ export default function SplitNewPage() {
 
       if (!followingQuery) return;
 
-      const res = await fetch(`/api/neynar/user/following?${followingQuery}`);
+      const res = await fetch(`/api/neynar/user/mutuals?${followingQuery}`);
       const data = await res.json().catch(() => []);
 
       if (Array.isArray(data)) {
@@ -512,10 +519,15 @@ export default function SplitNewPage() {
         }
 
         const cacheKey =
-          (linkedFarcasterFid ? `fid:${linkedFarcasterFid}` : null) ??
-          linkedFarcasterUsername ??
-          identityUsername ??
-          identityAddress;
+          (linkedFarcasterFid ? `farcaster:mutuals:fid:${linkedFarcasterFid}` : null) ??
+          (linkedFarcasterUsername
+            ? `farcaster:mutuals:username:${linkedFarcasterUsername.toLowerCase()}`
+            : null) ??
+          (identityFid ? `farcaster:mutuals:fid:${identityFid}` : null) ??
+          (identityUsername
+            ? `farcaster:mutuals:username:${identityUsername.toLowerCase()}`
+            : null) ??
+          (identityAddress ? `farcaster:mutuals:address:${identityAddress.toLowerCase()}` : null);
         if (cacheKey && top.length > 0) {
           localStorage.setItem(`tab_friends_${cacheKey}`, JSON.stringify(top));
         }

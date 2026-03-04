@@ -70,18 +70,29 @@ export default function SplitPage() {
 
   const friendsCacheKey = useMemo(
     () =>
-      (linkedFarcasterFid ? `fid:${linkedFarcasterFid}` : null) ??
-      linkedFarcasterUsername ??
-      (linkedTwitterSubject ? `twitter:${linkedTwitterSubject}` : null) ??
-      linkedTwitterUsername ??
-      tabUsername ??
-      address ??
-      null,
+      prefersTwitterGraph
+        ? (linkedTwitterSubject ? `twitter:followers:${linkedTwitterSubject}` : null) ??
+          (linkedTwitterUsername
+            ? `twitter:followers:${linkedTwitterUsername.toLowerCase()}`
+            : null) ??
+          tabUsername ??
+          address ??
+          null
+        : (linkedFarcasterFid ? `farcaster:mutuals:fid:${linkedFarcasterFid}` : null) ??
+          (linkedFarcasterUsername
+            ? `farcaster:mutuals:username:${linkedFarcasterUsername.toLowerCase()}`
+            : null) ??
+          (tabFid ? `farcaster:mutuals:fid:${tabFid}` : null) ??
+          (tabUsername ? `farcaster:mutuals:username:${tabUsername.toLowerCase()}` : null) ??
+          (address ? `farcaster:mutuals:address:${address.toLowerCase()}` : null) ??
+          null,
     [
       linkedFarcasterFid,
       linkedFarcasterUsername,
       linkedTwitterSubject,
       linkedTwitterUsername,
+      prefersTwitterGraph,
+      tabFid,
       tabUsername,
       address,
     ]
@@ -236,7 +247,7 @@ export default function SplitPage() {
         if (prefersTwitterGraph) {
           const token = await getAccessToken().catch(() => null);
           if (!token) return;
-          const res = await fetch("/api/twitter/following?limit=50", {
+          const res = await fetch("/api/twitter/followers?limit=50", {
             headers: {
               Authorization: `Bearer ${token}`,
             },
@@ -248,7 +259,7 @@ export default function SplitPage() {
             .slice(0, 50);
         } else {
           if (!query) return;
-          const res = await fetch(`/api/neynar/user/following?${query}`);
+          const res = await fetch(`/api/neynar/user/mutuals?${query}`);
           const data = await res.json().catch(() => []);
           if (!Array.isArray(data)) return;
           next = data
