@@ -29,6 +29,8 @@ import {
   CircleDollarSign,
   Dice5,
   Ticket,
+  ChartBar,
+  ChartNoAxesColumnIncreasing
 } from "lucide-react";
 import {
   ResponsiveDialog,
@@ -1342,7 +1344,7 @@ export default function Home() {
   return (
     <ReceiveDrawerController>
       {({ openReceiveDrawer }) => (
-        <main className="min-h-screen w-full flex flex-col items-center justify-start p-4 pt-[calc(4rem+env(safe-area-inset-top))] pb-[calc(8rem+env(safe-area-inset-bottom))] overflow-y-auto scrollbar-hide">
+        <main className="min-h-screen w-full flex flex-col items-center justify-start p-4 pt-[calc(4rem+env(safe-area-inset-top))] pb-[calc(2rem+env(safe-area-inset-bottom))] overflow-y-auto scrollbar-hide">
           <div className="w-full max-w-md space-y-8">
         {/* BALANCE CARD */}
         <div
@@ -1350,7 +1352,7 @@ export default function Home() {
           className="w-full bg-white/5 rounded-xl p-3 text-left mt-2 cursor-pointer transition-colors"
         >
           <h2 className="ml-2 text-white font-2xl font-medium mb-2 flex items-center gap-1 mt-1">
-            Portfolio
+            Balance
             <img src="/base.png" className="w-4 h-4 opacity-90" />
           </h2>
 
@@ -1530,13 +1532,13 @@ export default function Home() {
             className="w-full flex items-center gap-3 bg-white/5 rounded-xl p-4 text-left active:scale-[0.98] transition"
           >
             <div className="w-10 h-10 rounded-full bg-emerald-500/15 flex items-center justify-center">
-              <CircleDollarSign className="w-5 h-5 text-emerald-400" />
+              <ChartNoAxesColumnIncreasing className="w-5 h-5 text-emerald-400" />
             </div>
 
             <div>
-              <p className="text-base font-medium text-white">Earn USDC</p>
+              <p className="text-base font-medium text-white">Earn Interest</p>
               <p className="text-md text-white/40 mt-0.5">
-                Earn yield on your stablecoins
+                Put your USDC at work with 6% APY
               </p>
             </div>
           </button>

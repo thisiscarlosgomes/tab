@@ -265,7 +265,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       ) : null}
       {children}
       {!hideInstallQrOnRoute ? <InstallQrCard /> : null}
-      {isAuthed && !hideAssistantLauncherOnRoute ? <InlineTabAssistant /> : null}
+      {/* {isAuthed && !hideAssistantLauncherOnRoute ? <InlineTabAssistant /> : null} */}
       {isAuthed && !hideFooterOnRoute ? <div className="md:hidden"><FooterNav /></div> : null}
     </div>
   );
