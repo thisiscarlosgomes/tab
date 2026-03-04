@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, type MouseEvent as ReactMouseEvent } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { useFrameSplash } from "@/providers/FrameSplashProvider";
@@ -27,8 +27,10 @@ import clsx from "clsx";
 import {
   Bot,
   CircleDollarSign,
+  ChevronRight,
   Dice5,
   Ticket,
+  X,
   ChartBar,
   ChartNoAxesColumnIncreasing
 } from "lucide-react";
@@ -38,6 +40,7 @@ import {
   ResponsiveDialogTitle,
 } from "@/components/ui/responsive-dialog";
 import { getSocialUserKey, SocialUser } from "@/lib/social";
+import { shortAddress } from "@/lib/shortAddress";
 
 import { useTicketCountForRound } from "@/lib/BaseJackpotQueries";
 import { useTabIdentity } from "@/lib/useTabIdentity";
@@ -55,6 +58,30 @@ type WebPushState = {
   vapidPublicKey: string | null;
   subscriptions: Array<{ endpoint: string }>;
 };
+
+type HomeActivityItem = {
+  type: string;
+  amount?: number;
+  token?: string;
+  txHash?: string;
+  splitId?: string;
+  roomId?: string;
+  dropId?: string;
+  counterparty?: string;
+  recipientUsername?: string;
+  recipient?: string;
+  pfp?: string;
+  description?: string;
+  note?: string | null;
+  timestamp: string | Date;
+};
+
+const PAYMENT_ACTIVITY_TYPES = new Set([
+  "bill_paid",
+  "bill_received",
+  "room_paid",
+  "room_received",
+]);
 
 const AUTH_WELCOME_STEPS = [
   {
@@ -373,6 +400,7 @@ export default function Home() {
   const [showMorphoDrawer, setShowMorphoDrawer] = useState(false);
   const [showEarnDetailsDialog, setShowEarnDetailsDialog] = useState(false);
   const [showGiftDrawer, setShowGiftDrawer] = useState(false);
+  const [showTabAgentPromo, setShowTabAgentPromo] = useState(false);
   const [authWelcomeStep, setAuthWelcomeStep] = useState(0);
   const authWelcomeTouchStartXRef = useRef<number | null>(null);
   const authWelcomeSwipeHandledRef = useRef(false);
@@ -380,7 +408,23 @@ export default function Home() {
   const [friends, setFriends] = useState<SocialUser[]>([]);
   const [friendsLoading, setFriendsLoading] = useState(false);
   const [friendsError, setFriendsError] = useState<string | null>(null);
+  const [isDraggingFriends, setIsDraggingFriends] = useState(false);
+  const [recentPayments, setRecentPayments] = useState<HomeActivityItem[]>([]);
+  const [recentPaymentsLoading, setRecentPaymentsLoading] = useState(false);
   const [multiBalances, setMultiBalances] = useState<MultiBalances | null>(null);
+  const friendsScrollRef = useRef<HTMLDivElement | null>(null);
+  const friendsDragStateRef = useRef<{
+    startX: number;
+    startScrollLeft: number;
+    dragging: boolean;
+    moved: boolean;
+  }>({
+    startX: 0,
+    startScrollLeft: 0,
+    dragging: false,
+    moved: false,
+  });
+  const suppressFriendsClickRef = useRef(false);
 
   const [shake, setShake] = useState(false);
   const [shakeBalance, setShakeBalance] = useState(false);
@@ -413,6 +457,8 @@ export default function Home() {
 
   const [netApy, setNetApy] = useState<number | null>(null);
   const balancesCacheKey = address ? `tab_balances_${address}` : "tab_balances";
+  const tabAgentPromoKey =
+    user?.id ? `tab:home:tab-agent-dismissed:${user.id}` : "tab:home:tab-agent-dismissed";
 
   const formatMonthlyEarnings = (value: number) => {
     if (value <= 0) return "0.00";
@@ -869,6 +915,62 @@ export default function Home() {
   ]);
 
   useEffect(() => {
+    let cancelled = false;
+    const controller = new AbortController();
+
+    const fetchRecentPayments = async () => {
+      if (!address) {
+        setRecentPayments([]);
+        setRecentPaymentsLoading(false);
+        return;
+      }
+
+      setRecentPaymentsLoading(true);
+      try {
+        const qs = new URLSearchParams({
+          address,
+          limit: "12",
+          skipExternal: "1",
+        });
+        const res = await fetch(`/api/activity?${qs.toString()}`, {
+          signal: controller.signal,
+          cache: "no-store",
+        });
+
+        if (!res.ok) {
+          if (!cancelled) setRecentPayments([]);
+          return;
+        }
+
+        const data = await res.json().catch(() => null);
+        if (cancelled) return;
+
+        const next = Array.isArray(data?.activity)
+          ? (data.activity as HomeActivityItem[])
+              .filter((item) => PAYMENT_ACTIVITY_TYPES.has(String(item?.type ?? "")))
+              .slice(0, 4)
+          : [];
+        setRecentPayments(next);
+      } catch {
+        if (!cancelled) {
+          setRecentPayments([]);
+        }
+      } finally {
+        if (!cancelled) {
+          setRecentPaymentsLoading(false);
+        }
+      }
+    };
+
+    void fetchRecentPayments();
+
+    return () => {
+      cancelled = true;
+      controller.abort();
+    };
+  }, [address]);
+
+  useEffect(() => {
     if (!address) return;
     const pendingTimeouts = new Set<number>();
 
@@ -961,6 +1063,14 @@ export default function Home() {
     dismiss();
   }, [dismiss]);
 
+  useEffect(() => {
+    try {
+      setShowTabAgentPromo(localStorage.getItem(tabAgentPromoKey) !== "1");
+    } catch {
+      setShowTabAgentPromo(true);
+    }
+  }, [tabAgentPromoKey]);
+
   // Restore cached balances fast (prevents flicker to 0)
   useEffect(() => {
     if (!address) return;
@@ -977,10 +1087,142 @@ export default function Home() {
     }
   };
 
+  const dismissTabAgentPromo = useCallback(() => {
+    try {
+      localStorage.setItem(tabAgentPromoKey, "1");
+    } catch {}
+    setShowTabAgentPromo(false);
+  }, [tabAgentPromoKey]);
+
+  const handleFriendsMouseDown = useCallback(
+    (event: ReactMouseEvent<HTMLDivElement>) => {
+      const container = friendsScrollRef.current;
+      if (!container) return;
+      suppressFriendsClickRef.current = false;
+      friendsDragStateRef.current = {
+        startX: event.clientX,
+        startScrollLeft: container.scrollLeft,
+        dragging: true,
+        moved: false,
+      };
+      setIsDraggingFriends(false);
+    },
+    []
+  );
+
+  const handleFriendsClickCapture = useCallback(
+    (event: ReactMouseEvent<HTMLDivElement>) => {
+      if (!suppressFriendsClickRef.current) return;
+      event.preventDefault();
+      event.stopPropagation();
+      window.setTimeout(() => {
+        suppressFriendsClickRef.current = false;
+      }, 0);
+    },
+    []
+  );
+
+  useEffect(() => {
+    const handleMouseMove = (event: MouseEvent) => {
+      const container = friendsScrollRef.current;
+      const drag = friendsDragStateRef.current;
+      if (!container || !drag.dragging) return;
+
+      const deltaX = event.clientX - drag.startX;
+      if (Math.abs(deltaX) > 8) {
+        drag.moved = true;
+        setIsDraggingFriends(true);
+      }
+      if (drag.moved) {
+        container.scrollLeft = drag.startScrollLeft - deltaX;
+      }
+    };
+
+    const handleMouseUp = () => {
+      const didMove = friendsDragStateRef.current.moved;
+      suppressFriendsClickRef.current = didMove;
+      friendsDragStateRef.current = {
+        startX: 0,
+        startScrollLeft: 0,
+        dragging: false,
+        moved: false,
+      };
+      setIsDraggingFriends(false);
+    };
+
+    window.addEventListener("mousemove", handleMouseMove);
+    window.addEventListener("mouseup", handleMouseUp);
+    return () => {
+      window.removeEventListener("mousemove", handleMouseMove);
+      window.removeEventListener("mouseup", handleMouseUp);
+    };
+  }, []);
+
   /* ------------------------------------------ */
   /* LANDING PAGE (WALLET CONNECT) */
   /* ------------------------------------------ */
   const hasFriends = friends.length > 0;
+  const formatActivityTime = (timestamp: string | Date) => {
+    const ts = new Date(timestamp);
+    const diffMs = Date.now() - ts.getTime();
+    if (!Number.isFinite(diffMs) || diffMs < 0) return "";
+    const minutes = Math.floor(diffMs / 60_000);
+    if (minutes < 60) return `${Math.max(minutes, 1)}m`;
+    const hours = Math.floor(minutes / 60);
+    if (hours < 24) return `${hours}h`;
+    const days = Math.floor(hours / 24);
+    return `${days}d`;
+  };
+
+  const getActivityCounterparty = (item: HomeActivityItem) => {
+    if (item.counterparty) {
+      return item.counterparty.startsWith("0x")
+        ? shortAddress(item.counterparty)
+        : `@${item.counterparty}`;
+    }
+    if (item.recipientUsername) return `@${item.recipientUsername}`;
+    if (item.recipient && item.recipient.startsWith("0x")) {
+      return shortAddress(item.recipient);
+    }
+    return "someone";
+  };
+
+  const getActivityDescription = (item: HomeActivityItem) => {
+    if (typeof item.amount === "number") {
+      const action =
+        item.type === "bill_received" || item.type === "room_received"
+          ? "Received"
+          : "Paid";
+      return `${action} ${item.amount.toFixed(2)}${item.token ? ` ${item.token}` : ""}`;
+    }
+    return item.description ?? "Payment";
+  };
+
+  const openActivityItem = (item: HomeActivityItem) => {
+    if (item.txHash) {
+      router.push(`/activity/tx/${item.txHash}`);
+      return;
+    }
+    if (item.roomId) {
+      router.push(`/game/${item.roomId}`);
+      return;
+    }
+    if (item.splitId) {
+      router.push(`/split/${item.splitId}`);
+      return;
+    }
+    if (item.dropId) {
+      router.push(`/claim/${item.dropId}`);
+      return;
+    }
+    router.push("/activity");
+  };
+
+  const getActivityVisualClass = (item: HomeActivityItem) => {
+    return item.type === "bill_received" || item.type === "room_received"
+      ? "bg-emerald-500/20 text-emerald-300"
+      : "bg-green-500/20 text-green-300";
+  };
 
   const dismissPostOtpNotificationDialog = useCallback(() => {
     if (!user?.id) {
@@ -1344,85 +1586,108 @@ export default function Home() {
   return (
     <ReceiveDrawerController>
       {({ openReceiveDrawer }) => (
-        <main className="min-h-screen w-full flex flex-col items-center justify-start p-4 pt-[calc(4rem+env(safe-area-inset-top))] pb-[calc(2rem+env(safe-area-inset-bottom))] overflow-y-auto scrollbar-hide">
+        <main className="min-h-screen w-full flex flex-col items-center justify-start p-4 pt-[calc(4rem+env(safe-area-inset-top))] pb-[calc(4rem+env(safe-area-inset-bottom))] overflow-y-auto scrollbar-hide">
           <div className="w-full max-w-md space-y-8">
-        {/* BALANCE CARD */}
-        <div
-          onClick={() => router.push("/profile")}
-          className="w-full bg-white/5 rounded-xl p-3 text-left mt-2 cursor-pointer transition-colors"
-        >
-          <h2 className="ml-2 text-white font-2xl font-medium mb-2 flex items-center gap-1 mt-1">
-            Balance
-            <img src="/base.png" className="w-4 h-4 opacity-90" />
-          </h2>
-
-          <p
-            className={clsx(
-              "ml-2 text-4xl text-white font-semibold mb-2",
-              shakeBalance && "animate-balance-shake"
-            )}
+        <div className="w-full space-y-2">
+          {/* BALANCE CARD */}
+          <div
+            onClick={() => router.push("/profile")}
+            className="w-full bg-white/5 rounded-xl p-3 text-left mt-2 cursor-pointer transition-colors"
           >
-            {!multiBalances ? "$0.00" : `$${totalPortfolio.toFixed(2)}`}
-          </p>
+            <h2 className="ml-2 text-white font-2xl font-medium mb-2 flex items-center gap-1 mt-1">
+              Balance
+              <img src="/base.png" className="w-4 h-4 opacity-90" />
+            </h2>
 
-          {/* CONNECT WALLET */}
-          {/* <Button
-            onClick={(e) => {
-              e.stopPropagation();
-              connect({ connector: injected() });
-            }}
-            disabled={isConnecting}
-            className="w-full bg-primary text-black font-semibold"
-          >
-            {isConnecting ? "Connecting…" : "Connect wallet"}
-          </Button> */}
+            <p
+              className={clsx(
+                "ml-2 text-4xl text-white font-semibold mb-2",
+                shakeBalance && "animate-balance-shake"
+              )}
+            >
+              {!multiBalances ? "$0.00" : `$${totalPortfolio.toFixed(2)}`}
+            </p>
 
-          <div className="grid grid-cols-2 gap-2 mt-3">
-            {/* SEND */}
-            <button
-              onClick={(e) => {
-                e.stopPropagation();
+            <div className="grid grid-cols-2 gap-2 mt-3">
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
 
-                if (totalPortfolio === 0) {
-                  setShakeBalance(true);
-                  setTimeout(() => setShakeBalance(false), 500);
+                  if (totalPortfolio === 0) {
+                    setShakeBalance(true);
+                    setTimeout(() => setShakeBalance(false), 500);
+                    triggerClickHaptics();
+                    return;
+                  }
+
+                  open();
                   triggerClickHaptics();
-                  return;
-                }
+                }}
+                className="bg-white/5 text-white py-3 rounded-lg text-base font-semibold active:scale-95 transition duration-100"
+              >
+                Send
+              </button>
 
-                open();
-                triggerClickHaptics();
-              }}
-              className="bg-white/5 text-white py-3 rounded-lg text-base font-semibold active:scale-95 transition duration-100"
-            >
-              Send
-            </button>
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  openReceiveDrawer();
+                  triggerClickHaptics();
+                }}
+                className={`bg-white/5 text-white  py-3 rounded-lg text-base font-semibold ${tap}`}
+              >
+                Deposit
+              </button>
 
-            {/* REQUEST */}
-            <button
-              onClick={(e) => {
-                e.stopPropagation();
-                openReceiveDrawer();
-                triggerClickHaptics();
-              }}
-              className={`bg-white/5 text-white  py-3 rounded-lg text-base font-semibold ${tap}`}
-            >
-              Deposit
-            </button>
-
-            {/* SPLIT */}
-            <button
-              onClick={(e) => {
-                e.stopPropagation();
-                router.push("/split/new");
-                triggerClickHaptics();
-              }}
-              className={`bg-white active:bg-white/90 transition-colors text-black py-3 rounded-lg text-base font-semibold col-span-2 ${tap}`}
-            >
-              Create a split
-            </button>
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  router.push("/split/new");
+                  triggerClickHaptics();
+                }}
+                className={`bg-white active:bg-white/90 transition-colors text-black py-3 rounded-lg text-base font-semibold col-span-2 ${tap}`}
+              >
+                Create a split
+              </button>
+            </div>
           </div>
 
+          {showTabAgentPromo && (
+            <div className="w-full">
+              <div className="relative">
+                <button
+                  type="button"
+                  onClick={() => {
+                    dismissTabAgentPromo();
+                    router.push("/faq");
+                  }}
+                  className="w-full flex items-center gap-3 bg-white/5 rounded-xl p-4 text-left active:scale-[0.98] transition"
+                >
+                  <div className="w-10 h-10 rounded-full bg-blue-500/15 flex items-center justify-center shrink-0">
+                    <Bot className="w-5 h-5 text-blue-400" />
+                  </div>
+
+                  <div className="min-w-0">
+                    <p className="text-base font-medium text-white">
+                      Tab Agent
+                    </p>
+                    <p className="text-md text-white/40 mt-0.5 truncate">
+                      Link your account to your openclaw agent
+                    </p>
+                  </div>
+                </button>
+
+                <button
+                  type="button"
+                  aria-label="Dismiss Tab Agent"
+                  onClick={dismissTabAgentPromo}
+                  className="absolute right-5 top-1/2 -translate-y-1/2 inline-flex h-8 w-8 items-center justify-center rounded-full text-white/45 bg-white/5 hover:text-white/70"
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
+            </div>
+          )}
         </div>
 
         {(showActiveCards || isLoadingActives) && (
@@ -1483,15 +1748,25 @@ export default function Home() {
             Pay friends quickly
           </div>
 
-          <div className="flex gap-1 overflow-x-auto scrollbar-hide py-1 ml-1">
+          <div
+            ref={friendsScrollRef}
+            onMouseDown={handleFriendsMouseDown}
+            onClickCapture={handleFriendsClickCapture}
+            onDragStartCapture={(event) => event.preventDefault()}
+            className={clsx(
+              "flex gap-1 overflow-x-auto scrollbar-hide py-1 ml-1 select-none",
+              isDraggingFriends ? "cursor-grabbing" : "cursor-grab"
+            )}
+          >
             {friendsLoading && !hasFriends
               ? Array.from({ length: 6 }).map((_, i) => (
                   <FriendSkeleton key={i} />
                 ))
               : hasFriends
-                ? friends.slice(0, 16).map((f) => (
+                ? friends.slice(0, 20).map((f) => (
                   <button
                     key={getSocialUserKey(f)}
+                    onDragStart={(event) => event.preventDefault()}
                     onClick={() => {
                       setQuery("");
                       setSelectedUser(f);
@@ -1500,7 +1775,7 @@ export default function Home() {
 
                       setTimeout(() => open(), 0);
                     }}
-                    className="flex flex-col items-center w-[22%] min-w-[64px]"
+                    className="flex flex-col items-center w-[33%] min-w-[64px]"
                   >
                     <UserAvatar
                       src={f.pfp_url}
@@ -1508,8 +1783,8 @@ export default function Home() {
                       width={56}
                       className="w-14 h-14 rounded-full object-cover"
                     />
-                    <span className="text-xs text-white/70 mt-1 truncate max-w-[60px]">
-                      @{f.username ?? "user"}
+                    <span className="text-[13px] text-white/70 mt-1 truncate max-w-[60px]">
+                      {f.username ?? "user"}
                     </span>
                   </button>
                 ))
@@ -1526,7 +1801,7 @@ export default function Home() {
           <div className="text-lg ml-2 font-medium mb-3">
             More ways to use tab
           </div>
-          <div className="space-y-3">
+          <div className="space-y-2">
           <button
             onClick={() => setShowMorphoDrawer(true)}
             className="w-full flex items-center gap-3 bg-white/5 rounded-xl p-4 text-left active:scale-[0.98] transition"
@@ -1576,25 +1851,102 @@ export default function Home() {
             </div>
           </button>
 
-          {/* TAB AGENT */}
-          <button
-            onClick={() => router.push("/faq")}
-            className="w-full flex items-center gap-3 bg-white/5 rounded-xl p-4 text-left active:scale-[0.98] transition"
-          >
-            <div className="w-10 h-10 rounded-full bg-blue-500/15 flex items-center justify-center">
-              <Bot className="w-5 h-5 text-blue-400" />
-            </div>
-
-            <div>
-              <p className="text-base font-medium text-white">
-                Tab Agent <span className="text-blue-400"></span>
-              </p>
-              <p className="text-md text-white/40 mt-0.5">
-                Link tab to your openclaw agent
-              </p>
-            </div>
-          </button>
           </div>
+        </div>
+
+        <div className="w-full mt-6">
+          <button
+            type="button"
+            onClick={() => router.push("/activity")}
+            className="mb-3 ml-2 flex items-center gap-1 text-lg font-medium"
+          >
+            Activity
+            <ChevronRight className="h-4 w-4 text-white/50" />
+          </button>
+
+          {recentPaymentsLoading ? (
+            <div className="space-y-2">
+              {Array.from({ length: 4 }).map((_, i) => (
+                <div
+                  key={`activity-skeleton-${i}`}
+                  className="p-3"
+                >
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="flex items-start gap-3">
+                      <Skeleton circle width={36} height={36} />
+                      <div>
+                        <Skeleton width={110} height={14} className="mb-2" />
+                        <Skeleton width={150} height={14} />
+                      </div>
+                    </div>
+                    <Skeleton width={18} height={14} />
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : recentPayments.length > 0 ? (
+            <ul className="space-y-2">
+              {recentPayments.map((item, idx) => {
+                const key = `${item.type}-${item.txHash ?? item.splitId ?? item.roomId ?? idx}`;
+                const label = getActivityCounterparty(item);
+                const showAvatar =
+                  (item.type === "bill_paid" || item.type === "bill_received") &&
+                  !!item.pfp;
+
+                return (
+                  <li
+                    key={key}
+                    className="pt-3 pb-2 px-4 rounded-lg bg-white/5 cursor-pointer flex justify-between"
+                    onClick={() => openActivityItem(item)}
+                  >
+                    <div className="flex gap-3 items-start min-w-0">
+                      <div className="shrink-0">
+                        {showAvatar ? (
+                          <UserAvatar
+                            src={item.pfp}
+                            seed={item.counterparty ?? item.recipient ?? key}
+                            width={36}
+                            alt={item.counterparty ?? "User"}
+                            className="w-8 h-8 rounded-full object-cover border border-white/10"
+                          />
+                        ) : (
+                          <div
+                            className={`w-8 h-8 rounded-full flex items-center justify-center ${getActivityVisualClass(item)}`}
+                          >
+                            <CircleDollarSign className="w-4 h-4" />
+                          </div>
+                        )}
+                      </div>
+
+                      <div className="min-w-0">
+                        <div className="truncate text-white font-medium text-sm">
+                          {label}
+                        </div>
+                        <div className="text-white/40 text-sm leading-snug">
+                          {getActivityDescription(item)}
+                        </div>
+                        {typeof item.note === "string" && item.note.trim() && (
+                          <div className="mt-1">
+                            <div className="inline-block max-w-[240px] rounded-md bg-white/5 px-3 py-1 text-white/40 text-xs leading-snug line-clamp-2">
+                              {item.note.trim()}
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+
+                    <div className="ml-4 shrink-0 text-white/30 text-sm">
+                      {formatActivityTime(item.timestamp)}
+                    </div>
+                  </li>
+                );
+              })}
+            </ul>
+          ) : (
+            <div className="rounded-lg border border-white/10 px-4 py-5 text-sm text-white/45">
+              No recent payments yet.
+            </div>
+          )}
         </div>
 
           </div>

@@ -223,7 +223,7 @@ async function xFetchJson<T>(
 
   const authToken = options?.userAccessToken || getXAppBearerToken();
   if (!authToken) {
-    throw new Error("Missing X API credentials");
+    throw new Error("Something went wrong...");
   }
 
   const res = await fetch(url.toString(), {

@@ -103,13 +103,11 @@ export default function TabAgentFAQPage() {
         <div className="border border-white/10 rounded-lg p-6 flex flex-col gap-2">
           <ChatBubble system>Create split from tagged users</ChatBubble>
 
-          <ChatBubble>split 0.2 eth @alex @rita</ChatBubble>
+          <ChatBubble>split $28 eth @alex @rita</ChatBubble>
 
           <ChatBubble from="tab">
-            Split created. Amount: 0.2, currency: ETH, users: @alex, @rita.
+            Split created. Amount: $28 tagged: @alex, @rita. URL: https://usetab.app/split/abcd1234
           </ChatBubble>
-
-          <ChatBubble from="tab">URL: https://usetab.app/split/abcd1234</ChatBubble>
         </div>
 
         {/* EXAMPLE 3 — SEND */}
@@ -145,21 +143,10 @@ export default function TabAgentFAQPage() {
           </ChatBubble>
         </div>
 
-        {/* EXAMPLE 5 — SPLIT CONFIRMATION PAYLOAD */}
-        <div className="border border-white/10 rounded-lg p-6 flex flex-col gap-2">
-          <ChatBubble system>Split confirmation details</ChatBubble>
 
-          <ChatBubble>split 0.2 eth @alex @rita</ChatBubble>
-
-          <ChatBubble from="tab">
-            Split created. Amount: 0.2, currency: ETH, users: @alex, @rita.
-          </ChatBubble>
-
-          <ChatBubble from="tab">URL: https://usetab.app/split/abcd1234</ChatBubble>
-        </div>
 
         {/* DETAILS */}
-        <div className="border border-white/10 rounded-lg overflow-hidden mt-2">
+        <div className="hidden border border-white/10 rounded-lg overflow-hidden mt-2">
           <button
             onClick={() => setOpen(!open)}
             className="w-full p-4 flex items-center justify-between text-md text-white"

@@ -41,6 +41,7 @@ export function UserAvatar({
       {...props}
       src={resolvedSrc}
       alt={alt}
+      draggable={false}
       onError={(event) => {
         if (sourceIndex < sourceChain.length - 1) {
           setSourceIndex(sourceIndex + 1);
