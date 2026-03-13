@@ -2,12 +2,15 @@ import { createHash } from "crypto";
 import { NextRequest } from "next/server";
 import clientPromise from "@/lib/mongodb";
 import { getBearerToken, getPrivyServerClient } from "@/lib/privy-server";
+import { getCanonicalUserProfileByUserId } from "@/lib/user-profile";
 
 export const dynamic = "force-dynamic";
 
 type LinkedAccountLike = {
   type?: string;
   fid?: number | string;
+  subject?: string;
+  username?: string | null;
 };
 
 function hashToken(token: string) {
@@ -33,6 +36,21 @@ function normalizeFid(value?: number | string) {
 function findFarcasterFid(accounts: LinkedAccountLike[]) {
   const farcaster = accounts.find((account) => account.type === "farcaster");
   return normalizeFid(farcaster?.fid);
+}
+
+function findTwitterAccount(accounts: LinkedAccountLike[]) {
+  const twitter = accounts.find((account) => account.type === "twitter_oauth");
+  if (!twitter || typeof twitter.subject !== "string" || !twitter.subject.trim()) {
+    return null;
+  }
+
+  return {
+    subject: twitter.subject.trim(),
+    username:
+      typeof twitter.username === "string" && twitter.username.trim()
+        ? twitter.username.trim()
+        : null,
+  };
 }
 
 async function requirePrivyUser(req: NextRequest) {
@@ -198,6 +216,16 @@ export async function POST(req: NextRequest) {
   }
 
   const farcasterFid = findFarcasterFid(linkedAccounts);
+  const twitter = findTwitterAccount(linkedAccounts);
+  const profile = await getCanonicalUserProfileByUserId(userId).catch(() => null);
+  const preferredSocialProvider =
+    profile?.socialType === "twitter" || profile?.socialType === "farcaster"
+      ? profile.socialType
+      : twitter?.subject
+        ? "twitter"
+        : farcasterFid !== null
+          ? "farcaster"
+          : null;
 
   const linkUpdate = await links.findOneAndUpdate(
     {
@@ -211,6 +239,9 @@ export async function POST(req: NextRequest) {
         agentName: claim.agentName ?? null,
         status: "ACTIVE",
         farcasterFid,
+        twitterSubject: twitter?.subject ?? null,
+        twitterUsername: twitter?.username ?? null,
+        preferredSocialProvider,
         linkedAt: now,
         updatedAt: now,
       },
@@ -253,6 +284,8 @@ export async function POST(req: NextRequest) {
     agentName: claim.agentName ?? null,
     linkedUserId: userId,
     farcasterLinked: farcasterFid !== null,
+    twitterLinked: Boolean(twitter?.subject),
+    preferredSocialProvider,
     agentAccessActive: Boolean(activePolicy),
     nextStep: activePolicy
       ? null

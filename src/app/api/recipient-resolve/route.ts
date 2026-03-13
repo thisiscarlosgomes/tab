@@ -33,21 +33,34 @@ export async function GET(req: NextRequest) {
   );
   const actorUserId = authed.ok ? String(authed.user.id ?? "").trim() : null;
 
-  // Prefer username-based resolution so Tab users route to their Tab wallet.
-  const resolved = username
-    ? await resolveRecipient({
-        recipient: username,
-        recipientUsername: username,
-        recipientProvider,
-        actorUserId,
-      })
-    : ens
+  let resolved = null;
+  try {
+    // Prefer username-based resolution so Tab users route to their Tab wallet.
+    resolved = username
       ? await resolveRecipient({
-          recipient: ens,
-          recipientEns: ens,
+          recipient: username,
+          recipientUsername: username,
+          recipientProvider,
           actorUserId,
         })
-    : await resolveRecipient({ recipient: address, recipientAddress: address, actorUserId });
+      : ens
+        ? await resolveRecipient({
+            recipient: ens,
+            recipientEns: ens,
+            actorUserId,
+          })
+      : await resolveRecipient({ recipient: address, recipientAddress: address, actorUserId });
+  } catch (error) {
+    const message =
+      error instanceof Error ? error.message : "Recipient resolution failed";
+    if (recipientProvider === "twitter") {
+      return Response.json(
+        { error: "Unable to prepare a wallet for this Twitter user right now." },
+        { status: 200 }
+      );
+    }
+    return Response.json({ error: message }, { status: 500 });
+  }
 
   if (!resolved) {
     return Response.json({ resolved: null });

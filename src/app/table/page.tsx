@@ -277,7 +277,6 @@ export default function SplitPage() {
             .slice(0, 50);
         }
         setFollowers(next);
-        if (!inviteQuery.trim()) setFilteredFollowers(next);
         if (friendsCacheKey && next.length > 0) {
           localStorage.setItem(`tab_friends_${friendsCacheKey}`, JSON.stringify(next));
         }
@@ -295,7 +294,6 @@ export default function SplitPage() {
     tabFid,
     tabUsername,
     address,
-    inviteQuery,
     friendsCacheKey,
     prefersTwitterGraph,
     getAccessToken,

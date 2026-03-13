@@ -13,6 +13,7 @@ export type ResolvedRecipient = {
   username: string | null;
   source: "address" | "ens" | "tab" | "farcaster" | "twitter";
   fid?: number | null;
+  twitterSubject?: string | null;
 };
 
 function normalizeAddress(value?: string | null) {

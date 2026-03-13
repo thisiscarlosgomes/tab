@@ -26,12 +26,15 @@ type LinkedAccountLike = {
   delegated?: boolean;
   id?: string | null;
   fid?: number | string;
+  subject?: string;
   username?: string;
 };
 
 type SplitUserLike = {
   address?: string | null;
   fid?: number | string | null;
+  provider?: string | null;
+  twitter_subject?: string | null;
   userKey?: string | null;
   name?: string;
   pfp?: string;
@@ -66,6 +69,8 @@ type AgentPolicyDoc = {
   maxPerPayment?: number;
   dailyCap?: number;
   farcasterFid?: number | string | null;
+  twitterSubject?: string | null;
+  twitterUsername?: string | null;
 };
 
 type AgentLinkDoc = {
@@ -81,6 +86,16 @@ function normalizeAddress(value?: string | null) {
 function normalizeFid(value?: number | string | null) {
   const n = Number(value);
   return Number.isFinite(n) && n > 0 ? n : null;
+}
+
+function normalizeTwitterSubject(value?: string | null) {
+  return typeof value === "string" && value.trim() ? value.trim() : null;
+}
+
+function normalizeTwitterUsername(value?: string | null) {
+  return typeof value === "string" && value.trim()
+    ? value.trim().replace(/^@+/, "").toLowerCase()
+    : null;
 }
 
 function toLinkedAccounts(user: unknown): LinkedAccountLike[] {
@@ -113,14 +128,47 @@ function findFarcasterAccount(accounts: LinkedAccountLike[]) {
   return accounts.find((account) => account.type === "farcaster");
 }
 
-function keyOf(entry?: SplitUserLike | null) {
-  if (!entry) return null;
-  if (entry.userKey) return entry.userKey.toLowerCase();
+function findTwitterAccount(accounts: LinkedAccountLike[]) {
+  const twitter = accounts.find((account) => account.type === "twitter_oauth");
+  if (!twitter) return null;
+
+  const subject = normalizeTwitterSubject(twitter.subject);
+  if (!subject) return null;
+
+  return {
+    subject,
+    username: normalizeTwitterUsername(twitter.username),
+  };
+}
+
+function getUserKeys(entry?: SplitUserLike | null) {
+  const keys = new Set<string>();
+  if (!entry) return keys;
+
+  if (typeof entry.userKey === "string" && entry.userKey) {
+    keys.add(entry.userKey.toLowerCase());
+  }
+
   const generated = buildUserKey({
     fid: entry.fid,
     address: normalizeAddress(entry.address),
   });
-  return generated?.toLowerCase() ?? null;
+  if (generated) keys.add(generated.toLowerCase());
+
+  const address = normalizeAddress(entry.address);
+  if (address) keys.add(`wallet:${address}`);
+
+  const fid = normalizeFid(entry.fid);
+  if (fid !== null) keys.add(`fid:${fid}`);
+
+  const twitterSubject = normalizeTwitterSubject(entry.twitter_subject);
+  if (twitterSubject) keys.add(`twitter:${twitterSubject}`);
+
+  const twitterUsername =
+    entry.provider === "twitter" ? normalizeTwitterUsername(entry.name) : null;
+  if (twitterUsername) keys.add(`twitter-username:${twitterUsername}`);
+
+  return keys;
 }
 
 function sameUser(a?: SplitUserLike | null, b?: SplitUserLike | null) {
@@ -128,9 +176,11 @@ function sameUser(a?: SplitUserLike | null, b?: SplitUserLike | null) {
   const bAddress = normalizeAddress(b?.address);
   if (aAddress && bAddress && aAddress === bAddress) return true;
 
-  const aKey = keyOf(a);
-  const bKey = keyOf(b);
-  if (aKey && bKey && aKey === bKey) return true;
+  const aKeys = getUserKeys(a);
+  const bKeys = getUserKeys(b);
+  for (const key of aKeys) {
+    if (bKeys.has(key)) return true;
+  }
 
   const aFid = normalizeFid(a?.fid);
   const bFid = normalizeFid(b?.fid);
@@ -141,15 +191,17 @@ function sameUser(a?: SplitUserLike | null, b?: SplitUserLike | null) {
 
 function findEligibleInvitedEntry(
   invited: SplitUserLike[],
-  actorFid: number | null,
+  actor: SplitUserLike,
   linkedAddresses: Set<string>,
   sourceWalletAddress: string
 ) {
+  const actorKeys = getUserKeys(actor);
   return invited.find((entry) => {
-    const entryFid = normalizeFid(entry.fid);
     const entryAddress = normalizeAddress(entry.address);
+    for (const key of getUserKeys(entry)) {
+      if (actorKeys.has(key)) return true;
+    }
     return (
-      (actorFid !== null && entryFid !== null && actorFid === entryFid) ||
       (entryAddress
         ? linkedAddresses.has(entryAddress) || entryAddress === sourceWalletAddress
         : false)
@@ -352,6 +404,8 @@ export async function POST(req: NextRequest) {
     typeof policy.walletId === "string" && policy.walletId ? policy.walletId : null;
 
   let actorFid = normalizeFid(policy.farcasterFid ?? null);
+  let actorTwitterSubject = normalizeTwitterSubject(policy.twitterSubject ?? null);
+  let actorTwitterUsername = normalizeTwitterUsername(policy.twitterUsername ?? null);
   const linkedAddresses = getLinkedEthereumAddresses(linkedAccounts);
 
   if (identityToken) {
@@ -374,17 +428,16 @@ export async function POST(req: NextRequest) {
 
     const farcaster = findFarcasterAccount(linkedAccounts);
     actorFid = normalizeFid(farcaster?.fid);
-    if (actorFid === null) {
-      return Response.json(
-        { error: "Link Farcaster before using Agent Access" },
-        { status: 403 }
-      );
-    }
+    const twitter = findTwitterAccount(linkedAccounts);
+    actorTwitterSubject = twitter?.subject ?? actorTwitterSubject;
+    actorTwitterUsername = twitter?.username ?? actorTwitterUsername;
 
     if (
       policy.walletId !== delegatedWalletId ||
       policy.delegated !== Boolean(delegatedWallet.delegated) ||
-      policy.farcasterFid !== actorFid
+      policy.farcasterFid !== actorFid ||
+      policy.twitterSubject !== actorTwitterSubject ||
+      policy.twitterUsername !== actorTwitterUsername
     ) {
       await policies.updateOne(
         { _id: policy._id },
@@ -393,6 +446,8 @@ export async function POST(req: NextRequest) {
             walletId: delegatedWalletId,
             delegated: Boolean(delegatedWallet.delegated),
             farcasterFid: actorFid,
+            twitterSubject: actorTwitterSubject,
+            twitterUsername: actorTwitterUsername,
             updatedAt: new Date(),
           },
         }
@@ -409,10 +464,15 @@ export async function POST(req: NextRequest) {
         );
         const farcaster = findFarcasterAccount(serviceLinkedAccounts);
         const refreshedFid = normalizeFid(farcaster?.fid);
+        const twitter = findTwitterAccount(serviceLinkedAccounts);
+        const refreshedTwitterSubject = twitter?.subject ?? null;
+        const refreshedTwitterUsername = twitter?.username ?? null;
 
         if (delegatedWallet?.delegated && delegatedWallet.id) {
           delegatedWalletId = delegatedWallet.id;
           actorFid = refreshedFid ?? actorFid;
+          actorTwitterSubject = refreshedTwitterSubject ?? actorTwitterSubject;
+          actorTwitterUsername = refreshedTwitterUsername ?? actorTwitterUsername;
           await policies.updateOne(
             { _id: policy._id },
             {
@@ -420,6 +480,8 @@ export async function POST(req: NextRequest) {
                 walletId: delegatedWallet.id,
                 delegated: true,
                 ...(refreshedFid !== null ? { farcasterFid: refreshedFid } : {}),
+                ...(refreshedTwitterSubject ? { twitterSubject: refreshedTwitterSubject } : {}),
+                ...(refreshedTwitterUsername ? { twitterUsername: refreshedTwitterUsername } : {}),
                 updatedAt: new Date(),
               },
             }
@@ -436,16 +498,6 @@ export async function POST(req: NextRequest) {
         );
       }
     }
-
-    if (actorFid === null) {
-      return Response.json(
-        {
-          error:
-            "Farcaster link missing for this policy. Re-save Agent Access from user session.",
-        },
-        { status: 403 }
-      );
-    }
   }
 
   if (policy.expiresAt && new Date(policy.expiresAt).getTime() < Date.now()) {
@@ -454,6 +506,23 @@ export async function POST(req: NextRequest) {
       { status: 403 }
     );
   }
+
+  const actorIdentity: SplitUserLike = {
+    address: sourceWalletAddress,
+    fid: actorFid,
+    provider:
+      actorTwitterSubject || actorTwitterUsername
+        ? "twitter"
+        : actorFid
+          ? "farcaster"
+          : "address",
+    twitter_subject: actorTwitterSubject,
+    userKey:
+      actorTwitterSubject
+        ? `twitter:${actorTwitterSubject}`
+        : buildUserKey({ fid: actorFid, address: sourceWalletAddress }),
+    name: actorTwitterUsername ?? undefined,
+  };
 
   let split: SplitBillDoc | null = null;
 
@@ -483,7 +552,7 @@ export async function POST(req: NextRequest) {
 
         const invitedEntry = findEligibleInvitedEntry(
           invited,
-          actorFid,
+          actorIdentity,
           linkedAddresses,
           sourceWalletAddress
         );
@@ -494,14 +563,19 @@ export async function POST(req: NextRequest) {
         if (!isAddress(debtorAddress)) return false;
 
         const debtorFid = normalizeFid(invitedEntry.fid) ?? actorFid;
+        const debtorTwitterSubject =
+          normalizeTwitterSubject(invitedEntry.twitter_subject) ?? actorTwitterSubject;
         const debtorUserKey =
           invitedEntry.userKey ??
+          (debtorTwitterSubject ? `twitter:${debtorTwitterSubject}` : null) ??
           buildUserKey({ fid: debtorFid, address: debtorAddress }) ??
           null;
 
         const debtorIdentity: SplitUserLike = {
           address: debtorAddress,
           fid: debtorFid,
+          provider: invitedEntry.provider ?? actorIdentity.provider,
+          twitter_subject: debtorTwitterSubject,
           userKey: debtorUserKey,
           name:
             invitedEntry.name ??
@@ -536,7 +610,7 @@ export async function POST(req: NextRequest) {
 
   const invitedEntry = findEligibleInvitedEntry(
     invited,
-    actorFid,
+    actorIdentity,
     linkedAddresses,
     sourceWalletAddress
   );
@@ -554,14 +628,19 @@ export async function POST(req: NextRequest) {
   }
 
   const debtorFid = normalizeFid(invitedEntry.fid) ?? actorFid;
+  const debtorTwitterSubject =
+    normalizeTwitterSubject(invitedEntry.twitter_subject) ?? actorTwitterSubject;
   const debtorUserKey =
     invitedEntry.userKey ??
+    (debtorTwitterSubject ? `twitter:${debtorTwitterSubject}` : null) ??
     buildUserKey({ fid: debtorFid, address: debtorAddress }) ??
     null;
 
   const debtorIdentity: SplitUserLike = {
     address: debtorAddress,
     fid: debtorFid,
+    provider: invitedEntry.provider ?? actorIdentity.provider,
+    twitter_subject: debtorTwitterSubject,
     userKey: debtorUserKey,
     name:
       invitedEntry.name ??
@@ -697,6 +776,7 @@ export async function POST(req: NextRequest) {
       tokenMeta.address === undefined
         ? await privy.wallets().ethereum().sendTransaction(delegatedWalletId, {
             caip2: "eip155:8453",
+            sponsor: true,
             idempotency_key: idempotencyKey,
             authorization_context: authorizationContext,
             params: {
@@ -709,6 +789,7 @@ export async function POST(req: NextRequest) {
           })
         : await privy.wallets().ethereum().sendTransaction(delegatedWalletId, {
             caip2: "eip155:8453",
+            sponsor: true,
             idempotency_key: idempotencyKey,
             authorization_context: authorizationContext,
             params: {
@@ -752,6 +833,8 @@ export async function POST(req: NextRequest) {
           paid: {
             address: debtorAddress,
             fid: debtorFid ?? null,
+            provider: debtorIdentity.provider ?? null,
+            twitter_subject: debtorIdentity.twitter_subject ?? null,
             userKey: debtorUserKey,
             name: debtorIdentity.name,
             txHash: hash,

@@ -13,6 +13,7 @@ import clientPromise from "@/lib/mongodb";
 import { requireTrustedRequest } from "@/lib/security";
 import { getBearerToken, getPrivyServerClient } from "@/lib/privy-server";
 import { getNextDayUtc, getStartOfDayUtc } from "@/lib/agent-access";
+import { getCanonicalUserProfileByUserId } from "@/lib/user-profile";
 import { tokenList } from "@/lib/tokens";
 import { resolveRecipient } from "@/lib/recipient-resolver";
 import { writeActivity } from "@/lib/writeActivity";
@@ -26,6 +27,9 @@ type LinkedAccountLike = {
   address?: string;
   delegated?: boolean;
   id?: string | null;
+  fid?: number | string | null;
+  subject?: string | null;
+  username?: string | null;
 };
 
 type AgentPolicyDoc = {
@@ -45,6 +49,10 @@ type AgentLinkDoc = {
   userId?: string;
   agentId?: string;
   status?: string;
+  preferredSocialProvider?: "farcaster" | "twitter" | null;
+  twitterSubject?: string | null;
+  twitterUsername?: string | null;
+  farcasterFid?: number | string | null;
 };
 
 function normalizeAddress(value?: string | null) {
@@ -88,6 +96,48 @@ function getLinkedEthereumAddresses(accounts: LinkedAccountLike[]) {
       .map((account) => normalizeAddress(account.address))
       .filter((value): value is string => Boolean(value))
   );
+}
+
+function normalizeFid(value?: number | string | null) {
+  const n = Number(value);
+  return Number.isFinite(n) && n > 0 ? n : null;
+}
+
+function findFarcasterAccount(accounts: LinkedAccountLike[]) {
+  return accounts.find((account) => account.type === "farcaster") ?? null;
+}
+
+function findTwitterAccount(accounts: LinkedAccountLike[]) {
+  const twitter = accounts.find((account) => account.type === "twitter_oauth") ?? null;
+  if (!twitter || typeof twitter.subject !== "string" || !twitter.subject.trim()) {
+    return null;
+  }
+
+  return {
+    subject: twitter.subject.trim(),
+    username:
+      typeof twitter.username === "string" && twitter.username.trim()
+        ? twitter.username.trim()
+        : null,
+  };
+}
+
+async function inferPreferredSocialProvider(
+  userId: string,
+  linkedAccounts: LinkedAccountLike[]
+) {
+  const profile = await getCanonicalUserProfileByUserId(userId).catch(() => null);
+  if (profile?.socialType === "twitter" || profile?.socialType === "farcaster") {
+    return profile.socialType;
+  }
+
+  const twitter = findTwitterAccount(linkedAccounts);
+  if (twitter?.subject) return "twitter";
+
+  const farcaster = findFarcasterAccount(linkedAccounts);
+  if (normalizeFid(farcaster?.fid) !== null) return "farcaster";
+
+  return null;
 }
 
 function getServiceAgentKey(req: NextRequest) {
@@ -211,6 +261,7 @@ export async function POST(req: NextRequest) {
   const policies = db.collection<AgentPolicyDoc>("a-agent-access");
   const links = db.collection<AgentLinkDoc>("a-agent-links");
   const transfers = db.collection("a-agent-transfer");
+  let activeLink: AgentLinkDoc | null = null;
 
   if (isServiceAgentRequest) {
     if (!serviceAgentId) {
@@ -231,6 +282,7 @@ export async function POST(req: NextRequest) {
         { status: 403 }
       );
     }
+    activeLink = link;
   }
 
   const policy = await policies.findOne(
@@ -360,6 +412,16 @@ export async function POST(req: NextRequest) {
   }
 
   const recipient = String(body?.recipient ?? "").trim();
+  const sessionPreferredSocialProvider =
+    identityToken && !isServiceAgentRequest
+      ? await inferPreferredSocialProvider(userId, linkedAccounts)
+      : null;
+  const inferredRecipientProvider =
+    body?.recipientProvider === "twitter" || body?.recipientProvider === "farcaster"
+      ? body.recipientProvider
+      : isServiceAgentRequest
+        ? activeLink?.preferredSocialProvider ?? null
+        : sessionPreferredSocialProvider;
   const recipientResolved = await resolveRecipient({
     recipient,
     recipientAddress:
@@ -372,10 +434,7 @@ export async function POST(req: NextRequest) {
         : undefined,
     recipientEns:
       typeof body?.recipientEns === "string" ? body.recipientEns : undefined,
-    recipientProvider:
-      body?.recipientProvider === "twitter" || body?.recipientProvider === "farcaster"
-        ? body.recipientProvider
-        : null,
+    recipientProvider: inferredRecipientProvider,
     actorUserId: userId,
   });
 
@@ -471,6 +530,7 @@ export async function POST(req: NextRequest) {
       tokenMeta.address === undefined
         ? await privy.wallets().ethereum().sendTransaction(delegatedWalletId!, {
             caip2: "eip155:8453",
+            sponsor: true,
             idempotency_key: idempotencyKey,
             authorization_context: authorizationContext,
             params: {
@@ -483,6 +543,7 @@ export async function POST(req: NextRequest) {
           })
         : await privy.wallets().ethereum().sendTransaction(delegatedWalletId!, {
             caip2: "eip155:8453",
+            sponsor: true,
             idempotency_key: idempotencyKey,
             authorization_context: authorizationContext,
             params: {

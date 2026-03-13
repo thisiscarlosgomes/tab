@@ -21,6 +21,8 @@ type LinkedAccountLike = {
   delegated?: boolean;
   id?: string | null;
   fid?: number | string;
+  subject?: string;
+  username?: string;
 };
 
 function normalizeAddress(value: string) {
@@ -74,6 +76,21 @@ function normalizeFid(value?: number | string) {
 function findFarcasterFid(accounts: LinkedAccountLike[]) {
   const farcaster = accounts.find((account) => account.type === "farcaster");
   return normalizeFid(farcaster?.fid);
+}
+
+function findTwitterAccount(accounts: LinkedAccountLike[]) {
+  const twitter = accounts.find((account) => account.type === "twitter_oauth");
+  if (!twitter || typeof twitter.subject !== "string" || !twitter.subject.trim()) {
+    return null;
+  }
+
+  return {
+    subject: twitter.subject.trim(),
+    username:
+      typeof twitter.username === "string" && twitter.username.trim()
+        ? twitter.username.trim()
+        : null,
+  };
 }
 
 function parsePolicyIds(raw: string | undefined) {
@@ -348,6 +365,7 @@ export async function PUT(req: NextRequest) {
     return Response.json({ error: "Wallet not linked to this user" }, { status: 403 });
   }
   const farcasterFid = findFarcasterFid(linkedAccounts);
+  const twitter = findTwitterAccount(linkedAccounts);
 
   const body = await req.json().catch(() => ({}));
   const statusInput = String(body?.status ?? "PAUSED").toUpperCase();
@@ -391,6 +409,8 @@ export async function PUT(req: NextRequest) {
         userId,
         address,
         farcasterFid,
+        twitterSubject: twitter?.subject ?? null,
+        twitterUsername: twitter?.username ?? null,
         walletId: embeddedWallet.id ?? null,
         delegated: Boolean(embeddedWallet.delegated),
         status,
@@ -440,6 +460,7 @@ export async function POST(req: NextRequest) {
     return Response.json({ error: "Wallet not linked to this user" }, { status: 403 });
   }
   const farcasterFid = findFarcasterFid(linkedAccounts);
+  const twitter = findTwitterAccount(linkedAccounts);
 
   const body = await req.json().catch(() => ({}));
   const action = String(body?.action ?? "").toLowerCase();
@@ -491,6 +512,8 @@ export async function POST(req: NextRequest) {
           userId,
           address,
           farcasterFid,
+          twitterSubject: twitter?.subject ?? null,
+          twitterUsername: twitter?.username ?? null,
           walletId: embeddedWallet.id,
           delegated: true,
           status: "ACTIVE",

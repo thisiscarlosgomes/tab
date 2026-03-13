@@ -737,14 +737,14 @@ export function GlobalSendDrawer() {
               setResults([]);
               return;
             }
-            const res = await fetch("/api/twitter/followers?limit=20", {
+            const res = await fetch("/api/twitter/followers?limit=50", {
               headers: {
                 Authorization: `Bearer ${token}`,
               },
             });
             const data = await res.json().catch(() => null);
             if (Array.isArray(data)) {
-              setResults(data);
+              setResults(data.slice(0, 20));
 
               const cacheKey =
                 (linkedTwitterSubject ? `twitter:followers:${linkedTwitterSubject}` : null) ??

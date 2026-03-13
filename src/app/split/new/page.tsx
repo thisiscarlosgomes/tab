@@ -461,9 +461,6 @@ export default function SplitNewPage() {
             .slice(0, 50);
 
           setFollowers(top);
-          if (!query.trim()) {
-            setFilteredFollowers(top);
-          }
 
           const cacheKey =
             (linkedTwitterSubject ? `twitter:followers:${linkedTwitterSubject}` : null) ??
@@ -514,9 +511,6 @@ export default function SplitNewPage() {
           .slice(0, 50);
 
         setFollowers(top);
-        if (!query.trim()) {
-          setFilteredFollowers(top);
-        }
 
         const cacheKey =
           (linkedFarcasterFid ? `farcaster:mutuals:fid:${linkedFarcasterFid}` : null) ??
@@ -546,7 +540,6 @@ export default function SplitNewPage() {
     identityAddress,
     mapFarcasterUser,
     prefersTwitterGraph,
-    query,
   ]);
 
   useEffect(() => {

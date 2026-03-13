@@ -457,6 +457,9 @@ export default function Home() {
 
   const [netApy, setNetApy] = useState<number | null>(null);
   const balancesCacheKey = address ? `tab_balances_${address}` : "tab_balances";
+  const recentPaymentsCacheKey = address
+    ? `tab_recent_payments_${address.toLowerCase()}`
+    : null;
   const tabAgentPromoKey =
     user?.id ? `tab:home:tab-agent-dismissed:${user.id}` : "tab:home:tab-agent-dismissed";
 
@@ -809,7 +812,7 @@ export default function Home() {
             return;
           }
 
-          const res = await fetch("/api/twitter/followers?limit=10", {
+          const res = await fetch("/api/twitter/followers?limit=50", {
             headers: { Authorization: `Bearer ${token}` },
           });
           const data = await res.json().catch(() => null);
@@ -817,7 +820,7 @@ export default function Home() {
           if (cancelled) return;
 
           if (Array.isArray(data)) {
-            setFriends(data);
+            setFriends(data.slice(0, 10));
             setFriendsError(null);
             const cacheKey =
               (linkedTwitterSubject ? `twitter:followers:${linkedTwitterSubject}` : null) ??
@@ -915,6 +918,23 @@ export default function Home() {
   ]);
 
   useEffect(() => {
+    if (!recentPaymentsCacheKey) {
+      setRecentPayments([]);
+      return;
+    }
+
+    const cached = localStorage.getItem(recentPaymentsCacheKey);
+    if (!cached) return;
+
+    try {
+      const parsed = JSON.parse(cached);
+      if (Array.isArray(parsed)) {
+        setRecentPayments(parsed as HomeActivityItem[]);
+      }
+    } catch {}
+  }, [recentPaymentsCacheKey]);
+
+  useEffect(() => {
     let cancelled = false;
     const controller = new AbortController();
 
@@ -925,7 +945,7 @@ export default function Home() {
         return;
       }
 
-      setRecentPaymentsLoading(true);
+      setRecentPaymentsLoading(recentPayments.length === 0);
       try {
         const qs = new URLSearchParams({
           address,
@@ -938,7 +958,7 @@ export default function Home() {
         });
 
         if (!res.ok) {
-          if (!cancelled) setRecentPayments([]);
+          if (!cancelled && recentPayments.length === 0) setRecentPayments([]);
           return;
         }
 
@@ -951,8 +971,11 @@ export default function Home() {
               .slice(0, 4)
           : [];
         setRecentPayments(next);
+        if (recentPaymentsCacheKey) {
+          localStorage.setItem(recentPaymentsCacheKey, JSON.stringify(next));
+        }
       } catch {
-        if (!cancelled) {
+        if (!cancelled && recentPayments.length === 0) {
           setRecentPayments([]);
         }
       } finally {
@@ -968,7 +991,7 @@ export default function Home() {
       cancelled = true;
       controller.abort();
     };
-  }, [address]);
+  }, [address, recentPayments.length, recentPaymentsCacheKey]);
 
   useEffect(() => {
     if (!address) return;
@@ -1658,7 +1681,6 @@ export default function Home() {
                 <button
                   type="button"
                   onClick={() => {
-                    dismissTabAgentPromo();
                     router.push("/faq");
                   }}
                   className="w-full flex items-center gap-3 bg-white/5 rounded-xl p-4 text-left active:scale-[0.98] transition"

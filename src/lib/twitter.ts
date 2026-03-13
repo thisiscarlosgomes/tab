@@ -356,12 +356,25 @@ export async function fetchTwitterUserByUsername(
     } satisfies TwitterIdentityProfile;
   }
 
-  const actorToken =
+  let actorToken =
     options?.actorUserId ? (await getTwitterOAuthDocForUser(options.actorUserId))?.accessToken ?? null : null;
-  const response = await xFetchJson<XUserResponse>(`users/by/username/${encodeURIComponent(cleaned)}`, {
-    searchParams: { "user.fields": "profile_image_url,description" },
-    userAccessToken: actorToken,
-  });
+  let response: XUserResponse;
+
+  try {
+    response = await xFetchJson<XUserResponse>(`users/by/username/${encodeURIComponent(cleaned)}`, {
+      searchParams: { "user.fields": "profile_image_url,description" },
+      userAccessToken: actorToken,
+    });
+  } catch (error) {
+    if (!actorToken) {
+      throw error;
+    }
+
+    actorToken = null;
+    response = await xFetchJson<XUserResponse>(`users/by/username/${encodeURIComponent(cleaned)}`, {
+      searchParams: { "user.fields": "profile_image_url,description" },
+    });
+  }
 
   const data = response?.data;
   if (!data?.id || !data?.username || !data?.name) return null;
@@ -471,6 +484,7 @@ export async function resolveTwitterRecipientByUsername(
     return {
       address: identity.walletAddress,
       username: identity.username,
+      twitterSubject: identity.subject,
       source: "twitter" as const,
     };
   }
@@ -487,6 +501,7 @@ export async function resolveTwitterRecipientByUsername(
   return {
     address: wallet.walletAddress,
     username: identity.username,
+    twitterSubject: identity.subject,
     source: "twitter" as const,
   };
 }
@@ -531,7 +546,7 @@ async function fetchTwitterGraphForUser(input: {
     kind: input.kind,
     expiresAt: { $gt: new Date() },
   });
-  if (cached?.profiles?.length) {
+  if (cached && Array.isArray(cached.profiles)) {
     return cached.profiles;
   }
 

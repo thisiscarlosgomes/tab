@@ -4,6 +4,8 @@ import clientPromise from "@/lib/mongodb";
 import { requireTrustedRequest } from "@/lib/security";
 import { getBearerToken, getPrivyServerClient } from "@/lib/privy-server";
 import { resolveRecipient } from "@/lib/recipient-resolver";
+import { buildUserKey } from "@/lib/identity";
+import { getCanonicalUserProfileByUserId } from "@/lib/user-profile";
 import { tokenList } from "@/lib/tokens";
 import { writeActivity } from "@/lib/writeActivity";
 import { sendWebNotificationToUser } from "@/lib/user-notifications";
@@ -18,6 +20,7 @@ type LinkedAccountLike = {
   delegated?: boolean;
   id?: string | null;
   fid?: number | string | null;
+  subject?: string | null;
   username?: string | null;
 };
 
@@ -30,17 +33,26 @@ type AgentPolicyDoc = {
   status?: string;
   expiresAt?: Date | string | null;
   farcasterFid?: number | string | null;
+  twitterSubject?: string | null;
+  twitterUsername?: string | null;
 };
 
 type AgentLinkDoc = {
   userId?: string;
   agentId?: string;
   status?: string;
+  preferredSocialProvider?: "farcaster" | "twitter" | null;
+  twitterSubject?: string | null;
+  twitterUsername?: string | null;
+  farcasterFid?: number | string | null;
 };
 
 type SplitUserLike = {
   address?: string | null;
   fid?: number | string | null;
+  provider?: string | null;
+  twitter_subject?: string | null;
+  userKey?: string | null;
   name?: string;
   pfp?: string | null;
   amount?: number;
@@ -99,6 +111,39 @@ function findEmbeddedEthereumWallet(
 
 function findFarcasterAccount(accounts: LinkedAccountLike[]) {
   return accounts.find((account) => account.type === "farcaster") ?? null;
+}
+
+function findTwitterAccount(accounts: LinkedAccountLike[]) {
+  const twitter = accounts.find((account) => account.type === "twitter_oauth") ?? null;
+  if (!twitter || typeof twitter.subject !== "string" || !twitter.subject.trim()) {
+    return null;
+  }
+
+  return {
+    subject: twitter.subject.trim(),
+    username:
+      typeof twitter.username === "string" && twitter.username.trim()
+        ? twitter.username.trim()
+        : null,
+  };
+}
+
+async function inferPreferredSocialProvider(
+  userId: string,
+  linkedAccounts: LinkedAccountLike[]
+) {
+  const profile = await getCanonicalUserProfileByUserId(userId).catch(() => null);
+  if (profile?.socialType === "twitter" || profile?.socialType === "farcaster") {
+    return profile.socialType;
+  }
+
+  const twitter = findTwitterAccount(linkedAccounts);
+  if (twitter?.subject) return "twitter";
+
+  const farcaster = findFarcasterAccount(linkedAccounts);
+  if (normalizeFid(farcaster?.fid) !== null) return "farcaster";
+
+  return null;
 }
 
 function getServiceAgentKey(req: NextRequest) {
@@ -198,6 +243,7 @@ export async function POST(req: NextRequest) {
   const links = db.collection<AgentLinkDoc>("a-agent-links");
   const policies = db.collection<AgentPolicyDoc>("a-agent-access");
   const splitCollection = db.collection<SplitBillDoc>("a-split-bill");
+  let activeLink: AgentLinkDoc | null = null;
 
   if (isServiceAgentRequest) {
     if (!serviceAgentId) {
@@ -218,6 +264,7 @@ export async function POST(req: NextRequest) {
         { status: 403 }
       );
     }
+    activeLink = link;
   }
 
   const policy = await policies.findOne(
@@ -282,7 +329,7 @@ export async function POST(req: NextRequest) {
 
   if (userTags.length === 0) {
     return Response.json(
-      { error: "Provide at least one Farcaster username in users[]" },
+      { error: "Provide at least one username in users[]" },
       { status: 400 }
     );
   }
@@ -291,8 +338,25 @@ export async function POST(req: NextRequest) {
     return Response.json({ error: "Too many users (max 20)" }, { status: 400 });
   }
 
+  const sessionPreferredSocialProvider =
+    identityToken && !isServiceAgentRequest
+      ? await inferPreferredSocialProvider(userId, linkedAccounts)
+      : null;
+  const inferredRecipientProvider =
+    body?.recipientProvider === "twitter" || body?.recipientProvider === "farcaster"
+      ? body.recipientProvider
+      : isServiceAgentRequest
+        ? activeLink?.preferredSocialProvider ?? null
+        : sessionPreferredSocialProvider;
   const resolved = await Promise.all(
-    userTags.map(async (tag) => ({ tag, resolved: await resolveRecipient({ recipient: tag }) }))
+    userTags.map(async (tag) => ({
+      tag,
+      resolved: await resolveRecipient({
+        recipient: tag,
+        recipientProvider: inferredRecipientProvider,
+        actorUserId: userId,
+      }),
+    }))
   );
 
   const unresolved = resolved.filter((r) => !r.resolved?.address).map((r) => r.tag);
@@ -305,16 +369,34 @@ export async function POST(req: NextRequest) {
 
   const invitedDedup = new Map<
     string,
-    { address: string; username: string | null; fid: number | null }
+    {
+      address: string;
+      username: string | null;
+      fid: number | null;
+      provider: string | null;
+      twitterSubject: string | null;
+      userKey: string | null;
+    }
   >();
 
   for (const entry of resolved) {
     const recipient = entry.resolved!;
-    const key = recipient.fid ? `fid:${recipient.fid}` : `wallet:${recipient.address}`;
+    const twitterSubject =
+      typeof recipient.twitterSubject === "string" && recipient.twitterSubject.trim()
+        ? recipient.twitterSubject.trim()
+        : null;
+    const userKey =
+      twitterSubject
+        ? `twitter:${twitterSubject}`
+        : buildUserKey({ fid: recipient.fid, address: recipient.address });
+    const key = userKey ?? (recipient.fid ? `fid:${recipient.fid}` : `wallet:${recipient.address}`);
     invitedDedup.set(key, {
       address: recipient.address.toLowerCase(),
       username: recipient.username ?? entry.tag.replace(/^@/, ""),
       fid: recipient.fid ?? null,
+      provider: recipient.source ?? null,
+      twitterSubject,
+      userKey,
     });
   }
 
@@ -330,16 +412,31 @@ export async function POST(req: NextRequest) {
   }
 
   const creatorFarcaster = findFarcasterAccount(linkedAccounts);
+  const creatorTwitter = findTwitterAccount(linkedAccounts);
   const creatorFid =
     normalizeFid(creatorFarcaster?.fid) ?? normalizeFid(policy.farcasterFid ?? null);
   const creatorUsername =
     typeof creatorFarcaster?.username === "string" && creatorFarcaster.username
       ? creatorFarcaster.username
-      : null;
+      : (creatorTwitter?.username ??
+        (typeof policy.twitterUsername === "string" && policy.twitterUsername
+          ? policy.twitterUsername
+          : null));
+  const creatorTwitterSubject =
+    creatorTwitter?.subject ??
+    (typeof policy.twitterSubject === "string" && policy.twitterSubject
+      ? policy.twitterSubject
+      : null);
 
   const creator: SplitUserLike = {
     address: sourceWalletAddress,
     fid: creatorFid,
+    provider: creatorTwitterSubject ? "twitter" : creatorFid ? "farcaster" : "address",
+    twitter_subject: creatorTwitterSubject,
+    userKey:
+      creatorTwitterSubject
+        ? `twitter:${creatorTwitterSubject}`
+        : buildUserKey({ fid: creatorFid, address: sourceWalletAddress }),
     name: creatorUsername ?? sourceWalletAddress.slice(0, 6),
   };
 
@@ -375,6 +472,9 @@ export async function POST(req: NextRequest) {
     invited: invitedUsers.map((user) => ({
       fid: user.fid,
       address: user.address,
+      provider: user.provider,
+      twitter_subject: user.twitterSubject,
+      userKey: user.userKey,
       name: user.username ?? user.address.slice(0, 6),
       amount: perPersonAmount,
     })),

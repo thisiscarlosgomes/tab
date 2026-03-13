@@ -2,6 +2,8 @@ export const AGENT_SKILL_MARKDOWN = `# tab
 
 Send token payments and settle split shares from a user's delegated Privy wallet with Agent Access guardrails.
 
+When the linked Tab user has Twitter linked, resolve plain \`@username\` mentions against Twitter by default. When the linked user has Farcaster linked, resolve plain \`@username\` mentions against Farcaster by default. You can override this with \`recipientProvider\` when needed.
+
 ## Conversation style
 
 Use plain, human language first. For payment and settlement actions:
@@ -57,6 +59,7 @@ Create split:
   "amount": "0.2",
   "token": "ETH",
   "users": ["@alex", "@rita"],
+  "recipientProvider": "twitter",
   "description": "Dinner split"
 }
 \`\`\`
@@ -70,6 +73,7 @@ Send payment:
   "recipient": "@alice",
   "amount": "0.50",
   "token": "USDC",
+  "recipientProvider": "farcaster",
   "recipientEns": "vitalik.eth",
   "note": "coffee split",
   "requestId": "optional-idempotency-key"
@@ -109,7 +113,9 @@ POST https://usetab.app/api/agent/link/start
 - Uses only the delegated wallet from active Agent Access policy.
 - \`https://usetab.app/api/agent/settle\` accepts any one of \`splitId\`, \`splitCode\`, or \`splitUrl\` (including URLs with \`?code=...\`); if omitted, it settles the latest pending eligible split.
 - Enforces \`allowedToken\`, \`maxPerPayment\`, \`dailyCap\`, and expiry.
-- Resolves \`@username\` through Neynar and supports ENS names (for example \`.eth\`).
+- Resolves plain \`@username\` using the linked user's default social graph: Twitter for Twitter-linked users, Farcaster for Farcaster-linked users.
+- Supports optional \`recipientProvider: "twitter" | "farcaster"\` to force \`@username\` resolution to one graph.
+- Supports ENS names (for example \`.eth\`) and direct wallet addresses.
 - Rejects self-pay and duplicate \`requestId\`.
 - Returns tx hash on success.
 

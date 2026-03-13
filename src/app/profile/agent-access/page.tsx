@@ -92,6 +92,11 @@ export default function AgentAccessPage() {
     user?.farcaster ||
     user?.linkedAccounts?.some((account) => account.type === "farcaster")
   );
+  const hasLinkedTwitter = Boolean(
+    user?.twitter ||
+    user?.linkedAccounts?.some((account) => account.type === "twitter_oauth")
+  );
+  const hasLinkedSocialIdentity = hasLinkedFarcaster || hasLinkedTwitter;
 
   const privyWallets = useMemo(
     () =>
@@ -137,13 +142,13 @@ export default function AgentAccessPage() {
   );
   const isAgentLive = Boolean(state?.status === "ACTIVE" && hasDelegation);
 
-  const authHeaders = useMemo(
+  const authHeaders = useMemo<HeadersInit | undefined>(
     () =>
       authToken
         ? {
-          Authorization: `Bearer ${authToken}`,
-        }
-        : {},
+            Authorization: `Bearer ${authToken}`,
+          }
+        : undefined,
     [authToken]
   );
 
@@ -267,7 +272,7 @@ export default function AgentAccessPage() {
         method: "PUT",
         headers: {
           "Content-Type": "application/json",
-          ...authHeaders,
+          ...(authHeaders ?? {}),
         },
         body: JSON.stringify({
           status: nextStatus ?? state?.status ?? "PAUSED",
@@ -311,7 +316,7 @@ export default function AgentAccessPage() {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
-            ...authHeaders,
+            ...(authHeaders ?? {}),
           },
           body: JSON.stringify({ action: "delegate" }),
         }
@@ -327,7 +332,7 @@ export default function AgentAccessPage() {
           method: "PUT",
           headers: {
             "Content-Type": "application/json",
-            ...authHeaders,
+            ...(authHeaders ?? {}),
           },
           body: JSON.stringify({
             status: "ACTIVE",
@@ -379,7 +384,7 @@ export default function AgentAccessPage() {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          ...authHeaders,
+          ...(authHeaders ?? {}),
         },
         body: JSON.stringify({ action: "revoke" }),
       });
@@ -409,7 +414,7 @@ export default function AgentAccessPage() {
   if (statusPending) {
     return (
       <div className="min-h-screen p-4 pt-[calc(5rem+env(safe-area-inset-top))] pb-[calc(8rem+env(safe-area-inset-bottom))]">
-        <div className="max-w-md mx-auto space-y-4">
+        <div className="mx-auto space-y-4">
           <div className="border border-white/10 rounded-xl p-4 space-y-3">
             <Skeleton className="h-6 w-20 border-0 bg-white/10" />
             <Skeleton className="h-4 w-4/5 border-0 bg-white/10" />
@@ -502,9 +507,9 @@ export default function AgentAccessPage() {
               {loading ? "Loading..." : (state?.status ?? "PAUSED")}
             </span>
           </p>
-          {!hasLinkedFarcaster && (
+          {!hasLinkedSocialIdentity && (
             <p className="text-yellow-300/80 text-sm">
-              Link Farcaster first. Agent settlement requires social identity.
+              Link Farcaster or Twitter first. Agent settlement needs a social identity for social splits.
             </p>
           )}
         </div>
@@ -614,9 +619,9 @@ export default function AgentAccessPage() {
                   : "Agent Access unavailable."}
             </p>
           )}
-          {!hasLinkedFarcaster && (
+          {!hasLinkedSocialIdentity && (
             <p className="text-xs text-yellow-300/80 px-1">
-              Link Farcaster to allow autonomous agent settlement.
+              Link Farcaster or Twitter to allow autonomous split settlement.
             </p>
           )}
 
@@ -658,7 +663,7 @@ export default function AgentAccessPage() {
 
       <ResponsiveDialog open={infoOpen} onOpenChange={setInfoOpen}>
         <ResponsiveDialogContent className="p-4 pb-8 md:w-[min(92vw,560px)] md:max-w-none">
-          <div className="max-w-md mx-auto space-y-4">
+          <div className="mx-auto space-y-4">
             <ResponsiveDialogHeader className="pt-0">
               <ResponsiveDialogTitle className="text-lg font-medium text-center">
                 How to use your agent
@@ -697,7 +702,7 @@ export default function AgentAccessPage() {
               </div>
             </div>
 
-            <p className="text-xs text-white/45">
+            <p className="hidden text-xs text-white/45">
               Agent spends only from your delegated wallet and only within your guardrails.
             </p>
 

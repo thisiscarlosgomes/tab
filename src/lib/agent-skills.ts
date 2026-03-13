@@ -22,7 +22,7 @@ export const AGENT_SKILLS: AgentSkill[] = [
   {
     name: "tab_create_split",
     description:
-      "Create an invited Tab split with tagged Farcaster users and return a split confirmation URL.",
+      "Create an invited Tab split with tagged users and return a split confirmation URL. Mentions default to the user's linked Twitter or Farcaster graph.",
     endpoint: "https://usetab.app/api/agent/split/create",
     method: "POST",
     headers: ["x-agent-key", "Content-Type: application/json"],
@@ -51,10 +51,16 @@ export const AGENT_SKILLS: AgentSkill[] = [
         },
         users: {
           type: "array",
-          description: "Tagged Farcaster usernames to split with.",
+          description: "Tagged usernames to split with.",
           items: {
             type: "string",
           },
+        },
+        recipientProvider: {
+          type: "string",
+          enum: ["twitter", "farcaster"],
+          description:
+            "Optional override for @username resolution. If omitted, Tab uses the user's linked social graph.",
         },
         description: {
           type: "string",
@@ -91,7 +97,7 @@ export const AGENT_SKILLS: AgentSkill[] = [
         recipient: {
           type: "string",
           description:
-            "Recipient identifier. Supports @username, 0x wallet address, or ENS (.eth).",
+            "Recipient identifier. Supports @username, 0x wallet address, or ENS (.eth). @username defaults to the user's linked social graph.",
         },
         amount: {
           type: "string",
@@ -116,6 +122,12 @@ export const AGENT_SKILLS: AgentSkill[] = [
           type: "string",
           description:
             "Optional ENS name override (for example vitalik.eth).",
+        },
+        recipientProvider: {
+          type: "string",
+          enum: ["twitter", "farcaster"],
+          description:
+            "Optional override for @username resolution. If omitted, Tab uses the user's linked social graph.",
         },
       },
     },
