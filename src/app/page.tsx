@@ -1680,7 +1680,7 @@ export default function Home() {
             onClick={() => router.push("/profile")}
             className="w-full bg-white/5 rounded-xl p-3 text-left mt-2 cursor-pointer transition-colors"
           >
-            <h2 className="ml-2 text-white font-2xl font-medium mb-2 flex items-center gap-1 mt-1">
+            <h2 className="font-ppangram ml-2 text-white font-2xl font-medium mb-2 flex items-center gap-1 mt-1">
               Balance
               <img src="/base.png" className="w-4 h-4 opacity-90" />
             </h2>
@@ -1688,6 +1688,7 @@ export default function Home() {
             <p
               className={clsx(
                 "ml-2 text-4xl text-white font-semibold mb-2",
+                "font-ppangram",
                 shakeBalance && "animate-balance-shake"
               )}
             >

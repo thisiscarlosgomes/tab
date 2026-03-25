@@ -211,6 +211,7 @@ export default function JackpotPage() {
   const [draftNormals, setDraftNormals] = useState<number[]>([]);
   const [draftBonusball, setDraftBonusball] = useState<number | null>(null);
   const [pickerError, setPickerError] = useState<string | null>(null);
+  const [isActiveTicketsExpanded, setIsActiveTicketsExpanded] = useState(false);
 
   const [isLoadingBalance, setIsLoadingBalance] = useState(true);
 
@@ -1023,7 +1024,7 @@ export default function JackpotPage() {
                 currency: "USD",
               }}
               prefix={"$"}
-              className="leading-none text-5xl font-medium text-primary"
+              className="font-ppangram leading-none text-5xl font-medium text-primary"
             />
           ) : (
             <p className="text-2xl text-white/30">N/A</p>
@@ -1181,38 +1182,45 @@ export default function JackpotPage() {
         typeof ticketCount === "number" &&
         ticketCount > 0 ? (
           <div className="rounded-2xl border border-white/10 bg-white/[0.02] px-4 py-3 space-y-3">
-            <div className="flex items-center justify-between gap-3">
+            <button
+              type="button"
+              onClick={() => setIsActiveTicketsExpanded((prev) => !prev)}
+              aria-expanded={isActiveTicketsExpanded}
+              className="w-full flex items-center justify-between gap-3"
+            >
               <p className="text-xs text-primary">Active tickets this draw</p>
               <p className="text-sm font-medium">{Math.max(0, Math.round(ticketCount))}</p>
-            </div>
-            <div className="space-y-1">
-              {visibleActiveTickets.map((ticket, idx) => (
-                <div
-                  key={`active-ticket-${ticket.ticketId}-${idx}`}
-                  className="border border-white/10 rounded-sm px-3 py-2 bg-white/[0.02]"
-                >
-                  <div className="flex items-center gap-1.5 flex-wrap">
-                    {ticket.normals.map((n, nIdx) => (
-                      <div
-                        key={`active-${ticket.ticketId}-${n}-${nIdx}`}
-                        className="w-7 h-7 rounded-full bg-white/10 text-white/60 flex items-center justify-center text-[11px] font-semibold"
-                      >
-                        {n}
+            </button>
+            {isActiveTicketsExpanded ? (
+              <div className="space-y-1">
+                {visibleActiveTickets.map((ticket, idx) => (
+                  <div
+                    key={`active-ticket-${ticket.ticketId}-${idx}`}
+                    className="border border-white/10 rounded-sm px-3 py-2 bg-white/[0.02]"
+                  >
+                    <div className="flex items-center gap-1.5 flex-wrap">
+                      {ticket.normals.map((n, nIdx) => (
+                        <div
+                          key={`active-${ticket.ticketId}-${n}-${nIdx}`}
+                          className="w-7 h-7 rounded-full bg-white/10 text-white/60 flex items-center justify-center text-[11px] font-semibold"
+                        >
+                          {n}
+                        </div>
+                      ))}
+                      <div className="w-7 h-7 rounded-md bg-blue-500/20 text-blue-300 flex items-center justify-center text-[11px] font-semibold">
+                        {ticket.bonusball}
                       </div>
-                    ))}
-                    <div className="w-7 h-7 rounded-md bg-blue-500/20 text-blue-300 flex items-center justify-center text-[11px] font-semibold">
-                      {ticket.bonusball}
                     </div>
                   </div>
-                </div>
-              ))}
-              {hiddenActiveTicketCount > 0 && (
-                <p className="text-[11px] text-white/45">
-                  +{hiddenActiveTicketCount} more active ticket
-                  {hiddenActiveTicketCount > 1 ? "s" : ""}
-                </p>
-              )}
-            </div>
+                ))}
+                {hiddenActiveTicketCount > 0 && (
+                  <p className="text-[11px] text-white/45">
+                    +{hiddenActiveTicketCount} more active ticket
+                    {hiddenActiveTicketCount > 1 ? "s" : ""}
+                  </p>
+                )}
+              </div>
+            ) : null}
           </div>
         ) : null}
 
@@ -1409,7 +1417,7 @@ export default function JackpotPage() {
                     className="w-9 h-9 rounded-lg object-cover shrink-0"
                   />
                 </div>
-                <p className="text-4xl font-semibold">
+                <p className="font-ppangram text-4xl font-semibold">
                   ${formatJackpotAmount(jackpotAmount)}
                 </p>
                 <p className="text-sm opacity-90">
@@ -1456,6 +1464,9 @@ export default function JackpotPage() {
           // ✅ Clean share copy without TAB reward mention
           shareText={`Joined the onchain USDC jackpot 🎰 on @usetab`}
           embeds={["https://usetab.app/jackpot"]}
+          useResponsiveDialog
+          triggerConfetti
+          showShareButton={false}
         />
       </div>
 

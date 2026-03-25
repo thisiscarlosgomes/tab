@@ -15,9 +15,10 @@ import {
   ChevronLeft,
 } from "lucide-react";
 import { useFundWallet, useIdentityToken, useToken } from "@privy-io/react-auth";
+import { loadStripeOnramp } from "@stripe/crypto";
 import { NumericFormat } from "react-number-format";
-import { base } from "viem/chains";
 import { toast } from "sonner";
+import { base } from "viem/chains";
 import { ReceiveDrawerController } from "@/components/app/ReceiveDrawerController";
 import { MorphoDepositDrawer } from "@/components/app/LendingMorpho";
 import { PaymentTokenPickerDialog } from "@/components/app/PaymentTokenPickerDialog";
@@ -38,10 +39,11 @@ import { tokenList } from "@/lib/tokens";
 /* -------------------------------------- */
 
 type ProfileTab = "tokens" | "transactions";
-type BuyStep = "amount" | "payment";
+type BuyStep = "amount" | "payment" | "embedded";
 type BuyCurrency = "ETH" | "USDC" | "EURC";
 const BUY_PRESET_AMOUNTS = ["100", "250", "500"] as const;
 const BUY_MIN_AMOUNT = 25;
+const STRIPE_ONRAMP_ENABLED = process.env.NEXT_PUBLIC_ENABLE_STRIPE_ONRAMP === "true";
 
 interface WalletToken {
   tokenAddress: string;
@@ -151,6 +153,9 @@ export default function WalletPage() {
   const [buyCurrency, setBuyCurrency] = useState<BuyCurrency>("USDC");
   const [buyBusy, setBuyBusy] = useState(false);
   const [buyError, setBuyError] = useState<string | null>(null);
+  const [buyClientSecret, setBuyClientSecret] = useState<string | null>(null);
+  const onrampMountRef = useRef<HTMLDivElement | null>(null);
+  const onrampSessionDestroyRef = useRef<(() => void) | null>(null);
   const walletSwipeTouchStartRef = useRef<{ x: number; y: number } | null>(null);
   const walletSwipeHandledRef = useRef(false);
   const selectedBuyToken =
@@ -620,69 +625,205 @@ export default function WalletPage() {
   }, []);
 
   useEffect(() => {
+    const handleUnhandledRejection = (event: PromiseRejectionEvent) => {
+      const reason = event.reason;
+      const message =
+        reason instanceof Error
+          ? reason.message
+          : typeof reason === "string"
+            ? reason
+            : "";
+      if (/unable to initialize flow|externaltransactionid/i.test(message)) {
+        event.preventDefault();
+        setBuyBusy(false);
+        setBuyError(
+          "MoonPay checkout is still initializing from a previous attempt. Please close it and try again in a few seconds."
+        );
+      }
+    };
+
+    const handleWindowError = (event: ErrorEvent) => {
+      const message = event.message || "";
+      if (/unable to initialize flow|externaltransactionid/i.test(message)) {
+        event.preventDefault();
+        setBuyBusy(false);
+        setBuyError(
+          "MoonPay checkout is still initializing from a previous attempt. Please close it and try again in a few seconds."
+        );
+      }
+    };
+
+    window.addEventListener("unhandledrejection", handleUnhandledRejection);
+    window.addEventListener("error", handleWindowError);
+    return () => {
+      window.removeEventListener("unhandledrejection", handleUnhandledRejection);
+      window.removeEventListener("error", handleWindowError);
+    };
+  }, []);
+
+  useEffect(() => {
     if (buyDialogOpen) return;
+    onrampSessionDestroyRef.current?.();
+    onrampSessionDestroyRef.current = null;
+    if (onrampMountRef.current) onrampMountRef.current.innerHTML = "";
     setBuyStep("amount");
     setBuyError(null);
     setBuyBusy(false);
+    setBuyClientSecret(null);
     setBuyTokenPickerOpen(false);
   }, [buyDialogOpen]);
 
   const openBuyDialog = () => {
+    onrampSessionDestroyRef.current?.();
+    onrampSessionDestroyRef.current = null;
     setBuyError(null);
     setBuyStep("amount");
+    setBuyClientSecret(null);
     setBuyDialogOpen(true);
   };
 
-  const handleMoonpayFunding = async () => {
+  const handleBuyFunding = async () => {
     if (!address || buyBusy || !canContinueBuy) return;
     setBuyBusy(true);
     setBuyError(null);
     try {
-      const selectedToken = tokenList.find((token) => token.name === buyCurrency);
-      const baseFundingOptions = {
-        chain: base,
-        amount: buyAmount,
-        defaultFundingMethod: "card" as const,
-        card: { preferredProvider: "moonpay" as const },
-      };
-      const options =
-        buyCurrency === "USDC"
-          ? { ...baseFundingOptions, asset: "USDC" as const }
-          : buyCurrency === "ETH"
-            ? { ...baseFundingOptions, asset: "native-currency" as const }
-            : selectedToken?.address
-              ? {
-                ...baseFundingOptions,
-                asset: { erc20: selectedToken.address as `0x${string}` },
-              }
-              : { ...baseFundingOptions, asset: "native-currency" as const };
+      if (STRIPE_ONRAMP_ENABLED) {
+        const destinationCurrency =
+          buyCurrency === "ETH" ? "eth" : buyCurrency === "USDC" ? "usdc" : "eurc";
+        const res = await fetch("/api/stripe/onramp-session", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            address,
+            sourceAmount: buyAmount,
+            sourceCurrency: "usd",
+            destinationNetwork: "base",
+            destinationCurrency,
+          }),
+        });
+        const payload = await res.json().catch(() => ({}));
+        if (!res.ok || typeof payload?.clientSecret !== "string") {
+          throw new Error(
+            typeof payload?.error === "string"
+              ? payload.error
+              : "Could not start Stripe checkout."
+          );
+        }
 
-      const result = await fundWallet({ address, options });
-      if (result?.status === "completed") {
-        setBuyDialogOpen(false);
-        void fetchWallet();
-        const retryId = window.setTimeout(() => void fetchWallet(), 2200);
-        balanceRefreshTimeoutsRef.current.push(retryId);
-        return;
-      }
-      if (result?.status === "cancelled") {
-        setBuyError(null);
+        setBuyClientSecret(payload.clientSecret);
+        setBuyStep("embedded");
+      } else {
+        const selectedToken = tokenList.find((token) => token.name === buyCurrency);
+        const baseFundingOptions = {
+          chain: base,
+          amount: buyAmount,
+          defaultFundingMethod: "card" as const,
+          card: { preferredProvider: "moonpay" as const },
+        };
+        const options =
+          buyCurrency === "USDC"
+            ? { ...baseFundingOptions, asset: "USDC" as const }
+            : buyCurrency === "ETH"
+              ? { ...baseFundingOptions, asset: "native-currency" as const }
+              : selectedToken?.address
+                ? {
+                  ...baseFundingOptions,
+                  asset: { erc20: selectedToken.address as `0x${string}` },
+                }
+                : { ...baseFundingOptions, asset: "native-currency" as const };
+
+        let result: Awaited<ReturnType<typeof fundWallet>> | undefined;
+        try {
+          result = await fundWallet({ address, options });
+        } catch (error) {
+          const message = error instanceof Error ? error.message : String(error ?? "");
+          if (/unable to initialize flow|externaltransactionid/i.test(message)) {
+            setBuyError(
+              "MoonPay checkout is still initializing from a previous attempt. Please close it and try again in a few seconds."
+            );
+            return;
+          }
+          throw error;
+        }
+        if (result?.status === "completed") {
+          setBuyDialogOpen(false);
+          void fetchWallet();
+          const retryId = window.setTimeout(() => void fetchWallet(), 2200);
+          balanceRefreshTimeoutsRef.current.push(retryId);
+          return;
+        }
       }
     } catch (error) {
       const message =
-        error instanceof Error ? error.message : "Could not start MoonPay checkout.";
-      if (
-        /unable to initialize flow/i.test(message) ||
-        /externalTransactionId/i.test(message)
-      ) {
-        setBuyError(null);
-      } else {
-        setBuyError(message);
-      }
+        error instanceof Error
+          ? error.message
+          : STRIPE_ONRAMP_ENABLED
+            ? "Could not start Stripe checkout."
+            : "Could not start MoonPay checkout.";
+      setBuyError(message);
     } finally {
       setBuyBusy(false);
     }
   };
+
+  useEffect(() => {
+    if (
+      !buyDialogOpen ||
+      buyStep !== "embedded" ||
+      !buyClientSecret ||
+      !onrampMountRef.current
+    ) {
+      return;
+    }
+
+    let cancelled = false;
+
+    const mountOnramp = async () => {
+      const publishableKey = process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY;
+      if (!publishableKey) {
+        setBuyError("Stripe is not configured. Missing NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY.");
+        return;
+      }
+
+      try {
+        type StripeOnrampSession = {
+          mount: (selector: string | HTMLElement) => StripeOnrampSession;
+          destroy?: () => void;
+        };
+        type StripeOnrampInstance = {
+          createSession: (opts: {
+            clientSecret: string;
+            appearance?: { theme?: "dark" | "light" };
+          }) => StripeOnrampSession;
+        };
+        const stripeOnramp = (await loadStripeOnramp(
+          publishableKey
+        )) as unknown as StripeOnrampInstance;
+        if (cancelled || !onrampMountRef.current) return;
+
+        onrampMountRef.current.innerHTML = "";
+        const session = stripeOnramp.createSession({
+          clientSecret: buyClientSecret,
+          appearance: { theme: "dark" },
+        });
+        session.mount(onrampMountRef.current);
+        onrampSessionDestroyRef.current = () => session.destroy?.();
+      } catch (error) {
+        if (cancelled) return;
+        const message = error instanceof Error ? error.message : "Could not open Stripe onramp.";
+        setBuyError(message);
+      }
+    };
+
+    void mountOnramp();
+
+    return () => {
+      cancelled = true;
+      onrampSessionDestroyRef.current?.();
+      onrampSessionDestroyRef.current = null;
+      if (onrampMountRef.current) onrampMountRef.current.innerHTML = "";
+    };
+  }, [buyClientSecret, buyDialogOpen, buyStep]);
 
   const renderProfileSkeleton = () => (
     <div className="min-h-screen w-full flex flex-col items-center p-4 pt-[calc(4rem+env(safe-area-inset-top))] pb-[calc(10rem+env(safe-area-inset-bottom))] overflow-y-auto scrollbar-hide">
@@ -851,7 +992,7 @@ export default function WalletPage() {
           <span className="hidden text-3xl leading-none mt-3 text-white/90">$</span>
           <span
             className={[
-              "text-[46px] sm:text-[51px] leading-[0.95] font-semibold tracking-tight",
+              "font-ppangram text-[46px] sm:text-[51px] leading-[0.95] font-semibold tracking-tight",
               shakeBalance ? "animate-balance-shake" : "",
             ].join(" ")}
           >
@@ -1318,7 +1459,7 @@ export default function WalletPage() {
                     Minimum order is ${BUY_MIN_AMOUNT}
                   </p>
                 </div>
-              ) : (
+              ) : buyStep === "payment" ? (
                 <div className="flex h-full flex-col">
                   <button
                     type="button"
@@ -1353,18 +1494,22 @@ export default function WalletPage() {
                     className="mb-4 w-full rounded-3xl border border-white/15 bg-white/[0.02] p-4 text-left"
                   >
                     <div className="flex items-center gap-3">
-                      <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-gradient-to-br from-violet-500 to-fuchsia-500 text-white font-semibold">
-                        M
+                    <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-gradient-to-br from-indigo-500 to-cyan-500 text-white font-semibold">
+                        S
                       </div>
                       <div>
-                        <p className="text-lg leading-none">MoonPay</p>
+                        <p className="text-lg leading-none">
+                          {STRIPE_ONRAMP_ENABLED ? "Stripe Onramp" : "MoonPay"}
+                        </p>
                         <p className="mt-1 text-white/60 text-sm">Debit Card, Apple Pay</p>
                       </div>
                     </div>
                   </button>
 
                   <p className="hidden mt-auto mb-4 text-center text-white/50 md:text-xs text-xs">
-                    You&apos;ll continue to MoonPay to review fees and complete checkout.
+                    You&apos;ll continue to{" "}
+                    {STRIPE_ONRAMP_ENABLED ? "Stripe Onramp" : "MoonPay"} to review fees and
+                    complete checkout.
                   </p>
 
                   {buyError ? (
@@ -1373,12 +1518,60 @@ export default function WalletPage() {
 
                   <Button
                     type="button"
-                    onClick={() => void handleMoonpayFunding()}
+                    onClick={() => void handleBuyFunding()}
                     disabled={buyBusy || !canContinueBuy || !address}
                     className="w-full bg-primary text-black font-semibold disabled:bg-white/20 disabled:text-white/50"
                   >
-                    {buyBusy ? "Opening MoonPay..." : "Continue with MoonPay"}
+                    {buyBusy
+                      ? STRIPE_ONRAMP_ENABLED
+                        ? "Opening Stripe..."
+                        : "Opening MoonPay..."
+                      : STRIPE_ONRAMP_ENABLED
+                        ? "Continue with Stripe"
+                        : "Continue with MoonPay"}
                   </Button>
+                </div>
+              ) : (
+                <div className="flex h-full flex-col">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (buyBusy) return;
+                      onrampSessionDestroyRef.current?.();
+                      onrampSessionDestroyRef.current = null;
+                      if (onrampMountRef.current) onrampMountRef.current.innerHTML = "";
+                      setBuyStep("payment");
+                      setBuyError(null);
+                    }}
+                    className="mb-5 inline-flex h-9 w-9 items-center justify-center rounded-full bg-white/5 text-white/80"
+                    aria-label="Back to checkout"
+                  >
+                    <ChevronLeft className="h-5 w-5" />
+                  </button>
+
+                  <div className="mb-4 flex items-end justify-between">
+                    <h2 className="text-lg font-semibold tracking-tight">Stripe Onramp</h2>
+                    <div className="flex items-center gap-2 text-white/80">
+                      <span className="text-lg font-medium">
+                        {getBuyPrefix(buyCurrency)}
+                        {formatUsdNumber(buyAmountNumber)}
+                      </span>
+                      <img
+                        src={selectedBuyToken?.icon}
+                        alt={selectedBuyToken?.name ?? buyCurrency}
+                        className="h-7 w-7 rounded-full"
+                      />
+                    </div>
+                  </div>
+
+                  {buyError ? (
+                    <p className="mb-3 text-sm text-red-300 text-center">{buyError}</p>
+                  ) : null}
+
+                  <div
+                    ref={onrampMountRef}
+                    className="min-h-[420px] w-full flex-1 overflow-hidden rounded-2xl border border-white/10 bg-white/[0.02]"
+                  />
                 </div>
               )}
             </ResponsiveDialogContent>

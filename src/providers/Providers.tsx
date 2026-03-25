@@ -41,15 +41,15 @@ function Providers({ children }: React.PropsWithChildren) {
                   richColors
                   expand={false}
                   position="top-center"
-                  offset={{ top: "20px" }}
-                  mobileOffset={{ top: "calc(env(safe-area-inset-top) + 72px)" }}
+                  offset={{ top: "12px" }}
+                  mobileOffset={{ top: "calc(env(safe-area-inset-top) + 56px)" }}
                   toastOptions={{
                     classNames: {
                       toast:
-                        "w-fit max-w-[calc(100vw-32px)] rounded-full px-4 py-3",
+                        "w-fit max-w-[calc(100vw-40px)] rounded-full px-3 py-2",
                       content: "px-0",
-                      title: "text-sm",
-                      description: "text-sm",
+                      title: "text-[14px] leading-tight",
+                      description: "text-[14px] leading-tight",
                     },
                   }}
                 />

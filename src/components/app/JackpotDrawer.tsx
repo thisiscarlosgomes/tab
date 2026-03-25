@@ -391,6 +391,9 @@ export function JackpotDrawer({
             amount={costInUsd}
             token="USDC"
             shareText={`Just entered the onchain jackpot via Tab 🎰`}
+            useResponsiveDialog
+            triggerConfetti
+            showShareButton={false}
           />
         </Drawer.Content>
       </Drawer.Portal>

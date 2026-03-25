@@ -1139,7 +1139,7 @@ export function GlobalSendDrawer() {
                 </div>
                 <div className="flex-1 min-h-0 overflow-y-auto pb-8 space-y-2">
                   {mode === "search" && suggestionsLabel ? (
-                    <div className="px-1 pb-1 text-xs uppercase tracking-wide text-white/35">
+                    <div className="px-1 pb-1 text-[12px] uppercase tracking-wide text-white/35">
                       {suggestionsLabel}
                     </div>
                   ) : null}
@@ -1177,7 +1177,7 @@ export function GlobalSendDrawer() {
                           className="w-8 h-8 rounded-full object-cover mr-3 shrink-0"
                         />
                         <div className="text-left">
-                          <p className="text-white font-medium">
+                          <p className="text-primary font-medium">
                             @{user.username}
                           </p>
                         </div>
