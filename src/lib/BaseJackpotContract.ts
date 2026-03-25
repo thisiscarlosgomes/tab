@@ -1,12 +1,12 @@
-import { parseAbi, parseAbiItem } from "viem";
+import { parseAbi } from "viem";
 import client from "./viem-client";
-import { BaseJackpotAbi } from "./BaseJackpotAbi";
-// import { CONTRACT_ADDRESS, ERC20_TOKEN_ADDRESS } from "./constants";
+import {
+  CONTRACT_ADDRESS,
+  ERC20_TOKEN_ADDRESS,
+  JACKPOT_TICKET_NFT_ADDRESS,
+  RANDOM_TICKET_BUYER_ADDRESS,
+} from "./constants";
 
-const CONTRACT_ADDRESS = "0xbEDd4F2beBE9E3E636161E644759f3cbe3d51B95"; // 🎯 Jackpot contract
-const ERC20_TOKEN_ADDRESS = "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913"; // 💵 USDC on Base
-
-// Standard ERC20 ABI parts needed
 const erc20Abi = parseAbi([
   "function name() view returns (string)",
   "function symbol() view returns (string)",
@@ -15,149 +15,110 @@ const erc20Abi = parseAbi([
   "function allowance(address owner, address spender) view returns (uint256)",
 ]);
 
-// Function to get the ticket price in the token's smallest unit (e.g., wei)
+const jackpotAbi = parseAbi([
+  "function currentDrawingId() view returns (uint256)",
+  "function getDrawingState(uint256 drawingId) view returns ((uint256 prizePool,uint256 ticketPrice,uint256 edgePerTicket,uint256 referralWinShare,uint256 referralFee,uint256 globalTicketsBought,uint256 lpEarnings,uint256 drawingTime,uint256 winningTicket,uint8 ballMax,uint8 bonusballMax,address payoutCalculator,bool jackpotLock))",
+]);
+
+const ticketNftAbi = parseAbi([
+  "function getUserTickets(address user, uint256 drawingId) view returns ((uint256 ticketId,uint256 drawingId,address owner,uint8[] normals,uint8 bonusball,uint256 purchaseTimestamp,uint8 tier,bool claimed)[])",
+]);
+
+async function getCurrentDrawing() {
+  const drawingId = (await client.readContract({
+    address: CONTRACT_ADDRESS,
+    abi: jackpotAbi,
+    functionName: "currentDrawingId",
+  })) as bigint;
+
+  const state = (await client.readContract({
+    address: CONTRACT_ADDRESS,
+    abi: jackpotAbi,
+    functionName: "getDrawingState",
+    args: [drawingId],
+  })) as {
+    prizePool: bigint;
+    ticketPrice: bigint;
+    referralFee: bigint;
+    drawingTime: bigint;
+  };
+
+  return { drawingId, state };
+}
+
 export async function getTicketPrice(): Promise<bigint | undefined> {
   try {
-    const ticketPriceWei = (await client.readContract({
-      address: CONTRACT_ADDRESS,
-      abi: BaseJackpotAbi,
-      functionName: "ticketPrice",
-    })) as bigint;
-    return ticketPriceWei; // Return the raw bigint value
+    const { state } = await getCurrentDrawing();
+    return state.ticketPrice;
   } catch (error) {
     console.error("Error getting ticket price:", error);
     return undefined;
   }
 }
 
-// Function to get the jackpot amount (returns largest pool total in wei)
 export async function getJackpotAmount(): Promise<bigint | undefined> {
-  // Changed return type
   try {
-    const lpPoolTotalWei = (await client.readContract({
-      address: CONTRACT_ADDRESS,
-      abi: BaseJackpotAbi,
-      functionName: "lpPoolTotal",
-    })) as bigint;
-    const userPoolTotalWei = (await client.readContract({
-      address: CONTRACT_ADDRESS,
-      abi: BaseJackpotAbi,
-      functionName: "userPoolTotal",
-    })) as bigint;
-    const jackpotAmount =
-      lpPoolTotalWei > userPoolTotalWei ? lpPoolTotalWei : userPoolTotalWei;
-    return jackpotAmount;
+    const { state } = await getCurrentDrawing();
+    return state.prizePool;
   } catch (error) {
     console.error("Error getting jackpot amount:", error);
     return undefined;
   }
 }
 
-// Function to get the time remaining until the jackpot draw
 export async function getTimeRemaining(): Promise<number | undefined> {
   try {
-    const lastJackpotEndTime = await client.readContract({
-      address: CONTRACT_ADDRESS as `0x${string}`,
-      abi: BaseJackpotAbi,
-      functionName: "lastJackpotEndTime",
-    });
-    const roundDuration = await client.readContract({
-      address: CONTRACT_ADDRESS as `0x${string}`,
-      abi: BaseJackpotAbi,
-      functionName: "roundDurationInSeconds",
-    });
-    const nextJackpotStartTime =
-      Number(lastJackpotEndTime) + Number(roundDuration);
-    const timeRemaining = nextJackpotStartTime - Date.now() / 1000;
-    return timeRemaining;
+    const { state } = await getCurrentDrawing();
+    return Number(state.drawingTime) - Date.now() / 1000;
   } catch (error) {
     console.error("Error getting time remaining:", error);
     return undefined;
   }
 }
 
-// Get lpsInfo from contract
 export async function getLpsInfo(
-  address: `0x${string}`
+  _address: `0x${string}`
 ): Promise<[bigint, bigint, bigint, boolean] | undefined> {
-  try {
-    const lpsInfo = await client.readContract({
-      address: CONTRACT_ADDRESS as `0x${string}`,
-      abi: BaseJackpotAbi,
-      functionName: "lpsInfo",
-      args: [address],
-    });
-    return lpsInfo as [bigint, bigint, bigint, boolean];
-  } catch (error) {
-    console.error("Error getting lpsInfo:", error);
-    return undefined;
-  }
+  return undefined;
 }
 
-// Function to get the feeBps
 export async function getFeeBps(): Promise<number | undefined> {
   try {
-    const feeBps = await client.readContract({
-      address: CONTRACT_ADDRESS as `0x${string}`,
-      abi: BaseJackpotAbi,
-      functionName: "feeBps",
-    });
-    return Number(feeBps);
+    const { state } = await getCurrentDrawing();
+    return Number((state.referralFee * 10000n) / 10n ** 18n);
   } catch (error) {
-    console.error("Error getting feeBps:", error);
+    console.error("Error getting fee bps:", error);
     return undefined;
   }
 }
 
-// Function to get the jackpot odds per ticket
 export async function getJackpotOdds(): Promise<number | undefined> {
-  // This function now depends on functions returning bigint or number|undefined
-  // It needs careful handling of units and potential undefined values
   try {
-    const jackpotAmountWei = await getJackpotAmount(); // Returns bigint | undefined
-    const ticketPriceWei = await getTicketPrice(); // Returns bigint | undefined
-    const feeBps = await getFeeBps(); // Returns number | undefined
-    const tokenDecimals = await getTokenDecimals(); // Returns number | undefined
+    const jackpotAmountWei = await getJackpotAmount();
+    const ticketPriceWei = await getTicketPrice();
+    const tokenDecimals = await getTokenDecimals();
 
-    // Added check for tokenDecimals being undefined or 0
     if (
       jackpotAmountWei === undefined ||
       ticketPriceWei === undefined ||
-      feeBps === undefined ||
       tokenDecimals === undefined ||
       tokenDecimals === 0 ||
       ticketPriceWei === 0n
     ) {
-      console.error("Missing data for odds calculation", {
-        jackpotAmountWei,
-        ticketPriceWei,
-        feeBps,
-        tokenDecimals,
-      });
       return undefined;
     }
 
-    // Perform calculations using numbers after converting from wei if necessary
-    // Note: Direct division with bigint might truncate. Convert to number for odds calculation.
     const jackpotSizeNum = Number(jackpotAmountWei) / 10 ** tokenDecimals;
     const ticketPriceNum = Number(ticketPriceWei) / 10 ** tokenDecimals;
-
-    if (ticketPriceNum === 0) return undefined; // Avoid division by zero
-
-    // Calculate the effective ticket price after fee
-    const effectiveTicketPrice = ticketPriceNum * (1 - Number(feeBps) / 10000);
-    if (effectiveTicketPrice === 0) return undefined; // Avoid division by zero
-
-    const odds = jackpotSizeNum / effectiveTicketPrice;
-    return odds;
+    if (ticketPriceNum === 0) return undefined;
+    return jackpotSizeNum / ticketPriceNum;
   } catch (error) {
     console.error("Error getting jackpot odds:", error);
     return undefined;
   }
 }
 
-// Function to get users info
-export async function getUsersInfo(address: `0x${string}`): Promise<
+export async function getUsersInfo(_address: `0x${string}`): Promise<
   | {
       ticketsPurchasedTotalBps: bigint;
       winningsClaimable: bigint;
@@ -165,52 +126,27 @@ export async function getUsersInfo(address: `0x${string}`): Promise<
     }
   | undefined
 > {
-  try {
-    const usersInfo = await client.readContract({
-      address: CONTRACT_ADDRESS as `0x${string}`,
-      abi: BaseJackpotAbi,
-      functionName: "usersInfo",
-      args: [address],
-    });
-    const [ticketsPurchasedTotalBps, winningsClaimable, active] = usersInfo as [
-      bigint,
-      bigint,
-      boolean,
-    ];
-    return { ticketsPurchasedTotalBps, winningsClaimable, active };
-  } catch (error) {
-    console.error("Error getting users info:", error);
-    return undefined;
-  }
+  return undefined;
 }
 
-// Function to get the total tickets a user has purchased this jackpot
 export async function getTicketCountForRound(
   address: `0x${string}`
 ): Promise<number | undefined> {
   try {
-    // get the usersInfo and use their ticketsPurchasedTotalBps
-    const usersInfo = await getUsersInfo(address);
-    const feeBps = await getFeeBps();
-
-    if (!usersInfo || !feeBps) {
-      return undefined;
-    }
-
-    const { ticketsPurchasedTotalBps } = usersInfo;
-
-    const ticketCount =
-      Number(ticketsPurchasedTotalBps) /
-      10000 /
-      ((100 - Number(feeBps) / 100) / 100);
-    return ticketCount;
+    const { drawingId } = await getCurrentDrawing();
+    const tickets = (await client.readContract({
+      address: JACKPOT_TICKET_NFT_ADDRESS,
+      abi: ticketNftAbi,
+      functionName: "getUserTickets",
+      args: [address, drawingId],
+    })) as unknown[];
+    return tickets.length;
   } catch (error) {
     console.error("Error getting ticket count for round:", error);
     return undefined;
   }
 }
 
-// Function to get the ERC20 token name
 export async function getTokenName(): Promise<string | undefined> {
   try {
     const name = await client.readContract({
@@ -225,12 +161,6 @@ export async function getTokenName(): Promise<string | undefined> {
   }
 }
 
-
-
-
-
-
-// Function to get the ERC20 token symbol
 export async function getTokenSymbol(): Promise<string | undefined> {
   try {
     const symbol = await client.readContract({
@@ -245,7 +175,6 @@ export async function getTokenSymbol(): Promise<string | undefined> {
   }
 }
 
-// Function to get the ERC20 token decimals
 export async function getTokenDecimals(): Promise<number | undefined> {
   try {
     const decimals = await client.readContract({
@@ -260,7 +189,6 @@ export async function getTokenDecimals(): Promise<number | undefined> {
   }
 }
 
-// Function to get the token balance of a user (returns smallest unit, e.g., wei)
 export async function getTokenBalance(
   address: `0x${string}`
 ): Promise<bigint | undefined> {
@@ -271,14 +199,13 @@ export async function getTokenBalance(
       functionName: "balanceOf",
       args: [address],
     });
-    return balance as bigint; // Return raw bigint
+    return balance as bigint;
   } catch (error) {
     console.error("Error getting token balance:", error);
     return undefined;
   }
 }
 
-// Function to get the allowance of a user (returns smallest unit, e.g., wei)
 export async function getTokenAllowance(
   address: `0x${string}`
 ): Promise<bigint | undefined> {
@@ -287,110 +214,33 @@ export async function getTokenAllowance(
       address: ERC20_TOKEN_ADDRESS as `0x${string}`,
       abi: erc20Abi,
       functionName: "allowance",
-      args: [address, CONTRACT_ADDRESS],
+      args: [address, RANDOM_TICKET_BUYER_ADDRESS],
     });
-    return allowance as bigint; // Return raw bigint
+    return allowance as bigint;
   } catch (error) {
     console.error("Error getting token allowance:", error);
     return undefined;
   }
 }
 
-// Function to get the lp pool status (open or closed)
 export async function getLpPoolStatus(): Promise<boolean | undefined> {
-  try {
-    const lpPoolCap = (await client.readContract({
-      address: CONTRACT_ADDRESS as `0x${string}`,
-      abi: BaseJackpotAbi,
-      functionName: "lpPoolCap",
-    })) as bigint; // Assert type as bigint
-
-    const lpPoolTotal = (await client.readContract({
-      address: CONTRACT_ADDRESS as `0x${string}`,
-      abi: BaseJackpotAbi,
-      functionName: "lpPoolTotal",
-    })) as bigint; // Assert type as bigint
-
-    // Compare directly using bigint operators.
-    // If lpPoolTotal >= lpPoolCap, the pool is closed (full).
-    // Otherwise (including when lpPoolTotal is 0n), it's open.
-    if (lpPoolTotal >= lpPoolCap) {
-      return false; // Pool is closed (reached capacity)
-    } else {
-      return true; // Pool is open
-    }
-  } catch (error) {
-    console.error("Error getting lp pool status:", error);
-    return undefined; // Return undefined on error
-  }
+  return undefined;
 }
 
-// Function to get the lp minimum deposit amount (returns smallest unit, e.g., wei)
 export async function getMinLpDeposit(): Promise<bigint | undefined> {
-  try {
-    const minLpDeposit = await client.readContract({
-      address: CONTRACT_ADDRESS as `0x${string}`,
-      abi: BaseJackpotAbi,
-      functionName: "minLpDeposit",
-    });
-    return minLpDeposit as bigint; // Return raw bigint
-  } catch (error) {
-    console.error("Error getting lp minimum deposit amount:", error);
-    return undefined;
-  }
+  return undefined;
 }
 
-
-// Update interface to use bigint for amounts
 interface LastJackpotEvent {
   time: number;
   winner: string;
-  winningTicket: number; // Assuming this fits in number
-  winAmount: bigint; // Changed to bigint
-  ticketsPurchasedTotalBps: bigint; // Changed to bigint
+  winningTicket: number;
+  winAmount: bigint;
+  ticketsPurchasedTotalBps: bigint;
 }
 
-// Function to get the last jackpot results
 export async function getLastJackpotResults(): Promise<
   LastJackpotEvent | undefined
 > {
-  try {
-    const lastBlock = await client.getBlockNumber();
-    // Adjust this for your RPC provider limits
-    let fromBlock = lastBlock - BigInt(500);
-
-    let lastJackpotRunEvents = [];
-
-    while (true) {
-      lastJackpotRunEvents = await client.getLogs({
-        address: CONTRACT_ADDRESS as `0x${string}`,
-        event: parseAbiItem(
-          "event JackpotRun(uint256 time, address winner, uint256 winningTicket, uint256 winAmount, uint256 ticketsPurchasedTotalBps)"
-        ),
-        fromBlock: fromBlock,
-        toBlock: lastBlock,
-      });
-      if (lastJackpotRunEvents.length > 0) {
-        // Removed duplicate properties
-        return {
-          time: Number(lastJackpotRunEvents[0].args.time),
-          winner: lastJackpotRunEvents[0].args.winner as `0x${string}`,
-          winningTicket: Number(lastJackpotRunEvents[0].args.winningTicket), // Assuming this fits in number
-          winAmount: lastJackpotRunEvents[0].args.winAmount as bigint, // Return bigint
-          ticketsPurchasedTotalBps: lastJackpotRunEvents[0].args
-            .ticketsPurchasedTotalBps as bigint, // Return bigint
-        };
-      }
-      // delay 5 seconds to avoid rate limiting
-      // Adjust this for your RPC provider limits
-      await new Promise((resolve) => setTimeout(resolve, 5000));
-      // Adjust this for your RPC provider limits
-      fromBlock = fromBlock - BigInt(500);
-    }
-  } catch (error) {
-    console.error("Error getting last jackpot results:", error);
-    return undefined;
-  }
+  return undefined;
 }
-
-

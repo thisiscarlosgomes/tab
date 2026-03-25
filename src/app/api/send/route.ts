@@ -5,6 +5,7 @@ import { base } from "viem/chains";
 import { isAddress } from "viem";
 import erc20ABI from "@/lib/erc20-abi";
 import { requireTrustedRequest } from "@/lib/security";
+import { BUILDER_CODE_DATA_SUFFIX } from "@/lib/builderCode";
 
 const ALCHEMY_URL = process.env.ALCHEMY_URL!;
 const RAW_PRIVATE_KEY = process.env.PRIVATE_KEY!;
@@ -108,6 +109,7 @@ export async function POST(req: NextRequest) {
         abi: erc20ABI,
         functionName: "transfer",
         args: [to, value],
+        dataSuffix: BUILDER_CODE_DATA_SUFFIX,
       });
 
       console.log(
@@ -119,6 +121,7 @@ export async function POST(req: NextRequest) {
       hash = await walletClient.sendTransaction({
         to,
         value,
+        dataSuffix: BUILDER_CODE_DATA_SUFFIX,
       });
 
       console.log(

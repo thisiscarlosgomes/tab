@@ -15,6 +15,7 @@ import { createPublicClient, http } from "viem";
 import { mainnet } from "viem/chains";
 import { normalize } from "viem/ens";
 import { getPreferredConnector } from "@/lib/wallet";
+import { BUILDER_CODE_DATA_SUFFIX } from "@/lib/builderCode";
 
 interface PayButtonProps {
   recipient: string; // ENS or 0x
@@ -177,6 +178,7 @@ export function PayButton({
           to: resolvedAddress,
           value,
           chainId: 8453,
+          dataSuffix: BUILDER_CODE_DATA_SUFFIX,
         });
       } else {
         // ERC-20
@@ -186,6 +188,7 @@ export function PayButton({
           functionName: "transfer",
           args: [resolvedAddress, value],
           chainId: 8453,
+          dataSuffix: BUILDER_CODE_DATA_SUFFIX,
         });
       }
 

@@ -18,9 +18,9 @@ export async function GET(
   }
 
   try {
-    const [contractRes, guaranteedRes] = await Promise.all([
+    const [ticketPurchasesRes, guaranteedRes] = await Promise.all([
       fetch(
-        `https://api.megapot.io/api/v1/contracts/0xbEDd4F2beBE9E3E636161E644759f3cbe3d51B95/${address}`,
+        `https://api.megapot.io/api/v1/ticket-purchases/${address}`,
         {
           headers: { apikey: API_KEY },
           next: { revalidate: 3600 },
@@ -35,17 +35,22 @@ export async function GET(
       ),
     ]);
 
-    if (!contractRes.ok || !guaranteedRes.ok) {
-      throw new Error('Failed to fetch one or more Megapot endpoints');
+    if (!ticketPurchasesRes.ok && !guaranteedRes.ok) {
+      throw new Error('All Megapot endpoints failed');
     }
 
-    const [contractData, guaranteedPrizes] = await Promise.all([
-      contractRes.json(),
-      guaranteedRes.json(),
+    const [ticketPurchasesParsed, guaranteedPrizesParsed] = await Promise.allSettled([
+      ticketPurchasesRes.ok ? ticketPurchasesRes.json() : Promise.resolve([]),
+      guaranteedRes.ok ? guaranteedRes.json() : Promise.resolve({}),
     ]);
 
+    const ticketPurchases =
+      ticketPurchasesParsed.status === 'fulfilled' ? ticketPurchasesParsed.value : [];
+    const guaranteedPrizes =
+      guaranteedPrizesParsed.status === 'fulfilled' ? guaranteedPrizesParsed.value : {};
     return NextResponse.json({
-      contractData,
+      ticketPurchases,
+      contractData: null,
       guaranteedPrizes,
     });
   } catch (err) {

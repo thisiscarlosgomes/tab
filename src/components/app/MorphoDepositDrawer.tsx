@@ -28,6 +28,7 @@ import {
 } from "@/chain/yield";
 import { useBalance } from "@/chain/balance";
 import { formatDistanceToNow } from "date-fns";
+import { BUILDER_CODE_DATA_SUFFIX } from "@/lib/builderCode";
 
 const USDC_DECIMALS = 6;
 
@@ -104,6 +105,7 @@ export function AaveDepositDrawer({
         functionName: "approve",
         args: [BASE_DEPOSIT_CONTRACT_ADDR, rawAmount],
         chainId: base.id,
+        dataSuffix: BUILDER_CODE_DATA_SUFFIX,
       });
       await refetchAllowance?.();
       setIsApproved(true);
@@ -126,6 +128,7 @@ export function AaveDepositDrawer({
         functionName: "deposit",
         args: [address],
         chainId: base.id,
+        dataSuffix: BUILDER_CODE_DATA_SUFFIX,
       });
       setTxHash(tx);
       setSuccess(true);
@@ -153,6 +156,7 @@ export function AaveDepositDrawer({
         functionName: "withdraw",
         args: [BASE_USDC_ADDR, amountInWei, address],
         chainId: base.id,
+        dataSuffix: BUILDER_CODE_DATA_SUFFIX,
       });
 
       setTxHash(tx);

@@ -37,6 +37,8 @@ import {
 import {
   ResponsiveDialog,
   ResponsiveDialogContent,
+  ResponsiveDialogDescription,
+  ResponsiveDialogHeader,
   ResponsiveDialogTitle,
 } from "@/components/ui/responsive-dialog";
 import { getSocialUserKey, SocialUser } from "@/lib/social";
@@ -92,29 +94,30 @@ const AUTH_WELCOME_STEPS = [
     key: "social-wallet",
     kind: "guide" as const,
     iconSrc: "/link.png",
-    title: "Your social wallet",
-    desc: "Move money between people you follow and trust, instantly.",
+    title: "Your new social wallet",
+    desc: "Move money between people you follow and trust, globably and for free",
   },
-  {
-    key: "core-feature",
-    kind: "guide" as const,
-    iconSrc: "/dollars.png",
-    title: "Tooling",
-    desc: "Split group bills, send payments, and get paid — in seconds",
-  },
+ 
     {
     key: "earn-more",
     kind: "guide" as const,
     iconSrc: "/wallet.png",
     title: "Put your money to work",
-    desc: "Earn up to 5% APY on your stables, play daily jackpot and more.",
+    desc: "Earn up to 4% APY rewards on your USDC",
+  },
+   {
+    key: "core-feature",
+    kind: "guide" as const,
+    iconSrc: "/dollars.png",
+    title: "Tooling",
+    desc: "Split group bills, play onchain jackpot, and get paid — in seconds",
   },
   {
     key: "agent-skill",
     kind: "guide" as const,
     iconSrc: "/stack.png",
     title: "Tab agent skill",
-    desc: "Use Tab skill to trigger payments from chat apps you already use.",
+    desc: "Use your agent to trigger any tab actions with guardrails. Just works.",
   },
 ] as const;
 
@@ -377,7 +380,7 @@ function detectPushPlatform() {
 export default function Home() {
   const router = useRouter();
   const { dismiss } = useFrameSplash();
-  const { address, isConnected, username } = useTabIdentity();
+  const { address, isConnected, username, fid } = useTabIdentity();
   const { ready, authenticated, user } = usePrivy();
   const { identityToken } = useIdentityToken();
   const { getAccessToken } = useToken();
@@ -401,6 +404,8 @@ export default function Home() {
   const [showEarnDetailsDialog, setShowEarnDetailsDialog] = useState(false);
   const [showGiftDrawer, setShowGiftDrawer] = useState(false);
   const [showTabAgentPromo, setShowTabAgentPromo] = useState(false);
+  const [showAgentHowToDialog, setShowAgentHowToDialog] = useState(false);
+  const [copiedSkillPrompt, setCopiedSkillPrompt] = useState(false);
   const [authWelcomeStep, setAuthWelcomeStep] = useState(0);
   const authWelcomeTouchStartXRef = useRef<number | null>(null);
   const authWelcomeSwipeHandledRef = useRef(false);
@@ -551,6 +556,24 @@ export default function Home() {
   const linkedTwitterSubject = user?.twitter?.subject ?? null;
   const linkedTwitterUsername = user?.twitter?.username ?? null;
 
+  const farcasterFriendsCacheKeys = [
+    linkedFarcasterFid ? `farcaster:mutuals:fid:${linkedFarcasterFid}` : null,
+    linkedFarcasterUsername
+      ? `farcaster:mutuals:username:${linkedFarcasterUsername.toLowerCase()}`
+      : null,
+    fid ? `farcaster:mutuals:fid:${fid}` : null,
+    username ? `farcaster:mutuals:username:${username.toLowerCase()}` : null,
+    address ? `farcaster:mutuals:address:${address.toLowerCase()}` : null,
+  ].filter((value): value is string => Boolean(value));
+
+  const twitterFriendsCacheKeys = [
+    linkedTwitterSubject ? `twitter:followers:${linkedTwitterSubject}` : null,
+    linkedTwitterUsername
+      ? `twitter:followers:${linkedTwitterUsername.toLowerCase()}`
+      : null,
+    username ? `twitter:followers:${username.toLowerCase()}` : null,
+  ].filter((value): value is string => Boolean(value));
+
   const hasLinkedSupportedSocial = hasLinkedFarcaster || hasLinkedTwitter;
 
   const shouldShowSocialLinkStep = Boolean(
@@ -655,7 +678,6 @@ export default function Home() {
   useEffect(() => {
     const prefetch = () => {
       router.prefetch("/table");
-      router.prefetch("/faq");
       router.prefetch("/split/new");
     };
 
@@ -758,34 +780,30 @@ export default function Home() {
       return;
     }
 
-    const friendsCacheKey =
-      hasLinkedFarcaster
-        ? (linkedFarcasterFid ? `farcaster:mutuals:fid:${linkedFarcasterFid}` : null) ??
-          (linkedFarcasterUsername
-            ? `farcaster:mutuals:username:${linkedFarcasterUsername.toLowerCase()}`
-            : null) ??
-          (address ? `farcaster:mutuals:address:${address.toLowerCase()}` : null)
-        : (linkedTwitterSubject ? `twitter:followers:${linkedTwitterSubject}` : null) ??
-          (linkedTwitterUsername
-            ? `twitter:followers:${linkedTwitterUsername.toLowerCase()}`
-            : null);
-    if (!friendsCacheKey) return;
-
-    const cached = localStorage.getItem(`tab_friends_${friendsCacheKey}`);
-    if (!cached) return;
+    const friendsCacheKeys = hasLinkedFarcaster
+      ? farcasterFriendsCacheKeys
+      : twitterFriendsCacheKeys;
+    if (friendsCacheKeys.length === 0) return;
 
     try {
-      const parsed = JSON.parse(cached);
-      if (Array.isArray(parsed) && parsed.length > 0) {
-        setFriends(parsed);
-        setFriendsError(null);
+      for (const key of friendsCacheKeys) {
+        const cached = localStorage.getItem(`tab_friends_${key}`);
+        if (!cached) continue;
+        const parsed = JSON.parse(cached);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          setFriends(parsed);
+          setFriendsError(null);
+          break;
+        }
       }
     } catch {}
   }, [
     linkedFarcasterFid,
     linkedFarcasterUsername,
+    fid,
     linkedTwitterSubject,
     linkedTwitterUsername,
+    username,
     hasLinkedFarcaster,
     address,
   ]);
@@ -795,6 +813,7 @@ export default function Home() {
     if (!hasLinkedFarcaster && !hasLinkedTwitter)
       return;
     let cancelled = false;
+    const hadFriends = friends.length > 0;
 
     const fetchFriends = async () => {
       if (!cancelled) {
@@ -806,8 +825,10 @@ export default function Home() {
           const token = await getAuthToken();
           if (!token) {
             if (!cancelled) {
-              setFriends([]);
-              setFriendsError("Sign in again to load Twitter follows.");
+              if (!hadFriends) {
+                setFriends([]);
+                setFriendsError("Sign in again to load Twitter follows.");
+              }
             }
             return;
           }
@@ -820,20 +841,22 @@ export default function Home() {
           if (cancelled) return;
 
           if (Array.isArray(data)) {
-            setFriends(data.slice(0, 10));
-            setFriendsError(null);
-            const cacheKey =
-              (linkedTwitterSubject ? `twitter:followers:${linkedTwitterSubject}` : null) ??
-              (linkedTwitterUsername
-                ? `twitter:followers:${linkedTwitterUsername.toLowerCase()}`
-                : null);
-            if (cacheKey) {
-              localStorage.setItem(
-                `tab_friends_${cacheKey}`,
-                JSON.stringify(data)
-              );
+            const next = data.slice(0, 10);
+            if (next.length > 0 || !hadFriends) {
+              setFriends(next);
             }
-          } else {
+            setFriendsError(null);
+            if (next.length > 0 && twitterFriendsCacheKeys.length > 0) {
+              for (const cacheKey of twitterFriendsCacheKeys) {
+                localStorage.setItem(
+                  `tab_friends_${cacheKey}`,
+                  JSON.stringify(next)
+                );
+              }
+            } else if (!hadFriends) {
+              setFriends([]);
+            }
+          } else if (!hadFriends) {
             setFriends([]);
             const message =
               typeof data?.error === "string"
@@ -852,7 +875,22 @@ export default function Home() {
           ? `fid=${encodeURIComponent(String(linkedFarcasterFid))}`
           : linkedFarcasterUsername
             ? `username=${encodeURIComponent(linkedFarcasterUsername)}`
-            : `address=${encodeURIComponent(address!)}`;
+            : fid
+              ? `fid=${encodeURIComponent(String(fid))}`
+              : username
+                ? `username=${encodeURIComponent(username)}`
+                : address
+                  ? `address=${encodeURIComponent(address)}`
+                  : null;
+
+        if (!query) {
+          if (!hadFriends) {
+            setFriends([]);
+            setFriendsError(null);
+          }
+          return;
+        }
+
         const res = await fetch(`/api/neynar/user/mutuals?${query}`);
         const data = await res.json();
 
@@ -873,25 +911,29 @@ export default function Home() {
             })) as SocialUser[];
           setFriends(next);
           setFriendsError(null);
-          const cacheKey =
-            (linkedFarcasterFid ? `farcaster:mutuals:fid:${linkedFarcasterFid}` : null) ??
-            (linkedFarcasterUsername
-              ? `farcaster:mutuals:username:${linkedFarcasterUsername.toLowerCase()}`
-              : null) ??
-            (address ? `farcaster:mutuals:address:${address.toLowerCase()}` : null);
-          if (!cacheKey) return;
-          localStorage.setItem(
-            `tab_friends_${cacheKey}`,
-            JSON.stringify(next)
-          );
-        } else {
-          setFriends([]);
-          setFriendsError(null);
+          if (farcasterFriendsCacheKeys.length > 0) {
+            for (const cacheKey of farcasterFriendsCacheKeys) {
+              localStorage.setItem(
+                `tab_friends_${cacheKey}`,
+                JSON.stringify(next)
+              );
+            }
+          }
+        } else if (!hadFriends) {
+          if (Array.isArray(data)) {
+            setFriends([]);
+            setFriendsError(null);
+          } else {
+            setFriends([]);
+            setFriendsError("Unable to load friends right now.");
+          }
         }
       } catch {
         if (!cancelled) {
-          setFriends([]);
-          setFriendsError("Unable to load friends right now.");
+          if (!hadFriends) {
+            setFriends([]);
+            setFriendsError("Unable to load friends right now.");
+          }
         }
       } finally {
         if (!cancelled) {
@@ -908,10 +950,13 @@ export default function Home() {
   }, [
     linkedFarcasterFid,
     linkedFarcasterUsername,
+    fid,
     linkedTwitterSubject,
     linkedTwitterUsername,
+    username,
     hasLinkedFarcaster,
     hasLinkedTwitter,
+    friends.length,
     address,
     identityToken,
     getAccessToken,
@@ -1681,7 +1726,8 @@ export default function Home() {
                 <button
                   type="button"
                   onClick={() => {
-                    router.push("/faq");
+                    setShowAgentHowToDialog(true);
+                    triggerClickHaptics();
                   }}
                   className="w-full flex items-center gap-3 bg-white/5 rounded-xl p-4 text-left active:scale-[0.98] transition"
                 >
@@ -1972,6 +2018,78 @@ export default function Home() {
         </div>
 
           </div>
+
+          <ResponsiveDialog
+            open={showAgentHowToDialog}
+            onOpenChange={setShowAgentHowToDialog}
+          >
+            <ResponsiveDialogContent className="p-4 pb-8 md:w-[min(92vw,560px)] md:max-w-none">
+              <div className="w-full mx-auto space-y-4">
+                <ResponsiveDialogHeader className="pt-0">
+                  <ResponsiveDialogTitle className="text-lg font-medium text-center">
+                    How to use your agent
+                  </ResponsiveDialogTitle>
+                  <ResponsiveDialogDescription className="sr-only">
+                    Human instructions for asking your Tab agent to send payments and settle split bills.
+                  </ResponsiveDialogDescription>
+                </ResponsiveDialogHeader>
+
+                <div className="rounded-xl border border-white/10 bg-white/[0.03] p-3 space-y-2">
+                  <p className="text-sm text-white/90">
+                    <span className="text-white/50">1.</span> Send your agent{" "}
+                    <span className="text-primary">usetab.app/skill.md</span>
+                  </p>
+                  <p className="text-sm text-white/90">
+                    <span className="text-white/50">2.</span> Open and approve the link it returns
+                  </p>
+                  <p className="text-sm text-white/90">
+                    <span className="text-white/50">3.</span> Share your{" "}
+                    <span className="text-white">did:privy:...</span> to activate
+                  </p>
+                </div>
+
+                <Button
+                  type="button"
+                  onClick={async () => {
+                    const prompt = "Read https://usetab.app/skill.md and follow instructions";
+                    try {
+                      await navigator.clipboard.writeText(prompt);
+                      setCopiedSkillPrompt(true);
+                      window.setTimeout(() => setCopiedSkillPrompt(false), 1500);
+                    } catch {
+                      setCopiedSkillPrompt(false);
+                    }
+                  }}
+                  className="w-full bg-white/10 text-white hover:bg-white/15"
+                >
+                  {copiedSkillPrompt ? "Copied" : "Copy skill prompt"}
+                </Button>
+
+                <div className="space-y-2">
+                  <p className="text-xs uppercase tracking-wide text-white/40 px-1">
+                    try
+                  </p>
+                  <div className="rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-sm text-white/90">
+                    Pay $0.50 USDC to @alice
+                  </div>
+                  <div className="rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-sm text-white/90">
+                    Pay my share for split lunch-ab12
+                  </div>
+                  <div className="rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-sm text-white/90">
+                    Pay my share: usetab.app/split/abcd1234
+                  </div>
+                </div>
+
+                <Button
+                  type="button"
+                  onClick={() => setShowAgentHowToDialog(false)}
+                  className="w-full bg-primary text-black"
+                >
+                  Got it
+                </Button>
+              </div>
+            </ResponsiveDialogContent>
+          </ResponsiveDialog>
 
           <ResponsiveDialog
             open={showEarnDetailsDialog}

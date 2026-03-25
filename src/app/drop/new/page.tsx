@@ -18,6 +18,7 @@ import { toast } from "sonner";
 import { shortAddress } from "@/lib/shortAddress";
 import { LoaderCircle } from "lucide-react";
 import { useTabIdentity } from "@/lib/useTabIdentity";
+import { BUILDER_CODE_DATA_SUFFIX } from "@/lib/builderCode";
 
 const getTokenSuffix = (token: string) => {
   switch (token) {
@@ -218,6 +219,7 @@ export default function DropCreatePage() {
           to: treasury,
           value,
           chainId: 8453,
+          dataSuffix: BUILDER_CODE_DATA_SUFFIX,
         });
       } else {
         if (!tokenMeta.address) throw new Error("Missing token address");
@@ -227,6 +229,7 @@ export default function DropCreatePage() {
           functionName: "transfer",
           args: [treasury, value],
           chainId: 8453,
+          dataSuffix: BUILDER_CODE_DATA_SUFFIX,
         });
       }
 

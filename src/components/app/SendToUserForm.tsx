@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { shortAddress } from "@/lib/shortAddress";
 import { getPreferredConnector } from "@/lib/wallet";
 import { UserAvatar } from "@/components/ui/user-avatar";
+import { BUILDER_CODE_DATA_SUFFIX } from "@/lib/builderCode";
 
 type FarcasterUser = {
   fid: number;
@@ -53,6 +54,7 @@ export default function SendToUserForm({ user, onSuccess, onCancel }: Props) {
         to: ethAddress as `0x${string}`,
         value: BigInt(parsed * 1e18),
         chainId: 8453,
+        dataSuffix: BUILDER_CODE_DATA_SUFFIX,
       });
 
       onSuccess(txHash);

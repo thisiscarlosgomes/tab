@@ -12,11 +12,13 @@ import { base } from "viem/chains";
 import clientPromise from "@/lib/mongodb";
 import { requireTrustedRequest } from "@/lib/security";
 import { getBearerToken, getPrivyServerClient } from "@/lib/privy-server";
-import { getNextDayUtc, getStartOfDayUtc } from "@/lib/agent-access";
+import { getStartOfDayUtc } from "@/lib/agent-access";
+import { getAgentDailyUsedTotal } from "@/lib/agent-daily-usage";
 import { getCanonicalUserProfileByUserId } from "@/lib/user-profile";
 import { tokenList } from "@/lib/tokens";
 import { resolveRecipient } from "@/lib/recipient-resolver";
 import { writeActivity } from "@/lib/writeActivity";
+import { appendBuilderCodeToData } from "@/lib/builderCode";
 
 type LinkedAccountLike = {
   type?: string;
@@ -162,40 +164,6 @@ function formatAmountForDecimals(amount: number, decimals: number) {
   const precision = Math.min(Math.max(decimals, 0), 8);
   const fixed = amount.toFixed(precision);
   return fixed.replace(/\.?0+$/, "");
-}
-
-async function getDailyUsedTotal(userId: string) {
-  const client = await clientPromise;
-  const db = client.db();
-  const settlements = db.collection("a-agent-settlement");
-  const transfers = db.collection("a-agent-transfer");
-  const start = getStartOfDayUtc();
-  const end = getNextDayUtc();
-
-  const aggregateTotal = async (collectionName: "settlements" | "transfers") => {
-    const collection =
-      collectionName === "settlements" ? settlements : transfers;
-    const result = await collection
-      .aggregate([
-        {
-          $match: {
-            userId,
-            createdAt: { $gte: start, $lt: end },
-            status: { $in: ["pending", "success"] },
-          },
-        },
-        { $group: { _id: null, total: { $sum: "$amount" } } },
-      ])
-      .toArray();
-    return Number(result[0]?.total ?? 0);
-  };
-
-  const [settlementsTotal, transfersTotal] = await Promise.all([
-    aggregateTotal("settlements"),
-    aggregateTotal("transfers"),
-  ]);
-
-  return settlementsTotal + transfersTotal;
 }
 
 export async function POST(req: NextRequest) {
@@ -398,15 +366,15 @@ export async function POST(req: NextRequest) {
   const dailyCap = Number(policy.dailyCap ?? 0);
   if (roundedAmount > maxPerPayment) {
     return Response.json(
-      { error: `Amount exceeds your per-payment limit ($${maxPerPayment})` },
+      { error: `Amount exceeds your per-payment limit (${maxPerPayment} ${tokenSymbol})` },
       { status: 403 }
     );
   }
 
-  const dailyUsed = await getDailyUsedTotal(userId);
+  const dailyUsed = await getAgentDailyUsedTotal(userId);
   if (dailyUsed + roundedAmount > dailyCap) {
     return Response.json(
-      { error: `Daily cap exceeded ($${dailyCap})` },
+      { error: `Daily cap exceeded (${dailyCap} ${tokenSymbol})` },
       { status: 403 }
     );
   }
@@ -537,6 +505,7 @@ export async function POST(req: NextRequest) {
               transaction: {
                 to: recipientAddress,
                 value: rawAmount.toString(),
+                data: appendBuilderCodeToData(),
                 chain_id: 8453,
               },
             },
@@ -549,11 +518,13 @@ export async function POST(req: NextRequest) {
             params: {
               transaction: {
                 to: tokenMeta.address,
-                data: encodeFunctionData({
-                  abi: erc20Abi,
-                  functionName: "transfer",
-                  args: [recipientAddress as `0x${string}`, rawAmount],
-                }),
+                data: appendBuilderCodeToData(
+                  encodeFunctionData({
+                    abi: erc20Abi,
+                    functionName: "transfer",
+                    args: [recipientAddress as `0x${string}`, rawAmount],
+                  })
+                ),
                 value: 0,
                 chain_id: 8453,
               },

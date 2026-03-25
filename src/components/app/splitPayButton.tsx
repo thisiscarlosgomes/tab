@@ -12,6 +12,7 @@ import { erc20Abi, parseUnits } from "viem";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
 import { tokenList } from "@/lib/tokens";
+import { BUILDER_CODE_DATA_SUFFIX } from "@/lib/builderCode";
 
 interface SplitPayButtonProps {
   recipient: `0x${string}`;
@@ -206,6 +207,7 @@ export function SplitPayButton({
           to: recipient,
           value: rawAmount,
           chainId: 8453,
+          dataSuffix: BUILDER_CODE_DATA_SUFFIX,
         });
       } else {
         // ERC20
@@ -215,6 +217,7 @@ export function SplitPayButton({
           functionName: "transfer",
           args: [recipient, rawAmount],
           chainId: 8453,
+          dataSuffix: BUILDER_CODE_DATA_SUFFIX,
         });
       }
 

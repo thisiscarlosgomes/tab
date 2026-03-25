@@ -36,7 +36,6 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
   const isPublicRoute =
     pathname === "/" ||
-    pathname === "/faq" ||
     pathname === "/privacy" ||
     pathname === "/terms" ||
     pathname.startsWith("/claim/") ||
@@ -156,7 +155,6 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     router.prefetch("/profile");
     router.prefetch("/activity");
     router.prefetch("/table");
-    router.prefetch("/faq");
   }, [isAuthed, router]);
 
   useEffect(() => {

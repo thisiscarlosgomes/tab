@@ -8,14 +8,32 @@ import {
   useReadContract,
 } from "wagmi";
 import { base } from "viem/chains";
-import { formatUnits } from "viem";
-import { BaseJackpotAbi } from "@/lib/BaseJackpotAbi";
+import { formatUnits, parseAbi } from "viem";
 import { Button } from "@/components/ui/button";
-import { LoaderCircle, Loader } from "lucide-react";
+import {
+  CalendarDays,
+  Check,
+  Eraser,
+  Info,
+  Loader,
+  LoaderCircle,
+  Minus,
+  MoreVertical,
+  Plus,
+  Shuffle,
+} from "lucide-react";
 import { SuccessShareDrawer } from "@/components/app/SuccessShareDrawer";
 import { createPublicClient, http, erc20Abi } from "viem";
 import { Drawer } from "vaul";
-import { REFERRER_ADDRESS, USDC_DECIMALS } from "@/lib/constants";
+import {
+  APP_SOURCE_BYTES32,
+  CONTRACT_ADDRESS,
+  ERC20_TOKEN_ADDRESS,
+  JACKPOT_AUTO_SUBSCRIPTION_ADDRESS,
+  REFERRAL_SPLIT_PRECISE_UNIT,
+  REFERRER_ADDRESS,
+  USDC_DECIMALS,
+} from "@/lib/constants";
 import { getPreferredConnector } from "@/lib/wallet";
 import { usePrivy } from "@privy-io/react-auth";
 import {
@@ -24,15 +42,16 @@ import {
   useTicketPrice,
   useTicketPriceInWei,
   useTicketCountForRound,
-  useLastJackpotResults,
 } from "@/lib/BaseJackpotQueries";
 import NumberFlow from "@number-flow/react";
 import { Countdown } from "@/components/app/Countdown";
 import { useFrameSplash } from "@/providers/FrameSplashProvider";
 import { parseISO, format } from "date-fns";
-
-const CONTRACT_ADDRESS = "0xbEDd4F2beBE9E3E636161E644759f3cbe3d51B95"; // 🎯 Jackpot contract
-const ERC20_TOKEN_ADDRESS = "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913"; // 💵 USDC on Base
+import { BUILDER_CODE_DATA_SUFFIX } from "@/lib/builderCode";
+import {
+  ResponsiveDialog,
+  ResponsiveDialogContent,
+} from "@/components/ui/responsive-dialog";
 
 const ALCHEMY_URL = process.env.NEXT_PUBLIC_ALCHEMY_URL!;
 
@@ -40,6 +59,18 @@ const client = createPublicClient({
   chain: base,
   transport: http(ALCHEMY_URL),
 });
+
+const jackpotBuyAbi = parseAbi([
+  "function currentDrawingId() view returns (uint256)",
+  "function getDrawingState(uint256 drawingId) view returns ((uint256 prizePool,uint256 ticketPrice,uint256 edgePerTicket,uint256 referralWinShare,uint256 referralFee,uint256 globalTicketsBought,uint256 lpEarnings,uint256 drawingTime,uint256 winningTicket,uint8 ballMax,uint8 bonusballMax,address payoutCalculator,bool jackpotLock))",
+  "function buyTickets((uint8[] normals,uint8 bonusball)[] tickets,address recipient,address[] referrers,uint256[] referralSplit,bytes32 source) returns (uint256[])",
+]);
+
+const jackpotAutoSubscriptionAbi = parseAbi([
+  "function createSubscription(address _recipient,uint64 _totalDays,uint64 _dynamicTicketCount,(uint8[] normals,uint8 bonusball)[] _userStaticTickets,address[] _referrers,uint256[] _referralSplit)",
+  "function cancelSubscription()",
+  "function subscriptions(address) view returns (uint64 remainingUSDC,uint64 lastExecutedDrawing,uint64 subscribedTicketPrice,uint64 dynamicTicketCount)",
+]);
 
 interface RecentJackpotUser {
   address: string;
@@ -52,6 +83,22 @@ type GuaranteedPrizeEntry = {
   prizeValueTotal?: string | number;
   claimedAt?: string;
   claimTransactionHashes?: string[];
+};
+
+type TicketPurchase = {
+  blockNumber?: string | number;
+  ticketsPurchased?: number;
+  ticketCount?: number;
+  numberOfTickets?: number;
+  timestamp?: string | number;
+  purchasedAt?: string | number;
+  createdAt?: string | number;
+  transactionHashes?: string[];
+};
+
+type SelectedTicket = {
+  normals: number[];
+  bonusball: number;
 };
 
 function shortAddress(address: string) {
@@ -117,6 +164,21 @@ function loadImage(src: string) {
   });
 }
 
+function buildRandomTicket(
+  ballMax: number,
+  bonusballMax: number
+): { normals: number[]; bonusball: number } {
+  const pool = Array.from({ length: ballMax }, (_, i) => i + 1);
+  for (let i = pool.length - 1; i > 0; i -= 1) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [pool[i], pool[j]] = [pool[j], pool[i]];
+  }
+  return {
+    normals: pool.slice(0, 5).sort((a, b) => a - b),
+    bonusball: Math.floor(Math.random() * bonusballMax) + 1,
+  };
+}
+
 export default function JackpotPage() {
   const { address, isConnected } = useAccount();
   const { connect, connectors } = useConnect();
@@ -124,22 +186,31 @@ export default function JackpotPage() {
   const { dismiss } = useFrameSplash();
   const { user } = usePrivy();
 
-  const [ticketPriceWei, setTicketPriceWei] = useState<bigint | null>(null);
   const [balance, setBalance] = useState<number | null>(null);
   const [sending, setSending] = useState(false);
+  const [isCancellingSubscription, setIsCancellingSubscription] = useState(false);
   const [buyStep, setBuyStep] = useState<"idle" | "approving" | "buying">(
     "idle"
   );
   const [justPurchased, setJustPurchased] = useState(false);
   const [txHash, setTxHash] = useState<string | null>(null);
   const [showSuccessDrawer, setShowSuccessDrawer] = useState(false);
+  const [ticketQuantity, setTicketQuantity] = useState(2);
+  const [selectedRecurringDays, setSelectedRecurringDays] = useState(0);
+  const [isRecurringDialogOpen, setIsRecurringDialogOpen] = useState(false);
+  const [draftRecurringDays, setDraftRecurringDays] = useState(3);
+  const [isPickerOpen, setIsPickerOpen] = useState(false);
+  const [editingTicketIndex, setEditingTicketIndex] = useState(0);
+  const [selectedTickets, setSelectedTickets] = useState<SelectedTicket[]>([]);
+  const [draftNormals, setDraftNormals] = useState<number[]>([]);
+  const [draftBonusball, setDraftBonusball] = useState<number | null>(null);
+  const [pickerError, setPickerError] = useState<string | null>(null);
 
-  const [amount, setAmount] = useState("1"); // USD amount
-  const [isCustomInput, setIsCustomInput] = useState(false);
   const [isLoadingBalance, setIsLoadingBalance] = useState(true);
 
   const { data: ticketPrice, isLoading: loadingPrice } = useTicketPrice(); // USD per ticket
   const { data: ticketPriceInWei } = useTicketPriceInWei(); // raw wei for contract
+  const ticketPriceWei = ticketPriceInWei ?? null;
 
   const [guaranteedPrizes, setGuaranteedPrizes] = useState<
     Record<string, GuaranteedPrizeEntry> | null
@@ -148,38 +219,155 @@ export default function JackpotPage() {
   const { data: jackpotAmount, isLoading: isLoadingAmount } =
     useJackpotAmount();
   const { data: timeRemaining, isLoading: isLoadingTime } = useTimeRemaining();
-  const { data: lastRoundData, isLoading: isLoadingLastRound } =
-    useLastJackpotResults(address);
   const { data: ticketCount, isLoading: isLoadingTicketCount } =
     useTicketCountForRound(address);
 
-  const parsedAmountUsd = useMemo(() => parseFloat(amount || "0"), [amount]);
-  const derivedTicketCount = useMemo(
-    () => (ticketPrice ? Math.floor(parsedAmountUsd / ticketPrice) : 0),
-    [parsedAmountUsd, ticketPrice]
-  );
+  const effectiveTicketCount = ticketQuantity;
+  const isRecurringEnabled = selectedRecurringDays > 0;
+  const recurringDays = isRecurringEnabled ? selectedRecurringDays : 1;
 
-  const cost = ticketPrice ? ticketPrice * derivedTicketCount : null;
+  const cost = ticketPrice ? ticketPrice * effectiveTicketCount * recurringDays : null;
 
   const costInUsd = ticketPriceWei
     ? parseFloat(
-        formatUnits(ticketPriceWei * BigInt(derivedTicketCount), USDC_DECIMALS)
+      formatUnits(
+        ticketPriceWei * BigInt(effectiveTicketCount) * BigInt(recurringDays),
+        USDC_DECIMALS
       )
+    )
     : 0;
 
   const parsedAmount = ticketPriceWei
-    ? ticketPriceWei * BigInt(derivedTicketCount)
+    ? ticketPriceWei * BigInt(effectiveTicketCount) * BigInt(recurringDays)
     : 0n;
 
   const insufficientFunds = balance !== null && costInUsd > balance;
 
-  const { data: allowance, refetch: refetchAllowance } = useReadContract({
+  const { data: currentDrawingId } = useReadContract({
+    address: CONTRACT_ADDRESS,
+    abi: jackpotBuyAbi,
+    functionName: "currentDrawingId",
+  });
+
+  const { data: drawingState } = useReadContract({
+    address: CONTRACT_ADDRESS,
+    abi: jackpotBuyAbi,
+    functionName: "getDrawingState",
+    args: [currentDrawingId ?? 1n],
+    query: { enabled: currentDrawingId !== undefined },
+  });
+
+  const ballMax = Number((drawingState as { ballMax?: number } | undefined)?.ballMax ?? 30);
+  const bonusballMax = Number(
+    (drawingState as { bonusballMax?: number } | undefined)?.bonusballMax ?? 12
+  );
+
+  useEffect(() => {
+    setSelectedTickets((prev) => {
+      let next = [...prev];
+      if (next.length > ticketQuantity) {
+        next = next.slice(0, ticketQuantity);
+      }
+      while (next.length < ticketQuantity) {
+        next.push(buildRandomTicket(ballMax, bonusballMax));
+      }
+      return next;
+    });
+  }, [ballMax, bonusballMax, ticketQuantity]);
+
+  const openPicker = (index: number) => {
+    const fallback = buildRandomTicket(ballMax, bonusballMax);
+    const ticket = selectedTickets[index] ?? fallback;
+    setEditingTicketIndex(index);
+    setDraftNormals([...ticket.normals]);
+    setDraftBonusball(ticket.bonusball);
+    setPickerError(null);
+    setIsPickerOpen(true);
+  };
+
+  const closePicker = () => {
+    setIsPickerOpen(false);
+    setPickerError(null);
+  };
+
+  const openRecurringDialog = () => {
+    setDraftRecurringDays(isRecurringEnabled ? selectedRecurringDays : 3);
+    setIsRecurringDialogOpen(true);
+  };
+
+  const shufflePicker = () => {
+    const ticket = buildRandomTicket(ballMax, bonusballMax);
+    setDraftNormals(ticket.normals);
+    setDraftBonusball(ticket.bonusball);
+    setPickerError(null);
+  };
+
+  const clearPicker = () => {
+    setDraftNormals([]);
+    setDraftBonusball(null);
+    setPickerError(null);
+  };
+
+  const savePicker = () => {
+    if (draftNormals.length !== 5 || draftBonusball === null) {
+      setPickerError("Select 5 numbers and 1 bonus ball.");
+      return;
+    }
+    setSelectedTickets((prev) =>
+      prev.map((ticket, idx) =>
+        idx === editingTicketIndex
+          ? {
+            normals: [...draftNormals].sort((a, b) => a - b),
+            bonusball: draftBonusball,
+          }
+          : ticket
+      )
+    );
+    setIsPickerOpen(false);
+    setJustPurchased(false);
+    setPickerError(null);
+  };
+
+  const toggleDraftNormal = (n: number) => {
+    setDraftNormals((prev) => {
+      if (prev.includes(n)) return prev.filter((v) => v !== n);
+      if (prev.length >= 5) return prev;
+      return [...prev, n].sort((a, b) => a - b);
+    });
+    setPickerError(null);
+  };
+
+  const { data: staticAllowance, refetch: refetchStaticAllowance } = useReadContract({
     address: ERC20_TOKEN_ADDRESS,
     abi: erc20Abi,
     functionName: "allowance",
     args: [address ?? "0x", CONTRACT_ADDRESS],
     query: { enabled: !!address && ticketPriceWei !== null },
   });
+  const { data: recurringAllowance, refetch: refetchRecurringAllowance } =
+    useReadContract({
+      address: ERC20_TOKEN_ADDRESS,
+      abi: erc20Abi,
+      functionName: "allowance",
+      args: [address ?? "0x", JACKPOT_AUTO_SUBSCRIPTION_ADDRESS],
+      query: { enabled: !!address && ticketPriceWei !== null },
+    });
+  const { data: subscriptionSnapshot, refetch: refetchSubscriptionSnapshot } =
+    useReadContract({
+      address: JACKPOT_AUTO_SUBSCRIPTION_ADDRESS,
+      abi: jackpotAutoSubscriptionAbi,
+      functionName: "subscriptions",
+      args: [address ?? "0x"],
+      query: { enabled: !!address },
+    });
+
+  const subscriptionState = subscriptionSnapshot as
+    | { remainingUSDC?: bigint; subscribedTicketPrice?: bigint }
+    | undefined;
+  const subscriptionRemainingUsdcWei = subscriptionState?.remainingUSDC ?? 0n;
+  const hasActiveSubscription =
+    subscriptionRemainingUsdcWei > 0n &&
+    (subscriptionState?.subscribedTicketPrice ?? 0n) > 0n;
 
   const [recentTickets, setRecentTickets] = useState<Record<string, number>>(
     {}
@@ -217,11 +405,12 @@ export default function JackpotPage() {
         const res = await fetch(`/api/megapot/${address}`);
         const history = await res.json();
 
-        const contractData = history.contractData ?? [];
+        const purchases: TicketPurchase[] =
+          history.ticketPurchases ?? history.contractData ?? [];
         const grouped: Record<string, number> = {};
         const blockNumberKeys = Array.from(
           new Set(
-            contractData
+            purchases
               .map((entry: { blockNumber?: string | number }) =>
                 entry?.blockNumber?.toString?.()
               )
@@ -229,6 +418,7 @@ export default function JackpotPage() {
           )
         ) as string[];
         const blockTimeByNumber = new Map<string, number>();
+        const txTimeByHash = new Map<string, number>();
         await Promise.all(
           blockNumberKeys.map(async (blockNumberKey) => {
             const block = await client.getBlock({
@@ -240,15 +430,66 @@ export default function JackpotPage() {
             );
           })
         );
+        const transactionHashes = Array.from(
+          new Set(
+            purchases
+              .flatMap((entry) => entry?.transactionHashes ?? [])
+              .filter(Boolean)
+          )
+        );
+        await Promise.all(
+          transactionHashes.map(async (hash) => {
+            try {
+              const receipt = await client.getTransactionReceipt({
+                hash: hash as `0x${string}`,
+              });
+              const block = await client.getBlock({
+                blockNumber: receipt.blockNumber,
+              });
+              txTimeByHash.set(hash, Number(block.timestamp) * 1000);
+            } catch (err) {
+              console.error("Failed to resolve tx timestamp", hash, err);
+            }
+          })
+        );
 
-        for (const entry of contractData) {
+        for (const entry of purchases) {
+          const ticketsPurchased =
+            Number(entry?.ticketsPurchased) ||
+            Number(entry?.ticketCount) ||
+            Number(entry?.numberOfTickets) ||
+            0;
+          if (!ticketsPurchased) continue;
+
+          const directTimestamp =
+            typeof entry?.timestamp === "number"
+              ? entry.timestamp
+              : typeof entry?.timestamp === "string"
+                ? Date.parse(entry.timestamp)
+                : typeof entry?.purchasedAt === "number"
+                  ? entry.purchasedAt
+                  : typeof entry?.purchasedAt === "string"
+                    ? Date.parse(entry.purchasedAt)
+                    : typeof entry?.createdAt === "number"
+                      ? entry.createdAt
+                      : typeof entry?.createdAt === "string"
+                        ? Date.parse(entry.createdAt)
+                        : undefined;
+
           const blockNumberKey = entry?.blockNumber?.toString?.();
-          if (!blockNumberKey) continue;
-          const timestamp = blockTimeByNumber.get(blockNumberKey);
-          if (!timestamp) continue;
+          const blockTimestamp = blockNumberKey
+            ? blockTimeByNumber.get(blockNumberKey)
+            : undefined;
+          const hashTimestamp =
+            entry?.transactionHashes && entry.transactionHashes.length > 0
+              ? txTimeByHash.get(entry.transactionHashes[0])
+              : undefined;
+          const timestamp = directTimestamp ?? blockTimestamp ?? hashTimestamp;
+          if (!timestamp || Number.isNaN(timestamp)) continue;
+
           const dateObj = new Date(timestamp);
           const key = dateObj.toISOString().split("T")[0];
-          grouped[key] = (grouped[key] || 0) + entry.ticketsPurchased;
+          grouped[key] = (grouped[key] || 0) + ticketsPurchased;
         }
 
         // Sort and limit
@@ -292,21 +533,6 @@ export default function JackpotPage() {
     let cancelled = false;
     setIsLoadingBalance(true);
 
-    const fetchTicketPrice = async () => {
-      try {
-        const result = await client.readContract({
-          address: CONTRACT_ADDRESS,
-          abi: BaseJackpotAbi,
-          functionName: "ticketPrice",
-        });
-        if (!cancelled) {
-          setTicketPriceWei(result as bigint);
-        }
-      } catch (err) {
-        console.error("Failed to get ticket price", err);
-      }
-    };
-
     const fetchBalance = async () => {
       try {
         const result = await client.readContract({
@@ -328,7 +554,6 @@ export default function JackpotPage() {
       }
     };
 
-    fetchTicketPrice();
     fetchBalance();
     return () => {
       cancelled = true;
@@ -344,32 +569,81 @@ export default function JackpotPage() {
         return;
       }
       if (!address || parsedAmount === 0n) return;
+      setPickerError(null);
 
       setSending(true);
       setBuyStep("approving");
 
-      const currentAllowance = allowance ?? 0n;
+      const spender = isRecurringEnabled
+        ? JACKPOT_AUTO_SUBSCRIPTION_ADDRESS
+        : CONTRACT_ADDRESS;
+      const currentAllowance = isRecurringEnabled
+        ? recurringAllowance ?? 0n
+        : staticAllowance ?? 0n;
       if (currentAllowance < parsedAmount) {
         const approvalTx = await writeContractAsync({
           address: ERC20_TOKEN_ADDRESS,
           abi: erc20Abi,
           functionName: "approve",
-          args: [CONTRACT_ADDRESS, parsedAmount],
+          args: [spender, parsedAmount],
           chainId: base.id,
+          dataSuffix: BUILDER_CODE_DATA_SUFFIX,
         });
         await client.waitForTransactionReceipt({ hash: approvalTx });
-        await refetchAllowance?.();
+        if (isRecurringEnabled) {
+          await refetchRecurringAllowance?.();
+        } else {
+          await refetchStaticAllowance?.();
+        }
       }
 
       setBuyStep("buying");
-
-      const tx = await writeContractAsync({
-        address: CONTRACT_ADDRESS,
-        abi: BaseJackpotAbi,
-        functionName: "purchaseTickets",
-        args: [REFERRER_ADDRESS, parsedAmount, address],
-        chainId: base.id,
-      });
+      if (
+        selectedTickets.length !== effectiveTicketCount ||
+        selectedTickets.some(
+          (ticket) =>
+            ticket.normals.length !== 5 ||
+            !Number.isInteger(ticket.bonusball) ||
+            ticket.bonusball < 1
+        )
+      ) {
+        setPickerError("Each ticket needs 5 numbers and 1 bonus ball.");
+        throw new Error("Each ticket needs 5 numbers and 1 bonus ball.");
+      }
+      const tickets = selectedTickets.slice(0, effectiveTicketCount).map((ticket) => ({
+        normals: [...ticket.normals],
+        bonusball: ticket.bonusball,
+      }));
+      const tx = isRecurringEnabled
+        ? await writeContractAsync({
+          address: JACKPOT_AUTO_SUBSCRIPTION_ADDRESS,
+          abi: jackpotAutoSubscriptionAbi,
+          functionName: "createSubscription",
+          args: [
+            address,
+            BigInt(selectedRecurringDays),
+            0n,
+            tickets,
+            [REFERRER_ADDRESS],
+            [REFERRAL_SPLIT_PRECISE_UNIT],
+          ],
+          chainId: base.id,
+          dataSuffix: BUILDER_CODE_DATA_SUFFIX,
+        })
+        : await writeContractAsync({
+          address: CONTRACT_ADDRESS,
+          abi: jackpotBuyAbi,
+          functionName: "buyTickets",
+          args: [
+            tickets,
+            address,
+            [REFERRER_ADDRESS],
+            [REFERRAL_SPLIT_PRECISE_UNIT],
+            APP_SOURCE_BYTES32,
+          ],
+          chainId: base.id,
+          dataSuffix: BUILDER_CODE_DATA_SUFFIX,
+        });
 
       setTxHash(tx);
       setShowSuccessDrawer(true);
@@ -390,8 +664,8 @@ export default function JackpotPage() {
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             address,
-            amount: parsedAmountUsd,
-            ticketCount: derivedTicketCount,
+            amount: costInUsd,
+            ticketCount: effectiveTicketCount * recurringDays,
             fid: linkedFid,
           }),
         });
@@ -403,6 +677,42 @@ export default function JackpotPage() {
       setBuyStep("idle");
     }
   };
+
+  const handleCancelSubscription = async () => {
+    try {
+      if (!isConnected) {
+        const preferred = getPreferredConnector(connectors);
+        if (!preferred) return;
+        await connect({ connector: preferred });
+        return;
+      }
+      if (!address || !hasActiveSubscription) return;
+
+      setIsCancellingSubscription(true);
+
+      const tx = await writeContractAsync({
+        address: JACKPOT_AUTO_SUBSCRIPTION_ADDRESS,
+        abi: jackpotAutoSubscriptionAbi,
+        functionName: "cancelSubscription",
+        args: [],
+        chainId: base.id,
+        dataSuffix: BUILDER_CODE_DATA_SUFFIX,
+      });
+
+      await client.waitForTransactionReceipt({ hash: tx });
+      await refetchSubscriptionSnapshot?.();
+      setSelectedRecurringDays(0);
+      window.dispatchEvent(new Event("tab:balance-updated"));
+    } catch (error) {
+      console.error("Cancel subscription failed", error);
+    } finally {
+      setIsCancellingSubscription(false);
+    }
+  };
+
+  const displayTickets = selectedTickets.slice(0, effectiveTicketCount);
+  const visibleTickets = displayTickets.slice(0, 5);
+  const hiddenTicketCount = Math.max(0, displayTickets.length - 5);
 
   useEffect(() => {
     if (!address) return;
@@ -627,7 +937,7 @@ export default function JackpotPage() {
         </div>
 
         <div className="text-center mt-4">
-          <p className="opacity-30">Today’s USDC Jackpot</p>
+          <p className="opacity-30">Prize Pool (USDC)</p>
           {isLoadingAmount ? (
             <div className="justify-center py-4 flex text-center items-center opacity-30">
               <Loader className="w-10 h-10 animate-spin" />
@@ -658,46 +968,61 @@ export default function JackpotPage() {
           </p>
         </div>
 
-        <div className="flex justify-center gap-2 mb-4 mt-4">
-          {[2, 5, 10].map((val) => (
+        <div className="mt-4">
+          <div className="hidden flex items-center justify-center mb-2">
+            <div className="flex gap-1">
+              {[2, 5, 10, 50].map((val) => (
+                <button
+                  key={val}
+                  onClick={() => {
+                    setTicketQuantity(val);
+                    setJustPurchased(false);
+                  }}
+                  className={`px-3 py-1.5 text-xs rounded-sm border transition ${ticketQuantity === val
+                      ? "border-[#a9a0ed] text-[#d3ceff] bg-[#a9a0ed]/10"
+                      : "border-white/15 text-white/65"
+                    }`}
+                >
+                  {val}
+                </button>
+              ))}
+            </div>
+          </div>
+          <div className="rounded-lg border-2 border-white/10 px-2 py-2 flex items-center">
             <button
-              key={val}
               onClick={() => {
-                setAmount(val.toString());
-                setIsCustomInput(false);
+                setTicketQuantity((prev) => Math.max(1, prev - 1));
                 setJustPurchased(false);
               }}
-              className={`p-4 text-[#a9a0ed]/70 text-base rounded-md bg-[#a9a0ed]/10 border-2 transition ${
-                amount === val.toString() && !isCustomInput
-                  ? "border-[#a9a0ed]"
-                  : "border-white/10"
-              }`}
+              className="w-14 h-10 rounded-sm bg-white/5 flex items-center justify-center"
+              aria-label="Decrease ticket quantity"
             >
-              ${val}
+              <Minus className="h-5 w-5" />
             </button>
-          ))}
-
-          <div className="relative w-[82px]">
-            <span className="absolute left-3 top-1/2 -translate-y-1/2 text-[#a9a0ed]/50 text-base">
-              $
-            </span>
             <input
               type="number"
-              inputMode="decimal"
-              placeholder="0"
-              value={isCustomInput ? amount : ""}
-              className={`pl-5 w-full h-full px-3 py-2 text-white/70 text-base rounded-md bg-[#a9a0ed]/10 text-left outline-none placeholder-white/30 border-2 transition ${
-                isCustomInput && amount !== ""
-                  ? "border-white"
-                  : "border-white/10"
-              }`}
+              min={1}
+              max={1000}
+              value={ticketQuantity}
               onChange={(e) => {
-                setAmount(e.target.value);
-                setIsCustomInput(true);
+                const raw = Number(e.target.value);
+                if (!Number.isFinite(raw)) return;
+                const next = Math.max(1, Math.min(1000, Math.floor(raw)));
+                setTicketQuantity(next);
                 setJustPurchased(false);
               }}
-              onFocus={(e) => e.target.select()}
+              className="w-full text-center bg-transparent outline-none text-2xl font-semibold"
             />
+            <button
+              onClick={() => {
+                setTicketQuantity((prev) => Math.min(1000, prev + 1));
+                setJustPurchased(false);
+              }}
+              className="w-14 h-10 rounded-sm bg-white/5 flex items-center justify-center"
+              aria-label="Increase ticket quantity"
+            >
+              <Plus className="h-5 w-5" />
+            </button>
           </div>
         </div>
 
@@ -706,11 +1031,9 @@ export default function JackpotPage() {
           {loadingPrice || cost === null ? "..." : `${cost.toFixed(0)}`}
         </p>
 
-        {/* {insufficientFunds && (
-          <p className="text-sm text-red-400 text-center mt-2">
-            Not enough USDC
-          </p>
-        )} */}
+        {pickerError && (
+          <p className="text-sm text-red-400 text-center mt-2">{pickerError}</p>
+        )}
 
         <div className="mt-6">
           <Button
@@ -719,7 +1042,7 @@ export default function JackpotPage() {
               sending ||
               justPurchased ||
               insufficientFunds ||
-              derivedTicketCount <= 0 ||
+              effectiveTicketCount <= 0 ||
               isLoadingAmount ||
               isLoadingBalance
             }
@@ -734,16 +1057,97 @@ export default function JackpotPage() {
               <>Ticket Purchased</>
             ) : (
               <>
-                Buy {derivedTicketCount} Ticket
-                {derivedTicketCount > 1 ? "s" : ""}
+                {isRecurringEnabled ? "Subscribe" : "Buy"} {effectiveTicketCount} Ticket
+                {effectiveTicketCount > 1 ? "s" : ""}
+                {isRecurringEnabled ? ` for ${selectedRecurringDays} days` : ""}
               </>
             )}
           </Button>
         </div>
 
+        <Button
+          type="button"
+          variant="ghost"
+          onClick={openRecurringDialog}
+          className="w-full justify-between text-white/90 border border-white/10 bg-white/[0.02] hover:bg-white/10"
+        >
+          <span className="inline-flex items-center gap-2">
+            <CalendarDays className="w-4 h-4" />
+            Recurring days
+          </span>
+          <span className="text-white/70">
+            {isRecurringEnabled ? `${selectedRecurringDays} days` : "Off"}
+          </span>
+        </Button>
+        {hasActiveSubscription ? (
+          <div className="space-y-2">
+            <p className="text-[11px] text-white/55 text-center">
+              Active recurring subscription • $
+              {Number(formatUnits(subscriptionRemainingUsdcWei, USDC_DECIMALS)).toFixed(2)} remaining
+            </p>
+            <Button
+              type="button"
+              variant="ghost"
+              onClick={handleCancelSubscription}
+              disabled={isCancellingSubscription || sending}
+              className="w-full border border-red-400/30 text-red-300 hover:bg-red-500/10 hover:text-red-200"
+            >
+              {isCancellingSubscription ? (
+                <>
+                  <LoaderCircle className="w-4 h-4 animate-spin mr-2" />
+                  Cancelling...
+                </>
+              ) : (
+                <>Cancel recurring subscription</>
+              )}
+            </Button>
+          </div>
+        ) : null}
+
+        <div className="mt-3 space-y-2">
+          {visibleTickets.map((ticket, idx) => (
+            <div
+              key={`selected-ticket-${idx}`}
+              className="border border-white/10 rounded-2xl px-3 py-3 bg-white/[0.02]"
+            >
+              <div className="flex items-center gap-1.5">
+                {ticket.normals.map((n, nIdx) => (
+                  <div
+                    key={`${idx}-${n}-${nIdx}`}
+                    className="w-8 h-8 rounded-full bg-[#ececf0] text-[#111827] flex items-center justify-center text-xs font-semibold"
+                  >
+                    {n}
+                  </div>
+                ))}
+                <div className="w-8 h-8 rounded-full bg-[#1f2937] text-white flex items-center justify-center text-xs font-semibold">
+                  {ticket.bonusball}
+                </div>
+                <button
+                  type="button"
+                  onClick={() => openPicker(idx)}
+                  className="ml-auto p-2 rounded-full text-white/70 hover:text-white hover:bg-white/10 transition"
+                  aria-label={`Open number picker for ticket ${idx + 1}`}
+                >
+                  <MoreVertical className="w-4 h-4" />
+                </button>
+              </div>
+              <p className="hidden text-[10px] text-white/45 mt-2">Ticket {idx + 1}</p>
+            </div>
+          ))}
+          {hiddenTicketCount > 0 && (
+            <p className="text-[11px] text-white/50 px-1">
+              +{hiddenTicketCount} more ticket
+              {hiddenTicketCount > 1 ? "s" : ""} selected
+            </p>
+          )}
+          <p className="hidden text-[11px] text-white/45">
+            Selected numbers are shown per ticket.
+          </p>
+        </div>
+
         {/* 💵 Available balance (Morpho-style) */}
         {balance !== null && (
-          <p className="text-white/30 text-center text-sm mt-3 mb-1">
+          <p className="hidden text-white/30 text-center text-sm mt-3 mb-1">
             ${balance.toFixed(2)} available
             {insufficientFunds && (
               <span className="text-red-400 ml-1">Insufficient funds</span>
@@ -829,64 +1233,6 @@ export default function JackpotPage() {
               Every ticket gives you a shot at $100 in daily bonus prizes. Win
               up to $25, even multiple times a day.
             </div>
-          )}
-        </div>
-
-        <div className="text-sm border-2 border-white/5 mt-2 rounded-lg py-2">
-          <div className="text-white/30 w-full flex items-center justify-between px-4 py-1">
-            <div>Tickets in play</div>
-            <p
-              className={`text-sm ${
-                isLoadingTicketCount
-                  ? "text-white/50"
-                  : ticketCount && ticketCount >= 1
-                    ? "text-green-400"
-                    : "text-white/50"
-              }`}
-            >
-              {isLoadingTicketCount
-                ? "Loading..."
-                : ticketCount && ticketCount >= 1
-                  ? `${Math.round(ticketCount)}`
-                  : "No active tickets"}
-            </p>
-          </div>
-
-          <div className="hidden text-white/30 w-full flex items-center justify-between px-4 py-1">
-            <div>Draw Date</div>
-            <p className="text-white/50 text-sm">
-              {isLoadingTime || timeRemaining === undefined
-                ? "Loading..."
-                : formatDrawDate(Math.floor(Date.now() / 1000) + timeRemaining)}
-            </p>
-          </div>
-
-          {loadingRecentTickets ? (
-            <div className="text-white/30 text-sm px-4">
-              Loading ticket history...
-            </div>
-          ) : Object.keys(recentTickets).length === 0 ? (
-            <div className="text-white/30 text-sm px-4 py-2">
-              Your ticket history will appear here.
-            </div>
-          ) : (
-            Object.entries(recentTickets)
-              .filter(([, count]) => count > 0) // ⬅️ FIX HERE
-              .sort((a, b) => (a[0] < b[0] ? 1 : -1))
-              .map(([date, count]) => {
-                const formatted = format(parseISO(date), "MMMM d");
-                return (
-                  <div
-                    key={date}
-                    className="text-white/30 w-full flex items-center justify-between px-4 py-1"
-                  >
-                    <div>{formatted}</div>
-                    <p className="text-white/50 text-sm">
-                      {count} ticket{count !== 1 ? "s" : ""}
-                    </p>
-                  </div>
-                );
-              })
           )}
         </div>
 
@@ -1000,6 +1346,187 @@ export default function JackpotPage() {
           embeds={["https://usetab.app/jackpot"]}
         />
       </div>
+
+      <ResponsiveDialog
+        open={isRecurringDialogOpen}
+        onOpenChange={(open) => setIsRecurringDialogOpen(open)}
+      >
+        <ResponsiveDialogContent className="top-[80px] bottom-0 p-4 rounded-t-3xl flex flex-col md:top-1/2 md:bottom-auto md:w-full md:max-w-md md:max-h-[85vh] md:overflow-hidden">
+          <div className="w-full max-h-[calc(100dvh-120px)] md:max-h-[80vh] overflow-y-auto rounded-2xl bg-background text-white p-4 sm:p-4 space-y-4">
+            <div className="text-center space-y-2">
+              <p className="text-xl font-semibold leading-tight">Daily Play, Made Easy</p>
+              <p className="text-sm text-white/60">
+                Automatically play the same tickets each day with a single upfront payment. Cancel whenever you like.
+              </p>
+            </div>
+
+            <div className="space-y-2">
+              {[3, 5, 15].map((days) => {
+                const totalTickets = effectiveTicketCount * days;
+                const totalCost = ticketPrice ? ticketPrice * totalTickets : null;
+                const selected = draftRecurringDays === days;
+                return (
+                  <button
+                    key={days}
+                    type="button"
+                    onClick={() => setDraftRecurringDays(days)}
+                    className={`w-full rounded-2xl border px-4 py-3 text-left transition ${
+                      selected
+                        ? "border-primary bg-primary/10"
+                        : "border-white/10 bg-white/[0.02] hover:bg-white/10"
+                    }`}
+                  >
+                    <div className="flex items-center justify-between gap-3">
+                      <div>
+                        <p className="text-lg font-semibold">{days} days <span className="text-xs text-primary font-medium">({totalCost === null ? "..." : `$${totalCost.toFixed(2)}`}{" "})</span></p>
+                        <p className="hidden text-sm text-white/60">
+                          {totalCost === null ? "..." : `$${totalCost.toFixed(2)}`}{" "}
+                          <span className="hidden text-[#d1b36a] font-medium">{totalTickets} tickets</span>
+                        </p>
+                      </div>
+                      <div
+                        className={`h-5 w-5 rounded-full border-2 ${
+                          selected
+                            ? "border-primary bg-primary flex items-center justify-center"
+                            : "border-white/30"
+                        }`}
+                      >
+                        {selected ? <Check className="h-4 w-4 text-black" /> : null}
+                      </div>
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+
+            <Button
+              type="button"
+              onClick={() => {
+                setSelectedRecurringDays(draftRecurringDays);
+                setIsRecurringDialogOpen(false);
+                setJustPurchased(false);
+              }}
+              className="w-full"
+            >
+              Confirm
+            </Button>
+            <Button
+              type="button"
+              variant="ghost"
+              onClick={() => {
+                setSelectedRecurringDays(0);
+                setIsRecurringDialogOpen(false);
+                setJustPurchased(false);
+              }}
+              className="hidden w-full text-white/70 hover:text-white hover:bg-white/10"
+            >
+              No thanks, only play once
+            </Button>
+          </div>
+        </ResponsiveDialogContent>
+      </ResponsiveDialog>
+
+      <ResponsiveDialog
+        open={isPickerOpen}
+        onOpenChange={(open) => {
+          if (!open) closePicker();
+          else setIsPickerOpen(true);
+        }}
+      >
+        <ResponsiveDialogContent className="top-[80px] bottom-0 p-4 rounded-t-3xl flex flex-col md:top-1/2 md:bottom-auto md:w-full md:max-w-2xl md:max-h-[85vh] md:overflow-hidden">
+          <div className="w-full max-h-[calc(100dvh-120px)] md:max-h-[80vh] overflow-y-auto rounded-2xl bg-background text-white p-4 sm:p-4">
+            <div className="flex items-center justify-between mb-3">
+              <h3 className="text-md font-semibold">
+            
+              
+                Numbers{" "}
+                <span className="text-white/40">{draftNormals.length} of 5</span>
+              </h3>
+              <div className="flex items-center gap-1">
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  className="h-8 px-2 text-white/80 hover:bg-white/10"
+                  onClick={shufflePicker}
+                >
+                  <Shuffle className="w-5 h-5" />
+                  Random
+                </Button>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  className="h-8 px-2 text-white/80 hover:bg-white/10"
+                  onClick={clearPicker}
+                >
+                  <Eraser className="w-5 h-5" />
+                  Clear
+                </Button>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-6 sm:grid-cols-8 gap-1 sm:gap-2">
+              {Array.from({ length: ballMax }, (_, i) => i + 1).map((n) => {
+                const selected = draftNormals.includes(n);
+                return (
+                  <button
+                    key={n}
+                    type="button"
+                    onClick={() => toggleDraftNormal(n)}
+                    className={`h-10 sm:h-10 rounded-full text-sm font-semibold border-2 transition ${
+                      selected
+                        ? "border-primary text-primary bg-primary/10"
+                        : "border-transparent bg-white/10 text-white/80"
+                    }`}
+                  >
+                    {n}
+                  </button>
+                );
+              })}
+            </div>
+
+            <div className="mt-6 mb-3">
+              <h3 className="text-md font-semibold">
+                Bonus <span className="text-white/40">{draftBonusball ? 1 : 0} of 1</span>
+              </h3>
+            </div>
+            <div className="grid grid-cols-6 sm:grid-cols-8 gap-2 sm:gap-3">
+              {Array.from({ length: bonusballMax }, (_, i) => i + 1).map((n) => {
+                const selected = draftBonusball === n;
+                return (
+                  <button
+                    key={`b-${n}`}
+                    type="button"
+                    onClick={() => {
+                      setDraftBonusball(n);
+                      setPickerError(null);
+                    }}
+                    className={`h-10 sm:h-10 rounded-full text-lg font-semibold border-2 transition ${
+                      selected
+                        ? "border-primary text-primary bg-primary/10"
+                        : "border-transparent bg-white/10 text-white/80"
+                    }`}
+                  >
+                    {n}
+                  </button>
+                );
+              })}
+            </div>
+
+            {pickerError && <p className="text-sm text-red-400 mt-3">{pickerError}</p>}
+
+            <Button
+              type="button"
+              onClick={savePicker}
+              className="w-full mt-6"
+              disabled={draftNormals.length !== 5 || draftBonusball === null}
+            >
+              Save
+            </Button>
+          </div>
+        </ResponsiveDialogContent>
+      </ResponsiveDialog>
     </div>
   );
 }

@@ -32,6 +32,7 @@ import { LoaderCircle } from "lucide-react";
 import { toast } from "sonner";
 
 import clsx from "clsx";
+import { BUILDER_CODE_DATA_SUFFIX } from "@/lib/builderCode";
 
 const USDC_ADDRESS = "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913";
 const USDC_DECIMALS = 6;
@@ -254,6 +255,7 @@ export function MorphoDepositDrawer({
         functionName: "approve",
         args: [VAULT_ADDRESS, rawAmount],
         chainId: base.id,
+        dataSuffix: BUILDER_CODE_DATA_SUFFIX,
       });
 
       await client.waitForTransactionReceipt({ hash: txHash });
@@ -287,6 +289,7 @@ export function MorphoDepositDrawer({
         functionName: "deposit",
         args: [rawAmount, address],
         chainId: base.id,
+        dataSuffix: BUILDER_CODE_DATA_SUFFIX,
       });
 
       // ✅ WAIT until the deposit is mined
@@ -359,6 +362,7 @@ export function MorphoDepositDrawer({
         functionName: "redeem",
         args: [vaultBalanceRaw, address, address],
         chainId: base.id,
+        dataSuffix: BUILDER_CODE_DATA_SUFFIX,
       });
 
       // ✅ wait for confirmation

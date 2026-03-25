@@ -14,7 +14,9 @@ import { getBearerToken, getPrivyServerClient } from "@/lib/privy-server";
 import { buildUserKey } from "@/lib/identity";
 import { tokenList } from "@/lib/tokens";
 import { writeActivity } from "@/lib/writeActivity";
-import { getNextDayUtc, getStartOfDayUtc } from "@/lib/agent-access";
+import { getStartOfDayUtc } from "@/lib/agent-access";
+import { getAgentDailyUsedTotal } from "@/lib/agent-daily-usage";
+import { appendBuilderCodeToData } from "@/lib/builderCode";
 
 type LinkedAccountLike = {
   type?: string;
@@ -680,30 +682,16 @@ export async function POST(req: NextRequest) {
   const dailyCap = Number(policy.dailyCap ?? 0);
   if (amount > maxPerPayment) {
     return Response.json(
-      { error: `Amount exceeds your per-payment limit ($${maxPerPayment})` },
+      { error: `Amount exceeds your per-payment limit (${maxPerPayment} ${tokenSymbol})` },
       { status: 403 }
     );
   }
 
   const day = getStartOfDayUtc();
-  const nextDay = getNextDayUtc();
-  const spendingAgg = await settlements
-    .aggregate([
-      {
-        $match: {
-          userId,
-          createdAt: { $gte: day, $lt: nextDay },
-          status: { $in: ["pending", "success"] },
-        },
-      },
-      { $group: { _id: null, total: { $sum: "$amount" } } },
-    ])
-    .toArray();
-
-  const dailyUsed = Number(spendingAgg[0]?.total ?? 0);
+  const dailyUsed = await getAgentDailyUsedTotal(userId);
   if (dailyUsed + amount > dailyCap) {
     return Response.json(
-      { error: `Daily cap exceeded ($${dailyCap})` },
+      { error: `Daily cap exceeded (${dailyCap} ${tokenSymbol})` },
       { status: 403 }
     );
   }
@@ -783,6 +771,7 @@ export async function POST(req: NextRequest) {
               transaction: {
                 to: recipientAddress,
                 value: rawAmount.toString(),
+                data: appendBuilderCodeToData(),
                 chain_id: 8453,
               },
             },
@@ -795,11 +784,13 @@ export async function POST(req: NextRequest) {
             params: {
               transaction: {
                 to: tokenMeta.address,
-                data: encodeFunctionData({
-                  abi: erc20Abi,
-                  functionName: "transfer",
-                  args: [recipientAddress as `0x${string}`, rawAmount],
-                }),
+                data: appendBuilderCodeToData(
+                  encodeFunctionData({
+                    abi: erc20Abi,
+                    functionName: "transfer",
+                    args: [recipientAddress as `0x${string}`, rawAmount],
+                  })
+                ),
                 value: 0,
                 chain_id: 8453,
               },

@@ -6,10 +6,11 @@ import {
   DEFAULT_AGENT_POLICY,
   getNextDayUtc,
   getPolicyExpiry,
-  getStartOfDayUtc,
   type AgentAccessStatus,
 } from "@/lib/agent-access";
+import { getAgentDailyUsedTotal } from "@/lib/agent-daily-usage";
 import { getBearerToken, getPrivyServerClient } from "@/lib/privy-server";
+import { tokenList } from "@/lib/tokens";
 
 type LinkedAccountLike = {
   type?: string;
@@ -149,6 +150,19 @@ async function maybeConfigureAgentSigner({
   });
 }
 
+const SUPPORTED_TOKEN_SYMBOLS = new Set(
+  tokenList.map((token) => String(token.name ?? "").toUpperCase()).filter(Boolean)
+);
+
+function normalizeAllowedToken(raw: unknown) {
+  const token = String(raw ?? DEFAULT_AGENT_POLICY.allowedToken).toUpperCase().trim();
+  return token || DEFAULT_AGENT_POLICY.allowedToken;
+}
+
+function isSupportedTokenSymbol(token: string) {
+  return SUPPORTED_TOKEN_SYMBOLS.has(token);
+}
+
 async function requirePrivyUser(req: NextRequest) {
   const token = getBearerToken(req.headers.get("authorization"));
   if (!token) {
@@ -184,28 +198,6 @@ async function requirePrivyUser(req: NextRequest) {
 function toNumber(value: unknown, fallback: number) {
   const n = Number(value);
   return Number.isFinite(n) ? n : fallback;
-}
-
-async function getDailyUsed(userId: string) {
-  const client = await clientPromise;
-  const db = client.db();
-  const settlements = db.collection("a-agent-settlement");
-  const start = getStartOfDayUtc();
-  const end = getNextDayUtc();
-  const result = await settlements
-    .aggregate([
-      {
-        $match: {
-          userId,
-          createdAt: { $gte: start, $lt: end },
-          status: { $in: ["pending", "success"] },
-        },
-      },
-      { $group: { _id: null, total: { $sum: "$amount" } } },
-    ])
-    .toArray();
-
-  return Number(result[0]?.total ?? 0);
 }
 
 export async function GET(req: NextRequest) {
@@ -251,7 +243,7 @@ export async function GET(req: NextRequest) {
       ));
 
     const delegatedWallet = findDelegatedPrivyWallet(linkedAccounts);
-    const dailyUsed = await getDailyUsed(userId);
+    const dailyUsed = await getAgentDailyUsedTotal(userId);
 
     if (!latestPolicy) {
       return Response.json({
@@ -302,7 +294,7 @@ export async function GET(req: NextRequest) {
   }
 
   const existing = await collection.findOne({ address, userId });
-  const dailyUsed = await getDailyUsed(userId);
+  const dailyUsed = await getAgentDailyUsedTotal(userId);
 
   if (!existing) {
     return Response.json({
@@ -372,9 +364,10 @@ export async function PUT(req: NextRequest) {
   const status: AgentAccessStatus =
     statusInput === "ACTIVE" || statusInput === "REVOKED" ? statusInput : "PAUSED";
 
-  const allowedToken = String(
-    body?.allowedToken ?? DEFAULT_AGENT_POLICY.allowedToken
-  ).toUpperCase();
+  const allowedToken = normalizeAllowedToken(body?.allowedToken);
+  if (!isSupportedTokenSymbol(allowedToken)) {
+    return Response.json({ error: "Unsupported token for Agent Access policy" }, { status: 400 });
+  }
   const maxPerPayment = Math.max(
     0.01,
     toNumber(body?.maxPerPayment, DEFAULT_AGENT_POLICY.maxPerPayment)
@@ -518,7 +511,9 @@ export async function POST(req: NextRequest) {
           delegated: true,
           status: "ACTIVE",
           allowedToken:
-            existing?.allowedToken ?? DEFAULT_AGENT_POLICY.allowedToken,
+            isSupportedTokenSymbol(normalizeAllowedToken(existing?.allowedToken))
+              ? normalizeAllowedToken(existing?.allowedToken)
+              : DEFAULT_AGENT_POLICY.allowedToken,
           maxPerPayment,
           dailyCap,
           recipientMode:

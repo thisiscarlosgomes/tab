@@ -9,8 +9,7 @@ import {
   useReadContract,
 } from "wagmi";
 import { base } from "viem/chains";
-import { maxUint256, formatUnits } from "viem";
-import { BaseJackpotAbi } from "@/lib/BaseJackpotAbi";
+import { maxUint256, formatUnits, parseAbi } from "viem";
 import { farcasterFrame } from "@farcaster/frame-wagmi-connector";
 import { Button } from "../ui/button";
 import { LoaderCircle } from "lucide-react";
@@ -18,8 +17,10 @@ import { SuccessShareDrawer } from "@/components/app/SuccessShareDrawer";
 import { createPublicClient, http, erc20Abi } from "viem";
 import sdk from "@farcaster/frame-sdk";
 import {
-  //   CONTRACT_ADDRESS,
-  //   ERC20_TOKEN_ADDRESS,
+  APP_SOURCE_BYTES32,
+  ERC20_TOKEN_ADDRESS,
+  RANDOM_TICKET_BUYER_ADDRESS,
+  REFERRAL_SPLIT_PRECISE_UNIT,
   REFERRER_ADDRESS,
   USDC_DECIMALS,
 } from "@/lib/constants";
@@ -32,16 +33,16 @@ import {
   useTicketCountForRound,
 } from "@/lib/BaseJackpotQueries";
 import NumberFlow from "@number-flow/react";
-
-const CONTRACT_ADDRESS = "0xbEDd4F2beBE9E3E636161E644759f3cbe3d51B95"; // 🎯 Jackpot contract
-const ERC20_TOKEN_ADDRESS = "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913"; // 💵 USDC on Base
-// const USDC_DECIMALS = 6;
-// const REFERRER_ADDRESS = "0x..."; // optional referrer (could be Tab multisig)
+import { BUILDER_CODE_DATA_SUFFIX } from "@/lib/builderCode";
 
 const client = createPublicClient({
   chain: base,
   transport: http(),
 });
+
+const randomTicketBuyerAbi = parseAbi([
+  "function buyTickets(uint64 count,address recipient,address[] referrers,uint256[] referralSplitBps,bytes32 source) returns (uint256[])",
+]);
 
 function formatTimeLeft(seconds: number): string {
   const total = Math.floor(seconds); // 👈 Ensure it's an integer
@@ -70,7 +71,6 @@ export function JackpotDrawer({
   const { connect } = useConnect();
   const { writeContractAsync } = useWriteContract();
 
-  const [ticketPriceWei, setTicketPriceWei] = useState<bigint | null>(null);
   const [balance, setBalance] = useState<number | null>(null);
   const [isApproved, setIsApproved] = useState(false);
   const [sending, setSending] = useState(false);
@@ -83,6 +83,7 @@ export function JackpotDrawer({
 
   const { data: ticketPrice, isLoading: loadingPrice } = useTicketPrice(); // USD per ticket
   const { data: ticketPriceInWei } = useTicketPriceInWei(); // raw wei for contract
+  const ticketPriceWei = ticketPriceInWei ?? null;
 
   const { data: jackpotAmount, isLoading: isLoadingAmount } =
     useJackpotAmount();
@@ -96,10 +97,6 @@ export function JackpotDrawer({
   const derivedTicketCount = ticketPrice
     ? Math.floor(parsedAmountUsd / ticketPrice)
     : 0;
-
-  const parsedAmountInWei = ticketPriceInWei
-    ? ticketPriceInWei * BigInt(derivedTicketCount)
-    : 0n;
 
   const cost = ticketPrice ? ticketPrice * derivedTicketCount : null;
 
@@ -119,24 +116,11 @@ export function JackpotDrawer({
     address: ERC20_TOKEN_ADDRESS,
     abi: erc20Abi,
     functionName: "allowance",
-    args: [address ?? "0x", CONTRACT_ADDRESS],
+    args: [address ?? "0x", RANDOM_TICKET_BUYER_ADDRESS],
     query: { enabled: !!address && ticketPriceWei !== null },
   });
 
   useEffect(() => {
-    const fetchTicketPrice = async () => {
-      try {
-        const result = await client.readContract({
-          address: CONTRACT_ADDRESS,
-          abi: BaseJackpotAbi,
-          functionName: "ticketPrice",
-        });
-        setTicketPriceWei(result as bigint);
-      } catch (err) {
-        console.error("Failed to get ticket price", err);
-      }
-    };
-
     const fetchBalance = async () => {
       try {
         const result = await client.readContract({
@@ -155,7 +139,6 @@ export function JackpotDrawer({
     };
 
     if (address) {
-      fetchTicketPrice();
       fetchBalance();
     }
   }, [address]);
@@ -177,8 +160,9 @@ export function JackpotDrawer({
         address: ERC20_TOKEN_ADDRESS,
         abi: erc20Abi,
         functionName: "approve",
-        args: [CONTRACT_ADDRESS, maxUint256],
+        args: [RANDOM_TICKET_BUYER_ADDRESS, maxUint256],
         chainId: base.id,
+        dataSuffix: BUILDER_CODE_DATA_SUFFIX,
       });
 
       await refetchAllowance?.();
@@ -200,11 +184,18 @@ export function JackpotDrawer({
       setSending(true);
 
       const tx = await writeContractAsync({
-        address: CONTRACT_ADDRESS,
-        abi: BaseJackpotAbi,
-        functionName: "purchaseTickets",
-        args: [REFERRER_ADDRESS, parsedAmount, address],
+        address: RANDOM_TICKET_BUYER_ADDRESS,
+        abi: randomTicketBuyerAbi,
+        functionName: "buyTickets",
+        args: [
+          BigInt(derivedTicketCount),
+          address,
+          [REFERRER_ADDRESS],
+          [REFERRAL_SPLIT_PRECISE_UNIT],
+          APP_SOURCE_BYTES32,
+        ],
         chainId: base.id,
+        dataSuffix: BUILDER_CODE_DATA_SUFFIX,
       });
 
       setTxHash(tx);

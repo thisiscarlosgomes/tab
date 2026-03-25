@@ -34,6 +34,7 @@ import {
   ResponsiveDialogTitle,
 } from "@/components/ui/responsive-dialog";
 import { getSocialUserKey, SocialUser } from "@/lib/social";
+import { BUILDER_CODE_DATA_SUFFIX } from "@/lib/builderCode";
 
 type EnrichedCast = {
   hash: string;
@@ -896,6 +897,7 @@ export function GlobalSendDrawer() {
           to: recipient,
           value: rawAmount,
           chainId: 8453,
+          dataSuffix: BUILDER_CODE_DATA_SUFFIX,
         });
         txHash = tx;
       } else {
@@ -909,6 +911,7 @@ export function GlobalSendDrawer() {
             args: [recipient, rawAmount],
           }),
           chainId: 8453,
+          dataSuffix: BUILDER_CODE_DATA_SUFFIX,
         });
 
         txHash = tx;

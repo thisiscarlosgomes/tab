@@ -414,7 +414,7 @@ export default function AgentAccessPage() {
   if (statusPending) {
     return (
       <div className="min-h-screen p-4 pt-[calc(5rem+env(safe-area-inset-top))] pb-[calc(8rem+env(safe-area-inset-bottom))]">
-        <div className="mx-auto space-y-4">
+        <div className="mx-auto w-full space-y-4">
           <div className="border border-white/10 rounded-xl p-4 space-y-3">
             <Skeleton className="h-6 w-20 border-0 bg-white/10" />
             <Skeleton className="h-4 w-4/5 border-0 bg-white/10" />
@@ -533,7 +533,7 @@ export default function AgentAccessPage() {
           </label>
 
           <label className="block text-sm text-white/70">
-            Max per payment (USD)
+            Max per payment (allowed token units)
             <input
               type="number"
               min="0.01"
@@ -545,7 +545,7 @@ export default function AgentAccessPage() {
           </label>
 
           <label className="block text-sm text-white/70">
-            Daily cap (USD)
+            Daily cap (allowed token units)
             <input
               type="number"
               min="0.01"
@@ -582,8 +582,10 @@ export default function AgentAccessPage() {
 
           {state && (
             <p className="text-xs text-white/40">
-              Used today: ${Number(state.dailyUsed ?? 0).toFixed(2)} / $
-              {Number(state.dailyCap ?? dailyCap).toFixed(2)}
+              Used today: {Number(state.dailyUsed ?? 0).toFixed(2)}{" "}
+              {state.allowedToken ?? allowedToken} /{" "}
+              {Number(state.dailyCap ?? dailyCap).toFixed(2)}{" "}
+              {state.allowedToken ?? allowedToken}
             </p>
           )}
         </div>
@@ -663,7 +665,7 @@ export default function AgentAccessPage() {
 
       <ResponsiveDialog open={infoOpen} onOpenChange={setInfoOpen}>
         <ResponsiveDialogContent className="p-4 pb-8 md:w-[min(92vw,560px)] md:max-w-none">
-          <div className="mx-auto space-y-4">
+          <div className="w-full mx-auto space-y-4">
             <ResponsiveDialogHeader className="pt-0">
               <ResponsiveDialogTitle className="text-lg font-medium text-center">
                 How to use your agent
