@@ -122,7 +122,7 @@ export function SuccessShareDrawer({
   if (useResponsiveDialog) {
     return (
       <ResponsiveDialog open={isOpen} onOpenChange={setIsOpen}>
-        <ResponsiveDialogContent className="top-auto bottom-0 w-full rounded-t-3xl border-white/10 bg-card px-0 pb-0 pt-2 md:top-1/2 md:bottom-auto md:max-w-md md:-translate-y-1/2 md:rounded-3xl [&>svg]:hidden">
+        <ResponsiveDialogContent className="top-auto bottom-0 !h-auto !min-h-[44dvh] !max-h-[62dvh] !overflow-y-auto w-full rounded-t-3xl border-white/10 bg-card px-0 pb-0 pt-2 md:top-1/2 md:bottom-auto md:!min-h-0 md:!max-h-[56vh] md:max-w-md md:-translate-y-1/2 md:rounded-3xl [&>svg]:hidden">
           {modalBody}
         </ResponsiveDialogContent>
       </ResponsiveDialog>
@@ -133,7 +133,7 @@ export function SuccessShareDrawer({
     <Drawer.Root open={isOpen} onOpenChange={setIsOpen}>
       <Drawer.Portal>
         <Drawer.Overlay className="fixed inset-0 bg-[#4E4C52]/60 backdrop-blur-sm z-50" />
-        <Drawer.Content className="pb-8 z-50 bg-card flex flex-col rounded-t-3xl fixed bottom-0 left-0 right-0">
+        <Drawer.Content className="pb-8 z-50 bg-card flex flex-col rounded-t-3xl fixed bottom-0 left-0 right-0 max-h-[62dvh] overflow-y-auto">
           {modalBody}
         </Drawer.Content>
       </Drawer.Portal>
