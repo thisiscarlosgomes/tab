@@ -195,7 +195,12 @@ export function mapActivity(a: ActivityRecord) {
         type: "jackpot_deposit",
         amount: a.amount,
         token: a.token ?? "USDC",
-        description: `Purchased ${a.amount} jackpot ticket`,
+        ticketCount: a.ticketCount,
+        txHash: a.txHash,
+        description:
+          typeof a.ticketCount === "number" && a.ticketCount > 0
+            ? `Purchased ${a.ticketCount} jackpot ticket${a.ticketCount > 1 ? "s" : ""}`
+            : `Purchased jackpot ticket`,
         timestamp: a.timestamp,
       };
 

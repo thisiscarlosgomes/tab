@@ -607,7 +607,8 @@ export default function ActivityPage() {
                             item.type === "bill_paid" ||
                             item.type === "bill_received" ||
                             item.type === "room_paid" ||
-                            item.type === "room_received";
+                            item.type === "room_received" ||
+                            item.type === "jackpot_deposit";
                           if (isPaymentRow && item.txHash) {
                             router.push(`/activity/tx/${item.txHash}`);
                             return;

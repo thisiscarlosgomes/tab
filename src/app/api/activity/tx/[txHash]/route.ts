@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import clientPromise from "@/lib/mongodb";
+import viemClient from "@/lib/viem-client";
 
 export const dynamic = "force-dynamic";
 
@@ -38,23 +39,39 @@ export async function GET(
         .collection("a-activity")
         .find({
           $or: [{ txHash }, { refType: "transfer", refId: txHash }],
-          type: { $in: ["bill_paid", "bill_received"] },
+          type: {
+            $in: [
+              "bill_paid",
+              "bill_received",
+              "room_paid",
+              "room_received",
+              "jackpot_deposit",
+            ],
+          },
         })
         .sort({ timestamp: -1, createdAt: -1 })
         .limit(10)
         .toArray(),
     ]);
 
-    const paidRow = activityRows.find((r) => r.type === "bill_paid") ?? null;
-    const receivedRow = activityRows.find((r) => r.type === "bill_received") ?? null;
+    const paidRow =
+      activityRows.find((r) => r.type === "bill_paid") ??
+      activityRows.find((r) => r.type === "room_paid") ??
+      null;
+    const receivedRow =
+      activityRows.find((r) => r.type === "bill_received") ??
+      activityRows.find((r) => r.type === "room_received") ??
+      null;
+    const jackpotRow = activityRows.find((r) => r.type === "jackpot_deposit") ?? null;
 
-    const fromAddress =
+    let fromAddress =
       normalizeAddress(agentTransfer?.sourceWalletAddress) ??
       normalizeAddress(paidRow?.address) ??
+      normalizeAddress(jackpotRow?.address) ??
       normalizeAddress(receivedRow?.counterparty?.address) ??
       null;
 
-    const toAddress =
+    let toAddress =
       normalizeAddress(agentTransfer?.recipientAddress) ??
       normalizeAddress(paidRow?.counterparty?.address) ??
       normalizeAddress(paidRow?.recipient) ??
@@ -65,6 +82,7 @@ export async function GET(
       agentTransfer?.amount ??
       paidRow?.amount ??
       receivedRow?.amount ??
+      jackpotRow?.amount ??
       null;
     const amount =
       typeof amountRaw === "number"
@@ -80,12 +98,15 @@ export async function GET(
           ? paidRow.token
           : typeof receivedRow?.token === "string"
             ? receivedRow.token
+            : typeof jackpotRow?.token === "string"
+              ? jackpotRow.token
             : null;
 
     const noteCandidate =
       agentTransfer?.note ??
       paidRow?.note ??
       receivedRow?.note ??
+      jackpotRow?.note ??
       null;
     const note =
       typeof noteCandidate === "string" && noteCandidate.trim()
@@ -96,6 +117,7 @@ export async function GET(
       agentTransfer?.createdAt ??
       paidRow?.timestamp ??
       receivedRow?.timestamp ??
+      jackpotRow?.timestamp ??
       null;
     const timestamp =
       timestampCandidate && !Number.isNaN(new Date(timestampCandidate).getTime())
@@ -112,6 +134,29 @@ export async function GET(
       (typeof receivedRow?.counterparty?.name === "string" &&
         receivedRow.counterparty.name) ||
       null;
+    const activityType =
+      (typeof jackpotRow?.type === "string" && jackpotRow.type) ||
+      (typeof paidRow?.type === "string" && paidRow.type) ||
+      (typeof receivedRow?.type === "string" && receivedRow.type) ||
+      (agentTransfer ? "bill_paid" : null);
+    const ticketCount =
+      typeof jackpotRow?.ticketCount === "number" && Number.isFinite(jackpotRow.ticketCount)
+        ? jackpotRow.ticketCount
+        : Number.isFinite(Number(jackpotRow?.ticketCount))
+          ? Number(jackpotRow?.ticketCount)
+          : null;
+
+    if (!fromAddress || !toAddress || !timestamp) {
+      try {
+        const chainTx = await viemClient.getTransaction({
+          hash: txHash as `0x${string}`,
+        });
+        if (!fromAddress) fromAddress = normalizeAddress(chainTx.from);
+        if (!toAddress && chainTx.to) toAddress = normalizeAddress(chainTx.to);
+      } catch {
+        // Ignore chain lookup failures and return best-effort details.
+      }
+    }
 
     if (!fromAddress && !toAddress && amount === null && !token) {
       return NextResponse.json({ error: "Transfer not found" }, { status: 404 });
@@ -128,6 +173,8 @@ export async function GET(
         timestamp,
         recipientUsername,
         senderUsername,
+        activityType,
+        ticketCount,
       },
     });
   } catch (err) {

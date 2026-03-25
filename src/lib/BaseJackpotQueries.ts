@@ -172,7 +172,7 @@ export function useUsersInfo(address: `0x${string}` | undefined) {
 export function useTicketCountForRound(address: `0x${string}` | undefined) {
     return useQuery({
         queryKey: queryKeys.ticketCountForRound(address!),
-        queryFn: () => getTicketCountForRound(address!),
+        queryFn: async () => (await getTicketCountForRound(address!)) ?? 0,
         enabled: !!address,
         staleTime: 1000 * 10,
         refetchInterval: 1000 * 10,

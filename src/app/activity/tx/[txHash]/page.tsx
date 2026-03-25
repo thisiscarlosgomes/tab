@@ -4,7 +4,7 @@ export const dynamic = "force-dynamic";
 
 import { useEffect, useMemo, useState } from "react";
 import { useParams } from "next/navigation";
-import { ArrowUpRight, Check } from "lucide-react";
+import { ArrowUpRight, Ticket } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { shortAddress } from "@/lib/shortAddress";
@@ -20,6 +20,8 @@ type TransferDetails = {
   timestamp: string | null;
   recipientUsername?: string | null;
   senderUsername?: string | null;
+  activityType?: string | null;
+  ticketCount?: number | null;
 };
 
 function formatAmount(value: number | null) {
@@ -131,7 +133,11 @@ export default function ActivityTransferDetailPage() {
       : "someone";
 
   const title = tx
-    ? tx.amount !== null && tx.token
+    ? tx.activityType === "jackpot_deposit"
+      ? `You purchased ${tx.ticketCount && tx.ticketCount > 0 ? tx.ticketCount : ""}${
+          tx.ticketCount && tx.ticketCount > 0 ? " " : ""
+        }jackpot ticket${tx.ticketCount && tx.ticketCount > 1 ? "s" : ""}`
+      : tx.amount !== null && tx.token
       ? isOutgoing
         ? `You transferred ${formatAmount(tx.amount)} ${tx.token} to ${outgoingRecipientLabel}`
         : `${incomingSenderLabel} transferred ${formatAmount(tx.amount)} ${tx.token} to you`
@@ -157,7 +163,11 @@ export default function ActivityTransferDetailPage() {
         ) : (
           <div className="rounded-2xl border border-white/10 bg-white/[0.02] p-4">
             <div className="mb-4 flex h-14 w-14 items-center justify-center rounded-xl bg-white/5 text-white">
-              <ArrowUpRight className="h-7 w-7" />
+              {tx.activityType === "jackpot_deposit" ? (
+                <Ticket className="h-7 w-7" />
+              ) : (
+                <ArrowUpRight className="h-7 w-7" />
+              )}
             </div>
 
             <h1 className="text-xl font-semibold text-white leading-tight">
@@ -171,6 +181,22 @@ export default function ActivityTransferDetailPage() {
             )}
 
             <div className="mt-5 space-y-3 rounded-xl bg-white/[0.02] p-3">
+              {tx.activityType === "jackpot_deposit" && (
+                <div className="flex items-center justify-between gap-4">
+                  <span className="text-white/50 text-sm">Tickets</span>
+                  <span className="text-white text-sm break-all text-right">
+                    {tx.ticketCount && tx.ticketCount > 0 ? tx.ticketCount : "—"}
+                  </span>
+                </div>
+              )}
+              {tx.amount !== null && tx.token && (
+                <div className="flex items-center justify-between gap-4">
+                  <span className="text-white/50 text-sm">Amount</span>
+                  <span className="text-white text-sm break-all text-right">
+                    {formatAmount(tx.amount)} {tx.token}
+                  </span>
+                </div>
+              )}
               <div className="flex items-center justify-between gap-4">
                 <span className="text-white/50 text-sm">From</span>
                 <span className="text-white text-sm break-all text-right">

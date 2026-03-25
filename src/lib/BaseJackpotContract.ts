@@ -21,7 +21,7 @@ const jackpotAbi = parseAbi([
 ]);
 
 const ticketNftAbi = parseAbi([
-  "function getUserTickets(address user, uint256 drawingId) view returns ((uint256 ticketId,uint256 drawingId,address owner,uint8[] normals,uint8 bonusball,uint256 purchaseTimestamp,uint8 tier,bool claimed)[])",
+  "function getUserTickets(address _userAddress, uint256 _drawingId) view returns ((uint256 ticketId,(uint256 drawingId,uint256 packedTicket,bytes32 referralScheme) ticket,uint8[] normals,uint8 bonusball)[])",
 ]);
 
 async function getCurrentDrawing() {
@@ -131,7 +131,7 @@ export async function getUsersInfo(_address: `0x${string}`): Promise<
 
 export async function getTicketCountForRound(
   address: `0x${string}`
-): Promise<number | undefined> {
+): Promise<number> {
   try {
     const { drawingId } = await getCurrentDrawing();
     const tickets = (await client.readContract({
@@ -143,7 +143,7 @@ export async function getTicketCountForRound(
     return tickets.length;
   } catch (error) {
     console.error("Error getting ticket count for round:", error);
-    return undefined;
+    return 0;
   }
 }
 

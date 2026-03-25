@@ -200,6 +200,11 @@ export function JackpotDrawer({
 
       setTxHash(tx);
       setShowSuccessDrawer(true);
+      window.dispatchEvent(
+        new CustomEvent("tab:balance-updated", {
+          detail: { jackpotTicketDelta: derivedTicketCount },
+        })
+      );
 
       try {
         const res = await fetch("/api/jackpot", {
@@ -210,6 +215,7 @@ export function JackpotDrawer({
             address,
             amount: costInUsd,
             ticketCount: derivedTicketCount,
+            txHash: tx,
           }),
         });
 

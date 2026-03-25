@@ -447,7 +447,7 @@ export default function Home() {
   const [monthlyEarn, setMonthlyEarn] = useState<number | null>(null);
   const [jackpotTickets, setJackpotTickets] = useState<number | null>(null);
 
-  const { data: ticketCount, isLoading: loadingTickets } =
+  const { data: ticketCount, isLoading: loadingTickets, refetch: refetchTicketCount } =
     useTicketCountForRound(
       address && address.startsWith("0x")
         ? (address as `0x${string}`)
@@ -1084,11 +1084,23 @@ export default function Home() {
       void refetchEarnFromMorpho();
     };
 
+    const refetchJackpotTickets = () => {
+      void refetchTicketCount();
+    };
+
     const onBalanceUpdate = (event: Event) => {
       const detail = (
-        event as CustomEvent<{ deltaUsdc?: number; earnDeltaUsd?: number } | undefined>
+        event as CustomEvent<
+          | { deltaUsdc?: number; earnDeltaUsd?: number; jackpotTicketDelta?: number }
+          | undefined
+        >
       ).detail;
       const hasEarnDelta = !!detail && typeof detail.earnDeltaUsd === "number";
+      if (detail && typeof detail.jackpotTicketDelta === "number") {
+        setJackpotTickets((prev) =>
+          Math.max(0, (typeof prev === "number" ? prev : 0) + detail.jackpotTicketDelta!)
+        );
+      }
       if (detail && typeof detail.deltaUsdc === "number") {
         applyOptimisticUsdcDelta(detail.deltaUsdc);
       }
@@ -1099,6 +1111,7 @@ export default function Home() {
       pendingTimeouts.forEach((id) => window.clearTimeout(id));
       pendingTimeouts.clear();
       refetchBalances();
+      refetchJackpotTickets();
       // Morpho indexer/RPC can lag right after a deposit/withdrawal; avoid
       // clobbering optimistic earn state with a stale immediate fetch.
       if (!hasEarnDelta) {
@@ -1108,16 +1121,21 @@ export default function Home() {
       // Follow-up pulls for pending tx propagation on RPC/indexers.
       const first = window.setTimeout(refetchBalances, 1800);
       const second = window.setTimeout(refetchBalances, 4500);
+      const jackpotFirst = window.setTimeout(refetchJackpotTickets, 1800);
+      const jackpotSecond = window.setTimeout(refetchJackpotTickets, 4500);
       const earnFirst = window.setTimeout(refetchEarn, 1800);
       const earnSecond = window.setTimeout(refetchEarn, 4500);
       pendingTimeouts.add(first);
       pendingTimeouts.add(second);
+      pendingTimeouts.add(jackpotFirst);
+      pendingTimeouts.add(jackpotSecond);
       pendingTimeouts.add(earnFirst);
       pendingTimeouts.add(earnSecond);
     };
 
     window.addEventListener("tab:balance-updated", onBalanceUpdate);
     void refetchBalances();
+    void refetchTicketCount();
     void refetchEarnFromMorpho();
 
     return () => {
@@ -1125,7 +1143,7 @@ export default function Home() {
       pendingTimeouts.clear();
       window.removeEventListener("tab:balance-updated", onBalanceUpdate);
     };
-  }, [address, balancesCacheKey, refetchEarnFromMorpho]);
+  }, [address, balancesCacheKey, refetchEarnFromMorpho, refetchTicketCount]);
 
   useEffect(() => {
     dismiss();

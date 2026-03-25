@@ -8,7 +8,7 @@ import { writeActivity } from "@/lib/writeActivity";
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
-    const { address, amount, fid, ticketCount } = body;
+    const { address, amount, fid, ticketCount, txHash } = body;
 
     if (!address || !fid || isNaN(Number(amount)) || Number(amount) <= 0) {
       return Response.json(
@@ -29,6 +29,7 @@ export async function POST(req: NextRequest) {
       address: lowerAddress,
       amount: Number(amount),
       ticketCount: Number(ticketCount) || 0,
+      txHash: typeof txHash === "string" ? txHash.toLowerCase() : null,
       timestamp: depositedAt,
     });
 
@@ -40,6 +41,8 @@ export async function POST(req: NextRequest) {
       refId: "daily",
       amount: Number(amount),
       token: "USDC",
+      ticketCount: Number(ticketCount) || 0,
+      txHash: typeof txHash === "string" ? txHash.toLowerCase() : undefined,
       timestamp: depositedAt,
     });
 

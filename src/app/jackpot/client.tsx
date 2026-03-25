@@ -29,6 +29,7 @@ import {
   APP_SOURCE_BYTES32,
   CONTRACT_ADDRESS,
   ERC20_TOKEN_ADDRESS,
+  JACKPOT_TICKET_NFT_ADDRESS,
   JACKPOT_AUTO_SUBSCRIPTION_ADDRESS,
   REFERRAL_SPLIT_PRECISE_UNIT,
   REFERRER_ADDRESS,
@@ -69,7 +70,12 @@ const jackpotBuyAbi = parseAbi([
 const jackpotAutoSubscriptionAbi = parseAbi([
   "function createSubscription(address _recipient,uint64 _totalDays,uint64 _dynamicTicketCount,(uint8[] normals,uint8 bonusball)[] _userStaticTickets,address[] _referrers,uint256[] _referralSplit)",
   "function cancelSubscription()",
+  "function getSubscriptionInfo(address _recipient) view returns (((uint64 remainingUSDC,uint64 lastExecutedDrawing,uint64 subscribedTicketPrice,uint64 dynamicTicketCount,address[] referrers,uint256[] referralSplit) subscription,(uint8[] normals,uint8 bonusball)[] staticTickets))",
   "function subscriptions(address) view returns (uint64 remainingUSDC,uint64 lastExecutedDrawing,uint64 subscribedTicketPrice,uint64 dynamicTicketCount)",
+]);
+
+const jackpotTicketNftAbi = parseAbi([
+  "function getUserTickets(address _userAddress, uint256 _drawingId) view returns ((uint256 ticketId,(uint256 drawingId,uint256 packedTicket,bytes32 referralScheme) ticket,uint8[] normals,uint8 bonusball)[])",
 ]);
 
 interface RecentJackpotUser {
@@ -256,11 +262,37 @@ export default function JackpotPage() {
     args: [currentDrawingId ?? 1n],
     query: { enabled: currentDrawingId !== undefined },
   });
+  const { data: activeTicketsSnapshot } = useReadContract({
+    address: JACKPOT_TICKET_NFT_ADDRESS,
+    abi: jackpotTicketNftAbi,
+    functionName: "getUserTickets",
+    args: [address ?? "0x", currentDrawingId ?? 1n],
+    query: { enabled: !!address && currentDrawingId !== undefined },
+  });
 
   const ballMax = Number((drawingState as { ballMax?: number } | undefined)?.ballMax ?? 30);
   const bonusballMax = Number(
     (drawingState as { bonusballMax?: number } | undefined)?.bonusballMax ?? 12
   );
+  const activeTickets = (
+    (activeTicketsSnapshot as
+      | Array<{ normals?: number[]; bonusball?: number; ticketId?: bigint }>
+      | undefined) ?? []
+  )
+    .map((ticket) => ({
+      ticketId: Number(ticket.ticketId ?? 0n),
+      normals: (ticket.normals ?? []).map((n) => Number(n)).sort((a, b) => a - b),
+      bonusball: Number(ticket.bonusball ?? 0),
+    }))
+    .filter(
+      (ticket) =>
+        ticket.normals.length === 5 &&
+        Number.isInteger(ticket.bonusball) &&
+        ticket.bonusball > 0
+    )
+    .sort((a, b) => a.ticketId - b.ticketId);
+  const visibleActiveTickets = activeTickets.slice(0, 5);
+  const hiddenActiveTicketCount = Math.max(0, activeTickets.length - visibleActiveTickets.length);
 
   useEffect(() => {
     setSelectedTickets((prev) => {
@@ -352,22 +384,56 @@ export default function JackpotPage() {
       args: [address ?? "0x", JACKPOT_AUTO_SUBSCRIPTION_ADDRESS],
       query: { enabled: !!address && ticketPriceWei !== null },
     });
-  const { data: subscriptionSnapshot, refetch: refetchSubscriptionSnapshot } =
+  const { data: subscriptionInfoSnapshot, refetch: refetchSubscriptionSnapshot } =
     useReadContract({
       address: JACKPOT_AUTO_SUBSCRIPTION_ADDRESS,
       abi: jackpotAutoSubscriptionAbi,
-      functionName: "subscriptions",
+      functionName: "getSubscriptionInfo",
       args: [address ?? "0x"],
       query: { enabled: !!address },
     });
+  const { data: subscriptionSnapshotFallback } = useReadContract({
+    address: JACKPOT_AUTO_SUBSCRIPTION_ADDRESS,
+    abi: jackpotAutoSubscriptionAbi,
+    functionName: "subscriptions",
+    args: [address ?? "0x"],
+    query: { enabled: !!address },
+  });
 
-  const subscriptionState = subscriptionSnapshot as
-    | { remainingUSDC?: bigint; subscribedTicketPrice?: bigint }
+  const subscriptionInfo = subscriptionInfoSnapshot as
+    | {
+      subscription?: {
+        remainingUSDC?: bigint;
+        subscribedTicketPrice?: bigint;
+        dynamicTicketCount?: bigint;
+      };
+      staticTickets?: Array<{ normals: number[]; bonusball: number }>;
+    }
     | undefined;
-  const subscriptionRemainingUsdcWei = subscriptionState?.remainingUSDC ?? 0n;
+  const subscriptionStateFallback = subscriptionSnapshotFallback as
+    | { remainingUSDC?: bigint; subscribedTicketPrice?: bigint; dynamicTicketCount?: bigint }
+    | undefined;
+
+  const subscriptionRemainingUsdcWei =
+    subscriptionInfo?.subscription?.remainingUSDC ??
+    subscriptionStateFallback?.remainingUSDC ??
+    0n;
+  const subscriptionTicketPriceWei =
+    subscriptionInfo?.subscription?.subscribedTicketPrice ??
+    subscriptionStateFallback?.subscribedTicketPrice ??
+    0n;
+  const subscriptionDynamicTicketCount =
+    subscriptionInfo?.subscription?.dynamicTicketCount ??
+    subscriptionStateFallback?.dynamicTicketCount ??
+    0n;
+  const subscriptionStaticTicketCount = BigInt(
+    subscriptionInfo?.staticTickets?.length ?? 0
+  );
   const hasActiveSubscription =
     subscriptionRemainingUsdcWei > 0n &&
-    (subscriptionState?.subscribedTicketPrice ?? 0n) > 0n;
+    (subscriptionTicketPriceWei > 0n ||
+      subscriptionDynamicTicketCount > 0n ||
+      subscriptionStaticTicketCount > 0n);
 
   const [recentTickets, setRecentTickets] = useState<Record<string, number>>(
     {}
@@ -652,8 +718,12 @@ export default function JackpotPage() {
       // ✅ WAIT FOR CONFIRMATION
       await client.waitForTransactionReceipt({ hash: tx });
 
-      // ✅ EMIT GLOBAL BALANCE UPDATE
-      window.dispatchEvent(new Event("tab:balance-updated"));
+      // ✅ EMIT GLOBAL BALANCE + JACKPOT TICKET UPDATE
+      window.dispatchEvent(
+        new CustomEvent("tab:balance-updated", {
+          detail: { jackpotTicketDelta: effectiveTicketCount * recurringDays },
+        })
+      );
 
       // Log jackpot entry
       const linkedFid = user?.farcaster?.fid ?? null;
@@ -667,6 +737,7 @@ export default function JackpotPage() {
             amount: costInUsd,
             ticketCount: effectiveTicketCount * recurringDays,
             fid: linkedFid,
+            txHash: tx,
           }),
         });
       }
@@ -931,7 +1002,7 @@ export default function JackpotPage() {
 
   return (
     <div className="p-4 pb-[calc(8rem+env(safe-area-inset-bottom))] pt-10 mt-[calc(3rem+env(safe-area-inset-top))] relative">
-      <div className="max-w-sm w-full mx-auto space-y-4">
+      <div className="max-w-sm w-full mx-auto space-y-3">
         <div className="hidden text-center text-md font-medium mb-4 pb-2">
           Buy a lottery ticket for a chance to win big.
         </div>
@@ -979,8 +1050,8 @@ export default function JackpotPage() {
                     setJustPurchased(false);
                   }}
                   className={`px-3 py-1.5 text-xs rounded-sm border transition ${ticketQuantity === val
-                      ? "border-[#a9a0ed] text-[#d3ceff] bg-[#a9a0ed]/10"
-                      : "border-white/15 text-white/65"
+                    ? "border-[#a9a0ed] text-[#d3ceff] bg-[#a9a0ed]/10"
+                    : "border-white/15 text-white/65"
                     }`}
                 >
                   {val}
@@ -1081,10 +1152,7 @@ export default function JackpotPage() {
         </Button>
         {hasActiveSubscription ? (
           <div className="space-y-2">
-            <p className="text-[11px] text-white/55 text-center">
-              Active recurring subscription • $
-              {Number(formatUnits(subscriptionRemainingUsdcWei, USDC_DECIMALS)).toFixed(2)} remaining
-            </p>
+
             <Button
               type="button"
               variant="ghost"
@@ -1101,6 +1169,50 @@ export default function JackpotPage() {
                 <>Cancel recurring subscription</>
               )}
             </Button>
+            <p className="text-xs text-white/55 text-center">
+              Active recurring subscription • $
+              {Number(formatUnits(subscriptionRemainingUsdcWei, USDC_DECIMALS)).toFixed(2)} remaining
+            </p>
+          </div>
+        ) : null}
+
+        {isConnected &&
+        !isLoadingTicketCount &&
+        typeof ticketCount === "number" &&
+        ticketCount > 0 ? (
+          <div className="rounded-2xl border border-white/10 bg-white/[0.02] px-4 py-3 space-y-3">
+            <div className="flex items-center justify-between gap-3">
+              <p className="text-xs text-primary">Active tickets this draw</p>
+              <p className="text-sm font-medium">{Math.max(0, Math.round(ticketCount))}</p>
+            </div>
+            <div className="space-y-1">
+              {visibleActiveTickets.map((ticket, idx) => (
+                <div
+                  key={`active-ticket-${ticket.ticketId}-${idx}`}
+                  className="border border-white/10 rounded-sm px-3 py-2 bg-white/[0.02]"
+                >
+                  <div className="flex items-center gap-1.5 flex-wrap">
+                    {ticket.normals.map((n, nIdx) => (
+                      <div
+                        key={`active-${ticket.ticketId}-${n}-${nIdx}`}
+                        className="w-7 h-7 rounded-full bg-white/10 text-white/60 flex items-center justify-center text-[11px] font-semibold"
+                      >
+                        {n}
+                      </div>
+                    ))}
+                    <div className="w-7 h-7 rounded-md bg-blue-500/20 text-blue-300 flex items-center justify-center text-[11px] font-semibold">
+                      {ticket.bonusball}
+                    </div>
+                  </div>
+                </div>
+              ))}
+              {hiddenActiveTicketCount > 0 && (
+                <p className="text-[11px] text-white/45">
+                  +{hiddenActiveTicketCount} more active ticket
+                  {hiddenActiveTicketCount > 1 ? "s" : ""}
+                </p>
+              )}
+            </div>
           </div>
         ) : null}
 
@@ -1119,7 +1231,7 @@ export default function JackpotPage() {
                     {n}
                   </div>
                 ))}
-                <div className="w-8 h-8 rounded-full bg-[#1f2937] text-white flex items-center justify-center text-xs font-semibold">
+                <div className="w-8 h-8 rounded-full bg-blue-500/20 text-blue-300 flex items-center justify-center text-xs font-semibold">
                   {ticket.bonusball}
                 </div>
                 <button
@@ -1208,7 +1320,7 @@ export default function JackpotPage() {
 
                   <Button
                     size="sm"
-                    className="mt-2 rounded-[8px] bg-white text-black"
+                    className="hidden mt-2 rounded-[8px] bg-white text-black"
                     onClick={handleSharePrize}
                   >
                     Share to Feed
@@ -1264,7 +1376,7 @@ export default function JackpotPage() {
 
         {typeof ticketCount === "number" && ticketCount > 0 && (
           <>
-            <div className="flex justify-center mt-1">
+            <div className="hidden flex justify-center mt-1">
               <Button
                 onClick={() => setShowSharePreview(true)}
                 className="w-full bg-white text-black font-semibold py-4 rounded-lg"
@@ -1370,11 +1482,10 @@ export default function JackpotPage() {
                     key={days}
                     type="button"
                     onClick={() => setDraftRecurringDays(days)}
-                    className={`w-full rounded-2xl border px-4 py-3 text-left transition ${
-                      selected
+                    className={`w-full rounded-2xl border px-4 py-3 text-left transition ${selected
                         ? "border-primary bg-primary/10"
                         : "border-white/10 bg-white/[0.02] hover:bg-white/10"
-                    }`}
+                      }`}
                   >
                     <div className="flex items-center justify-between gap-3">
                       <div>
@@ -1385,11 +1496,10 @@ export default function JackpotPage() {
                         </p>
                       </div>
                       <div
-                        className={`h-5 w-5 rounded-full border-2 ${
-                          selected
+                        className={`h-5 w-5 rounded-full border-2 ${selected
                             ? "border-primary bg-primary flex items-center justify-center"
                             : "border-white/30"
-                        }`}
+                          }`}
                       >
                         {selected ? <Check className="h-4 w-4 text-black" /> : null}
                       </div>
@@ -1437,8 +1547,8 @@ export default function JackpotPage() {
           <div className="w-full max-h-[calc(100dvh-120px)] md:max-h-[80vh] overflow-y-auto rounded-2xl bg-background text-white p-4 sm:p-4">
             <div className="flex items-center justify-between mb-3">
               <h3 className="text-md font-semibold">
-            
-              
+
+
                 Numbers{" "}
                 <span className="text-white/40">{draftNormals.length} of 5</span>
               </h3>
@@ -1474,11 +1584,10 @@ export default function JackpotPage() {
                     key={n}
                     type="button"
                     onClick={() => toggleDraftNormal(n)}
-                    className={`h-10 sm:h-10 rounded-full text-sm font-semibold border-2 transition ${
-                      selected
+                    className={`h-10 sm:h-10 rounded-full text-sm font-semibold border-2 transition ${selected
                         ? "border-primary text-primary bg-primary/10"
                         : "border-transparent bg-white/10 text-white/80"
-                    }`}
+                      }`}
                   >
                     {n}
                   </button>
@@ -1502,11 +1611,10 @@ export default function JackpotPage() {
                       setDraftBonusball(n);
                       setPickerError(null);
                     }}
-                    className={`h-10 sm:h-10 rounded-full text-lg font-semibold border-2 transition ${
-                      selected
+                    className={`h-10 sm:h-10 rounded-full text-lg font-semibold border-2 transition ${selected
                         ? "border-primary text-primary bg-primary/10"
                         : "border-transparent bg-white/10 text-white/80"
-                    }`}
+                      }`}
                   >
                     {n}
                   </button>

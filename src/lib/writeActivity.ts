@@ -23,6 +23,7 @@ export interface ActivityInput {
 
   amount?: number;
   token?: string;
+  ticketCount?: number;
   txHash?: string;
   executionMode?: "user_session" | "service_agent";
   agentId?: string | null;
