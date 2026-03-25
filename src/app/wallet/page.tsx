@@ -992,7 +992,7 @@ export default function WalletPage() {
           <span className="hidden text-3xl leading-none mt-3 text-white/90">$</span>
           <span
             className={[
-              "font-ppangram text-[46px] sm:text-[51px] leading-[0.95] font-semibold tracking-tight",
+              "text-[46px] sm:text-[51px] leading-[0.95] font-semibold tracking-tight",
               shakeBalance ? "animate-balance-shake" : "",
             ].join(" ")}
           >

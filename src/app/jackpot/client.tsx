@@ -364,7 +364,10 @@ export default function JackpotPage() {
   const toggleDraftNormal = (n: number) => {
     setDraftNormals((prev) => {
       if (prev.includes(n)) return prev.filter((v) => v !== n);
-      if (prev.length >= 5) return prev;
+      if (prev.length >= 5) {
+        const [, ...rest] = prev;
+        return [...rest, n].sort((a, b) => a - b);
+      }
       return [...prev, n].sort((a, b) => a - b);
     });
     setPickerError(null);
@@ -783,7 +786,10 @@ export default function JackpotPage() {
   };
 
   const displayTickets = selectedTickets.slice(0, effectiveTicketCount);
-  const visibleTickets = displayTickets.slice(0, 5);
+  const visibleTicketsWithIndex = displayTickets
+    .map((ticket, index) => ({ ticket, index }))
+    .slice(-5)
+    .reverse();
   const hiddenTicketCount = Math.max(0, displayTickets.length - 5);
 
   useEffect(() => {
@@ -1024,7 +1030,7 @@ export default function JackpotPage() {
                 currency: "USD",
               }}
               prefix={"$"}
-              className="font-ppangram leading-none text-5xl font-medium text-primary"
+              className="leading-none text-5xl font-medium text-primary"
             />
           ) : (
             <p className="text-2xl text-white/30">N/A</p>
@@ -1225,15 +1231,15 @@ export default function JackpotPage() {
         ) : null}
 
         <div className="mt-3 space-y-2">
-          {visibleTickets.map((ticket, idx) => (
+          {visibleTicketsWithIndex.map(({ ticket, index: ticketIndex }) => (
             <div
-              key={`selected-ticket-${idx}`}
+              key={`selected-ticket-${ticketIndex}`}
               className="border border-white/10 rounded-2xl px-3 py-3 bg-white/[0.02]"
             >
               <div className="flex items-center gap-1.5">
                 {ticket.normals.map((n, nIdx) => (
                   <div
-                    key={`${idx}-${n}-${nIdx}`}
+                    key={`${ticketIndex}-${n}-${nIdx}`}
                     className="w-8 h-8 rounded-full bg-[#ececf0] text-[#111827] flex items-center justify-center text-xs font-semibold"
                   >
                     {n}
@@ -1244,14 +1250,14 @@ export default function JackpotPage() {
                 </div>
                 <button
                   type="button"
-                  onClick={() => openPicker(idx)}
+                  onClick={() => openPicker(ticketIndex)}
                   className="ml-auto p-2 rounded-full text-white/70 hover:text-white hover:bg-white/10 transition"
-                  aria-label={`Open number picker for ticket ${idx + 1}`}
+                  aria-label={`Open number picker for ticket ${ticketIndex + 1}`}
                 >
                   <MoreVertical className="w-4 h-4" />
                 </button>
               </div>
-              <p className="hidden text-[10px] text-white/45 mt-2">Ticket {idx + 1}</p>
+              <p className="hidden text-[10px] text-white/45 mt-2">Ticket {ticketIndex + 1}</p>
             </div>
           ))}
           {hiddenTicketCount > 0 && (
@@ -1417,7 +1423,7 @@ export default function JackpotPage() {
                     className="w-9 h-9 rounded-lg object-cover shrink-0"
                   />
                 </div>
-                <p className="font-ppangram text-4xl font-semibold">
+                <p className="text-4xl font-semibold">
                   ${formatJackpotAmount(jackpotAmount)}
                 </p>
                 <p className="text-sm opacity-90">
@@ -1475,7 +1481,7 @@ export default function JackpotPage() {
         onOpenChange={(open) => setIsRecurringDialogOpen(open)}
       >
         <ResponsiveDialogContent className="top-[80px] bottom-0 p-4 rounded-t-3xl flex flex-col md:top-1/2 md:bottom-auto md:w-full md:max-w-md md:max-h-[85vh] md:overflow-hidden">
-          <div className="w-full max-h-[calc(100dvh-120px)] md:max-h-[80vh] overflow-y-auto rounded-2xl bg-background text-white p-4 sm:p-4 space-y-4">
+          <div className="w-full max-h-[calc(100dvh-120px)] md:max-h-[80vh] overflow-y-auto rounded-2xl bg-background text-white p-2 space-y-4">
             <div className="text-center space-y-2">
               <p className="text-xl font-semibold leading-tight">Daily Play, Made Easy</p>
               <p className="text-sm text-white/60">
@@ -1555,13 +1561,13 @@ export default function JackpotPage() {
         }}
       >
         <ResponsiveDialogContent className="top-[80px] bottom-0 p-4 rounded-t-3xl flex flex-col md:top-1/2 md:bottom-auto md:w-full md:max-w-2xl md:max-h-[85vh] md:overflow-hidden">
-          <div className="w-full max-h-[calc(100dvh-120px)] md:max-h-[80vh] overflow-y-auto rounded-2xl bg-background text-white p-4 sm:p-4">
+          <div className="w-full max-h-[calc(100dvh-120px)] md:max-h-[80vh] overflow-y-auto rounded-2xl bg-background text-white p-2">
             <div className="flex items-center justify-between mb-3">
               <h3 className="text-md font-semibold">
 
 
-                Numbers{" "}
-                <span className="text-white/40">{draftNormals.length} of 5</span>
+                Pick 5 Numbers{" "}
+                <span className="text-white/40 text-sm">{draftNormals.length}/5</span>
               </h3>
               <div className="flex items-center gap-1">
                 <Button
@@ -1595,7 +1601,7 @@ export default function JackpotPage() {
                     key={n}
                     type="button"
                     onClick={() => toggleDraftNormal(n)}
-                    className={`h-10 sm:h-10 rounded-full text-sm font-semibold border-2 transition ${selected
+                    className={`h-10 sm:h-10 rounded-full text-xs font-semibold border-2 transition ${selected
                         ? "border-primary text-primary bg-primary/10"
                         : "border-transparent bg-white/10 text-white/80"
                       }`}
@@ -1608,7 +1614,7 @@ export default function JackpotPage() {
 
             <div className="mt-6 mb-3">
               <h3 className="text-md font-semibold">
-                Bonus <span className="text-white/40">{draftBonusball ? 1 : 0} of 1</span>
+                Bonus Number <span className="hidden text-white/40">{draftBonusball ? 1 : 0} of 1</span>
               </h3>
             </div>
             <div className="grid grid-cols-6 sm:grid-cols-8 gap-2 sm:gap-3">

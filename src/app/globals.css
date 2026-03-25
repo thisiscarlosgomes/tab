@@ -2,33 +2,6 @@
 @tailwind components;
 @tailwind utilities;
 
-@font-face {
-  font-family: "PPPangramSansRounded";
-  src: url("/fonts/PPPangramSansRounded/PPPangramSansRounded_Bold.otf")
-    format("opentype");
-  font-style: normal;
-  font-weight: 500;
-  font-display: swap;
-}
-
-@font-face {
-  font-family: "PPPangramSansRounded";
-  src: url("/fonts/PPPangramSansRounded/PPPangramSansRounded_Bold.otf")
-    format("opentype");
-  font-style: normal;
-  font-weight: 600;
-  font-display: swap;
-}
-
-@font-face {
-  font-family: "PPPangramSansRounded";
-  src: url("/fonts/PPPangramSansRounded/PPPangramSansRounded_Bold.otf")
-    format("opentype");
-  font-style: normal;
-  font-weight: 700;
-  font-display: swap;
-}
-
 @layer base {
   :root {
    --background: #0D0D13;
@@ -254,23 +227,6 @@ input[type="number"] {
 
 .animate-spin-slow {
   animation: spin-slow 2s ease-in-out forwards;
-}
-
-.font-ppangram {
-  font-family:
-    "PPPangramSansRounded",
-    "SF Pro Rounded",
-    "SF Pro Text",
-    "SF Pro Display",
-    -apple-system,
-    BlinkMacSystemFont,
-    "Inter",
-    "Segoe UI",
-    Roboto,
-    "Helvetica Neue",
-    Arial,
-    sans-serif;
-  font-weight: 700;
 }
 
 [data-sonner-toaster] {
