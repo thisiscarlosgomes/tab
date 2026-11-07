@@ -8,7 +8,10 @@
     "build": "next build",
     "prestart": "next build",
     "start": "next start",
-    "lint": "next lint"
+    "lint": "eslint src tests/dinner --ext .js,.ts,.tsx",
+    "test": "tsx --tsconfig tests/dinner/tsconfig.json --test --test-concurrency=1 tests/dinner/*.test.ts tests/dinner/*.test.tsx",
+    "typecheck": "tsc --noEmit",
+    "verify:dinner": "npm run typecheck && npm run lint && npm test"
   },
   "dependencies": {
     "@ai-sdk/openai": "^3.0.36",
@@ -62,6 +65,7 @@
     "react-qr-code": "^2.0.15",
     "react-qr-reader": "^3.0.0-beta-1",
     "react-qrcode-logo": "^3.0.0",
+    "sharp": "^0.34.5",
     "sonner": "^2.0.1",
     "tailwind-merge": "^2.5.5",
     "tailwind-scrollbar-hide": "^2.0.0",
@@ -73,7 +77,10 @@
     "zod": "^3.24.2"
   },
   "devDependencies": {
+    "@testing-library/dom": "^10.4.2",
+    "@testing-library/react": "^16.3.3",
     "@types/canvas-confetti": "^1.9.0",
+    "@types/jsdom": "^21.1.7",
     "@types/node": "^20",
     "@types/react": "^18",
     "@types/react-dom": "^18",
@@ -86,9 +93,12 @@
     "eslint-plugin-react": "^7.37.2",
     "eslint-plugin-react-hooks": "^5.1.0",
     "eslint-plugin-simple-import-sort": "^12.1.1",
+    "jsdom": "^26.1.0",
+    "mongodb-memory-server": "^11.3.0",
     "postcss": "^8",
     "prettier": "3.4.2",
     "tailwindcss": "^3.4.1",
+    "tsx": "^4.23.15",
     "typescript": "^5"
   }
 }

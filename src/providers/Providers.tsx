@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { usePathname } from "next/navigation";
 import { PrivyProvider } from "@privy-io/react-auth";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { FrameSplashProvider } from "./FrameSplashProvider";
@@ -22,6 +23,8 @@ const client = new QueryClient({
 });
 
 function Providers({ children }: React.PropsWithChildren) {
+  const pathname = usePathname();
+  const dinnerMode = pathname === "/app" || pathname.startsWith("/app/");
   const [hasMounted, setHasMounted] = useState(false);
 
   useEffect(() => {
@@ -80,8 +83,8 @@ function Providers({ children }: React.PropsWithChildren) {
           },
         },
         appearance: {
-          accentColor: "#fff",
-          theme: "#19191E",
+          accentColor: dinnerMode ? "#2F704D" : "#fff",
+          theme: dinnerMode ? "light" : "#19191E",
           landingHeader: "Welcome to tab",
         },
         fundingMethodConfig: {

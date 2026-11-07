@@ -34,7 +34,9 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     scopes?: string[];
   } | null>(null);
 
+  const isDinnerRoute = pathname === "/app" || pathname.startsWith("/app/");
   const isPublicRoute =
+    isDinnerRoute ||
     pathname === "/" ||
     pathname === "/faq" ||
     pathname === "/privacy" ||
@@ -230,6 +232,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     identityToken,
     getAccessToken,
   ]);
+
+  if (isDinnerRoute) return <>{children}</>;
 
   if (!ready) {
     return (
