@@ -625,3 +625,31 @@
 .dinner-outside-review {
   background: var(--canvas);
 }
+
+.dinner-agent-thread {
+  max-height: 65vh;
+  overflow-y: auto;
+  display: grid;
+  gap: 18px;
+  padding-bottom: 20px;
+}
+.dinner-agent-thread p {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.dinner-agent-proposal {
+  border: 1px solid var(--rule);
+  margin-top: 16px;
+}
+.dinner-agent-proposal > .dinner-note {
+  overflow-wrap: anywhere;
+}
+.dinner-app button:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+@media (max-width: 767px) {
+  .dinner-nav {
+    grid-template-columns: repeat(4, 1fr);
+  }
+}

@@ -6,13 +6,13 @@ The legacy root Providers continue to own Privy/X login and OAuth persistence. A
 
 Considered separate collections with multi-document transactions versus a bounded room aggregate with compare-and-swap. Chosen: a room aggregate containing membership, invitations, ordered messages, expenses and read cursors. Mongo revision CAS atomically commits invitation acceptance plus membership and confirmed expenses plus cent-exact obligations (amounts and parties stay fixed; explicit outside-receipt acknowledgement can change status). It requires no replica-set transactions and makes retry behavior testable against real Mongo. Limits (50 members, 100 invitations, 1,000 messages, 200 expenses per room) deliberately keep documents small for this beta. Exceeding them returns a clear error rather than silently dropping history. Extract append-only collections with transactional outbox before lifting limits.
 
-Private raster attachments live in a separate collection, limited to 2 MB per upload, re-encoded to WebP with sharp (no SVG, metadata or original active content served), with authenticated membership checks on upload/download. Receipt AI extraction is not necessary for the beta; entered expense fields remain editable until confirmation. No conversation goes to an assistant. Attachments are capped per room; uploaded-but-unused files count toward that limit.
+Private raster attachments live in a separate collection, limited to 2 MB per upload, re-encoded to WebP with sharp (no SVG, metadata or original active content served), with authenticated membership checks on upload/download. Receipt AI extraction is not necessary for the beta; entered expense fields remain editable until confirmation. Ordinary conversation triggers no assistant reply. Explicit `@Tab` requests process recent room text and shared notes through the scoped assistant described in [Tab agent](tab-agent.md); private attachments are not sent. Attachments are capped per room; uploaded-but-unused files count toward that limit.
 
 UI calls a small authenticated API. Persisted polling/cursor catch-up every three seconds (and on visibility/online) is the beta transport. The server is authoritative; sent means persisted. Repeating a client retry ID with changed content fails with 409. Expense confirmation is a state transition, not a payment. Activities derive from persisted room/membership/expense state, not best-effort financial writes.
 
 ## Local setup
 
-Node 22 recommended; `npm ci`; set `MONGODB_URI`, `NEXT_PUBLIC_PRIVY_APP_ID`, and `PRIVY_APP_SECRET` using your existing Privy app; set `DINNER_ROOMS_ENABLED=true`. `npm run dev`, open `/app`. X login must be enabled in the existing Privy app; existing X graph configuration is optional for sharing single-person invite links. No new bank, wallet, blob or assistant key is required.
+Node 22 recommended; `npm ci`; set `MONGODB_URI`, `NEXT_PUBLIC_PRIVY_APP_ID`, and `PRIVY_APP_SECRET` using your existing Privy app; set `DINNER_ROOMS_ENABLED=true`. `npm run dev`, open `/app`. X login must be enabled in the existing Privy app; existing X graph configuration is optional for sharing single-person invite links. No new bank, wallet, or blob key is required. Generated agent replies reuse the existing optional `OPENAI_API_KEY` and `OPENAI_CHAT_MODEL`; without a key, the agent provides verified read-only summaries.
 
 `npm test` starts a disposable real Mongo via mongodb-memory-server, no application credentials needed. First run downloads a MongoDB test binary. `npm run typecheck` checks the repository; `npm run lint` checks the repository with ESLint. `npm run verify:dinner` runs all three. Never point test fixtures at a production DB.
 
@@ -26,7 +26,7 @@ Node 22 recommended; `npm ci`; set `MONGODB_URI`, `NEXT_PUBLIC_PRIVY_APP_ID`, an
 
 ## Gates and deliberate exclusions
 
-No live provider login/graph assertion is made by automated tests. Test Privy redirects and two real accounts on staging before expanding the beta. Existing legacy origin-only authorization gaps are not fixed by this isolated slice; do not interpret new API safety as an audit of old payment routes. No member removal, archival/deletion, expense amendment after confirmation, settlement, pots, refunds, push notifications, assistant processing, agent execution or financial custody in this slice. Disputed shares and flags remain visible. Outside-receipt confirmation does not resolve or erase a flag or amend the share. Editing confirmed expenses needs a versioned adjustment design later.
+No live provider login/graph assertion is made by automated tests. Test Privy redirects and two real accounts on staging before expanding the beta. Existing legacy origin-only authorization gaps are not fixed by this isolated slice; do not interpret new API safety as an audit of old payment routes. No member removal, archival/deletion, expense amendment after confirmation, settlement, pots, refunds, push notifications, delegated financial agent execution or financial custody in this slice. Disputed shares and flags remain visible. Outside-receipt confirmation does not resolve or erase a flag or amend the share. Editing confirmed expenses needs a versioned adjustment design later.
 
 ## Verification scope
 
@@ -36,7 +36,7 @@ The pre-existing whole-repository compiler/lint failures were repaired with narr
 
 ## Verified results
 
-69 tests pass (62 domain/HTTP/Mongo contracts, six DOM expense/chat flows and one document/portal theme test), full TypeScript passes including Next-generated route checks, and source/test ESLint passes with no warnings. A production build also completes with synthetic build-only provider/signer fixtures and localhost-only Mongo/RPC endpoints; this proves compilation and prerendering, not provider connectivity. Whole-app builds still require the legacy `ENCRYPTION_KEY` (32 characters), `PRIVATE_KEY`, and RPC configuration in addition to Privy/Mongo; this is not new dinner-room configuration. Never reuse production signing keys for test builds.
+95 tests pass (84 domain/HTTP/Mongo contracts, ten DOM coordination flows and one document/portal theme test), full TypeScript passes including Next-generated route checks, and source/test ESLint passes with no warnings. A production build also completes with synthetic build-only provider/signer fixtures and localhost-only Mongo/RPC endpoints; this proves compilation and prerendering, not provider connectivity. Whole-app builds still require the legacy `ENCRYPTION_KEY` (32 characters), `PRIVATE_KEY`, and RPC configuration in addition to Privy/Mongo; this is not new dinner-room configuration. Never reuse production signing keys for test builds.
 
 ## Outside-payment reports: coordination, not custody
 
@@ -52,4 +52,8 @@ Middleware overwrites a presentation-only request hint based on `/app` versus le
 
 Tradeoff: reading the presentation hint in the root layout makes page rendering dynamic rather than statically prerendered. It does not change authorization or API permissions.
 
-After starting the app with the beta flag, run `npm run test:theme-http` (optional `DINNER_THEME_SMOKE_URL` overrides localhost:3000). Seven HTTP regression tests assert actual server-rendered html classes and theme-color on Today, Rooms, Activity, invitation and three legacy routes, including opposite caller hints. These seven checks also passed against a production build. This is HTTP/DOM verification, not a claim of a real authenticated mobile/desktop browser session.
+After starting the app with the beta flag, run `npm run test:theme-http` (optional `DINNER_THEME_SMOKE_URL` overrides localhost:3000). Nine HTTP regression tests assert actual server-rendered html classes and theme-color on Today, Rooms, Activity, Wallet, Agent, invitation and three legacy routes, including opposite caller hints. These nine checks also passed against a production build. This is HTTP/DOM verification, not a claim of a real authenticated mobile/desktop browser session.
+
+## Scoped Tab agent and coordination
+
+[Tab agent](tab-agent.md) documents the shared AI SDK runtime, on-demand skills, explicit scoped Mongo memory, private sessions, draft-only tools, wallet projections, agreements, reminders, and Chat SDK decision. [Try the coordination journey](tab-agent-beta.md) covers room mentions, private chat, wallet, and Plan. The bot never gains financial confirmation authority.

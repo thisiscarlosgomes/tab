@@ -1,4 +1,5 @@
 "use client";
+import { RoomPlan } from "./Coordination";
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { roomSchema } from "@/lib/dinner/client-schema";
@@ -81,7 +82,7 @@ export function Room({ id }: { id: string }) {
             </div>
           </div>
           <div className="dinner-tabs" role="tablist" aria-label="Room views">
-            {["conversation", "money", "members"].map((tab) => (
+            {["conversation", "money", "members", "plan"].map((tab) => (
               <button
                 key={tab}
                 role="tab"
@@ -107,8 +108,8 @@ export function Room({ id }: { id: string }) {
                     <p className="dinner-eyebrow">From the plan to the split</p>
                     <h2>Keep it simple.</h2>
                     <p className="dinner-note">
-                      Talk here. Add your dinner expense in Money. Bring the
-                      same people back next time.
+                      Talk here. Ask @Tab to prepare a split, then review it in
+                      Money. Keep agreements and private reminders in Plan.
                     </p>
                     <button
                       className="dinner-quiet"
@@ -120,9 +121,11 @@ export function Room({ id }: { id: string }) {
                   <section className="dinner-card">
                     <h3>Good company. Clear boundaries.</h3>
                     <p className="dinner-note">
-                      No money is held or moved here. Expense records are
-                      obligations, never payment approvals. Ordinary chat stays
-                      ordinary chat.
+                      No money is held or moved here. Mention @Tab for a scoped
+                      summary or a proposed split. Only addressed requests send
+                      recent room text and shared notes to the configured model
+                      provider. Ordinary conversation triggers no assistant
+                      reply.
                     </p>
                     <button
                       className="dinner-small dinner-quiet"
@@ -135,6 +138,8 @@ export function Room({ id }: { id: string }) {
               </div>
             ) : view === "money" ? (
               <Money room={room} refresh={refresh} />
+            ) : view === "plan" ? (
+              <RoomPlan roomId={room.id} />
             ) : (
               <Members room={room} refresh={refresh} />
             )}

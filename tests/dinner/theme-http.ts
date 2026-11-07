@@ -7,6 +7,8 @@ for (const [path, dinner] of [
   ["/app", true],
   ["/app/rooms", true],
   ["/app/activity", true],
+  ["/app/wallet", true],
+  ["/app/agent", true],
   ["/app/invite/preview-only", true],
   ["/wallet", false],
   ["/rooms", false],

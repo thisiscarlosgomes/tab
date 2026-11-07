@@ -12,7 +12,8 @@
     "test": "tsx --tsconfig tests/dinner/tsconfig.json --test --test-concurrency=1 tests/dinner/*.test.ts tests/dinner/*.test.tsx",
     "typecheck": "tsc --noEmit",
     "verify:dinner": "npm run typecheck && npm run lint && npm test",
-    "test:theme-http": "tsx --test tests/dinner/theme-http.ts"
+    "test:theme-http": "tsx --test tests/dinner/theme-http.ts",
+    "test:agent-trace": "tsx --test tests/dinner/skills-trace.ts"
   },
   "dependencies": {
     "@ai-sdk/openai": "^3.0.36",

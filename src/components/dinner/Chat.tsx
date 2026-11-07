@@ -8,6 +8,12 @@ import {
   type FormEvent,
 } from "react";
 import { z } from "zod";
+import {
+  mentionsTab,
+  proposalSchema,
+  Proposal,
+} from "@/lib/dinner/agent/model";
+import { AgentCards } from "./AgentCards";
 import { messageSchema } from "@/lib/dinner/client-schema";
 import { RoomView, Message, messageInput } from "@/lib/dinner/model";
 import { useDinner } from "./DinnerShell";
@@ -26,6 +32,9 @@ export function Chat({
   refresh: () => Promise<void>;
 }) {
   const { api, me } = useDinner();
+  const [botBusy, setBotBusy] = useState(false);
+  const [botError, setBotError] = useState("");
+  const [proposals, setProposals] = useState<Proposal[]>([]);
   const [text, setText] = useState("");
   const [reply, setReply] = useState<Message | null>(null);
   const [attachments, setAttachments] = useState<string[]>([]);
@@ -106,6 +115,48 @@ export function Chat({
       window.removeEventListener("online", catchUp);
     };
   }, [api, room.id, messages]);
+  async function loadProposals() {
+    try {
+      setProposals(
+        await api(`/rooms/${room.id}/proposals`, {}, z.array(proposalSchema)),
+      );
+    } catch {
+      /* Keep member chat usable if proposals cannot refresh. */
+    }
+  }
+  useEffect(() => {
+    void loadProposals();
+    const timer = setInterval(() => {
+      if (document.visibilityState === "visible") void loadProposals();
+    }, 5000);
+    return () => clearInterval(timer);
+  }, [api, room.id]);
+  async function askTab(message: Message) {
+    setBotBusy(true);
+    setBotError("");
+    try {
+      const result = await api(
+        `/rooms/${room.id}/bot`,
+        {
+          method: "POST",
+          body: JSON.stringify({ messageId: message.id }),
+          signal: AbortSignal.timeout(55_000),
+        },
+        z.object({ status: z.string(), text: z.string() }),
+      );
+      if (result.status !== "complete") setBotError(result.text);
+      await refresh();
+      await loadProposals();
+    } catch (e) {
+      setBotError(
+        e instanceof Error
+          ? e.message
+          : "Tab could not reply. Your chat message is saved.",
+      );
+    } finally {
+      setBotBusy(false);
+    }
+  }
   async function send(input: z.infer<typeof messageInput>) {
     setPending((previous) => [
       ...previous.filter((p) => p.input.clientId !== input.clientId),
@@ -126,6 +177,7 @@ export function Chat({
         previous.filter((p) => p.input.clientId !== input.clientId),
       );
       await refresh();
+      if (mentionsTab(message.text)) void askTab(message);
     } catch (e) {
       setPending((previous) =>
         previous.map((p) =>
@@ -235,16 +287,20 @@ export function Chat({
               )}
             <article className="dinner-message">
               <span className="dinner-avatar" aria-hidden="true">
-                {(
-                  room.members.find((m) => m.userId === message.authorId)
-                    ?.name ?? "?"
-                ).slice(0, 1)}
+                {message.kind === "tab"
+                  ? "T"
+                  : (
+                      room.members.find((m) => m.userId === message.authorId)
+                        ?.name ?? "?"
+                    ).slice(0, 1)}
               </span>
               <div className="dinner-message-body">
                 <div className="dinner-message-meta">
                   <strong>
-                    {room.members.find((m) => m.userId === message.authorId)
-                      ?.name ?? "Member"}
+                    {message.kind === "tab"
+                      ? "Tab · room assistant"
+                      : (room.members.find((m) => m.userId === message.authorId)
+                          ?.name ?? "Member")}
                   </strong>
                   <time dateTime={message.createdAt}>
                     {new Date(message.createdAt).toLocaleTimeString("en-US", {
@@ -261,7 +317,29 @@ export function Chat({
                       "an image"}
                   </div>
                 )}
+                {message.kind === "tab" && (
+                  <p className="dinner-note">
+                    Requested by{" "}
+                    {room.members.find((m) => m.userId === message.requestedBy)
+                      ?.name ?? "a member"}{" "}
+                    · read / prepare only
+                  </p>
+                )}
                 <p>{message.text}</p>
+                {message.kind !== "tab" &&
+                  message.authorId === me?.id &&
+                  mentionsTab(message.text) &&
+                  !messages.some(
+                    (m) => m.kind === "tab" && m.runId === message.id,
+                  ) && (
+                    <button
+                      className="dinner-quiet"
+                      disabled={botBusy}
+                      onClick={() => void askTab(message)}
+                    >
+                      {botBusy ? "Tab is preparing…" : "Ask Tab to reply"}
+                    </button>
+                  )}
                 {message.attachmentIds.map((id) => (
                   <PrivateImage key={id} id={id} roomId={room.id} />
                 ))}
@@ -330,6 +408,31 @@ export function Chat({
           )}
         </div>
       )}
+      {botError && (
+        <p role="status" className="dinner-error">
+          {botError} The member message is saved. Use Ask Tab to reply to retry
+          without resending it.
+        </p>
+      )}
+      <p className="dinner-note">
+        Tab is here when you mention @Tab. Recent text and shared notes are
+        processed for addressed requests only. No payment or receipt
+        confirmation can be executed by the model.
+      </p>
+      <button
+        type="button"
+        className="dinner-quiet"
+        onClick={() => setText((value) => `@Tab ${value}`)}
+      >
+        Mention @Tab
+      </button>
+      <AgentCards
+        proposals={proposals}
+        refresh={async () => {
+          await refresh();
+          await loadProposals();
+        }}
+      />
       <form className="dinner-composer" onSubmit={submit}>
         {reply && (
           <div className="dinner-actions">

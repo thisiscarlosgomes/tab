@@ -7,6 +7,7 @@ import { z } from "zod";
 import { listSchema, roomSchema } from "@/lib/dinner/client-schema";
 import { outsideActivity, pendingOutside } from "@/lib/dinner/projections";
 import { totals, usd } from "@/lib/dinner/model";
+import { PrivateReminders } from "./PrivateReminders";
 import { useDinner } from "./DinnerShell";
 
 export function Home({
@@ -273,6 +274,7 @@ export function Home({
             {roomList}
           </div>
           <aside className="dinner-stack">
+            <PrivateReminders />
             <section className="dinner-card">
               <h2>Needs your attention</h2>
               {data.invites.map((i) => (
@@ -301,8 +303,10 @@ export function Home({
                     </div>
                     <p className="dinner-note">
                       Joining gives access to room conversation and shared
-                      expense records, not debt or spending authority. No
-                      assistant processes this room’s conversation.
+                      expense records, not debt or spending authority.
+                      Mentioning @Tab processes recent room text and shared
+                      notes with the configured model provider; no payment
+                      authority is granted.
                     </p>
                   </div>
                 </div>

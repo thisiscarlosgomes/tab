@@ -341,8 +341,11 @@ export function Money({
           ))
         ) : (
           <p className="dinner-note">
-            No outstanding shares. A draft, message or reaction never confirms
-            receipt outside Tab.
+            No outstanding shares. “Report paid outside Tab” appears after you
+            confirm a shared expense with someone else. A one-person expense
+            creates no debt to yourself. Add accepted members, create a split in
+            Money, then confirm it; reports still need the creditor’s explicit
+            receipt confirmation.
           </p>
         )}
       </section>

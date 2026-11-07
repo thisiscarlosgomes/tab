@@ -106,6 +106,9 @@ export function DinnerShell({ children }: { children: ReactNode }) {
           tab<span>together is easier</span>
         </Link>
         <div className="dinner-account">
+          <Link className="dinner-inline-link" href="/app/agent">
+            Ask Tab ↗
+          </Link>
           <span className="dinner-beta">Rooms beta</span>
           {authenticated ? (
             <button className="dinner-quiet" onClick={() => void logout()}>
@@ -122,6 +125,7 @@ export function DinnerShell({ children }: { children: ReactNode }) {
         {[
           { href: "/app", label: "Today" },
           { href: "/app/rooms", label: "Rooms" },
+          { href: "/app/wallet", label: "Wallet" },
           { href: "/app/activity", label: "Activity" },
         ].map((item) => (
           <Link
@@ -142,7 +146,7 @@ export function DinnerShell({ children }: { children: ReactNode }) {
         ))}
       </nav>
       <DinnerContext.Provider value={{ api, me, image }}>
-        <main className="dinner-main">
+        <main className="dinner-main" key={me?.id ?? "signed-out"}>
           {!ready ? (
             <p role="status">Getting Tab ready…</p>
           ) : !authenticated && !publicInvite ? (

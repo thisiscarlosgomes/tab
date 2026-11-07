@@ -127,10 +127,11 @@ export function Invite({ token }: { token: string }) {
             authority. This beta does not hold or move money.
           </p>
           <p className="dinner-note">
-            Conversation and receipt images are private to accepted members. No
-            room assistant processes your conversation in this slice. Room
-            members may record explicitly selected expense shares; you can flag
-            a mistake.
+            Conversation and receipt images are private to accepted members.
+            When someone mentions @Tab, the recent room text and shared notes
+            are sent to the configured model provider for that reply; ordinary
+            conversation triggers no automatic reply. Room members may record
+            explicitly selected expense shares; you can flag a mistake.
           </p>
           <p className="dinner-note">
             Invite status: {preview.status} · Expires{" "}

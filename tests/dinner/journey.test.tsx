@@ -1,5 +1,5 @@
 import "./dom";
-import React, { useState, useRef } from "react";
+import React, { useState, useRef, useCallback } from "react";
 import { before, after, beforeEach, afterEach, test } from "node:test";
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
@@ -15,6 +15,11 @@ import { MongoMemoryServer } from "mongodb-memory-server";
 import { MongoClient } from "mongodb";
 import { DinnerContext } from "../../src/components/dinner/DinnerShell";
 import { Money } from "../../src/components/dinner/Money";
+import { DinnerAgentService } from "../../src/lib/dinner/agent/service";
+import { AgentRunner } from "../../src/lib/dinner/agent/capabilities";
+import { PersonalAgent } from "../../src/components/dinner/PersonalAgent";
+import { RoomPlan } from "../../src/components/dinner/Coordination";
+import { PrivateReminders } from "../../src/components/dinner/PrivateReminders";
 import { Chat } from "../../src/components/dinner/Chat";
 import { DinnerService } from "../../src/lib/dinner/service";
 import { MongoRoomStore } from "../../src/lib/dinner/mongo-store";
@@ -27,6 +32,8 @@ let client: MongoClient;
 let service: DinnerService;
 let attachments: Attachments;
 let initial: RoomView;
+let agent: DinnerAgentService;
+let agentRunner: AgentRunner;
 const alice: Actor = {
   id: randomUUID(),
   name: "Alice",
@@ -56,6 +63,12 @@ beforeEach(async () => {
   });
   await service.respond(bob, { token: invite.token }, "accepted");
   initial = roomView(await service.memberRoom(created.id, alice));
+  agentRunner = async () =>
+    "Here is your verified summary. Nothing has been paid.";
+  agent = new DinnerAgentService(db, service, (context) =>
+    agentRunner(context),
+  );
+  await agent.session(alice);
 });
 afterEach(cleanup);
 async function api<T>(
@@ -67,7 +80,7 @@ async function api<T>(
   const response = await handleDinner(
     new Request(`http://localhost/api/dinner${path}`, init),
     path.slice(1).split("/"),
-    { enabled: true, actor: async () => actor, service, attachments },
+    { enabled: true, actor: async () => actor, service, attachments, agent },
   );
   const raw: unknown = await response.json();
   if (!response.ok) {
@@ -80,29 +93,38 @@ function Harness({
   chat = false,
   loseAck = false,
   actor = alice,
+  personal = false,
+  plan = false,
+  reminders = false,
 }: {
   chat?: boolean;
   loseAck?: boolean;
   actor?: Actor;
+  personal?: boolean;
+  plan?: boolean;
+  reminders?: boolean;
 }) {
   const lost = useRef(false);
-  async function request<T>(
-    path: string,
-    init: RequestInit,
-    schema: z.ZodType<T>,
-  ): Promise<T> {
-    const result = await api(path, init, schema, actor);
-    if (
-      loseAck &&
-      !lost.current &&
-      path.endsWith("/messages") &&
-      init.method === "POST"
-    ) {
-      lost.current = true;
-      throw new Error("Connection interrupted after persistence");
-    }
-    return result;
-  }
+  const request = useCallback(
+    async <T,>(
+      path: string,
+      init: RequestInit,
+      schema: z.ZodType<T>,
+    ): Promise<T> => {
+      const result = await api(path, init, schema, actor);
+      if (
+        loseAck &&
+        !lost.current &&
+        path.endsWith("/messages") &&
+        init.method === "POST"
+      ) {
+        lost.current = true;
+        throw new Error("Connection interrupted after persistence");
+      }
+      return result;
+    },
+    [actor, loseAck],
+  );
   const [room, setRoom] = useState(initial);
   async function refresh() {
     setRoom(roomView(await service.memberRoom(room.id, alice)));
@@ -115,7 +137,13 @@ function Harness({
         image: async () => new Blob(),
       }}
     >
-      {chat ? (
+      {personal ? (
+        <PersonalAgent />
+      ) : plan ? (
+        <RoomPlan roomId={room.id} />
+      ) : reminders ? (
+        <PrivateReminders />
+      ) : chat ? (
         <Chat room={room} refresh={refresh} />
       ) : (
         <Money room={room} refresh={refresh} />
@@ -191,6 +219,14 @@ test("chat send, reply and reaction are visible only after persistence", async (
   fireEvent.click(screen.getByRole("button", { name: "Send" }));
   await waitFor(() => assert.equal(screen.getAllByText("Sent").length, 2));
   fireEvent.click(screen.getAllByRole("button", { name: "React 👍" })[0]);
+  await waitFor(() =>
+    assert.equal(
+      screen
+        .getAllByRole("button", { name: "React 👍" })[0]
+        .getAttribute("aria-pressed"),
+      "true",
+    ),
+  );
   await waitFor(async () =>
     assert.equal(
       (await service.memberRoom(initial.id, bob)).messages[0].reactions.length,
@@ -299,4 +335,108 @@ test("the reporting debtor can cancel while unconfirmed without clearing the sha
     2500,
   );
   assert.ok(screen.getByText(/Reporter cancelled this report/));
+});
+
+test("a persisted @Tab message automatically gets a distinct saved bot reply, ordinary chat remains quiet", async () => {
+  render(<Harness chat />);
+  fireEvent.change(screen.getByLabelText("Message the room"), {
+    target: { value: "Ordinary dinner conversation" },
+  });
+  fireEvent.click(screen.getByRole("button", { name: "Send" }));
+  await screen.findByText("Sent");
+  assert.equal(
+    (await service.memberRoom(initial.id, alice)).messages.length,
+    1,
+  );
+  fireEvent.change(screen.getByLabelText("Message the room"), {
+    target: { value: "@Tab who owes whom?" },
+  });
+  fireEvent.click(screen.getByRole("button", { name: "Send" }));
+  await screen.findByText("Tab · room assistant");
+  assert.ok(
+    screen.getByText("Here is your verified summary. Nothing has been paid."),
+  );
+  const saved = await service.memberRoom(initial.id, bob);
+  assert.equal(saved.messages.length, 3);
+  assert.equal(saved.messages[2].kind, "tab");
+});
+test("an addressed split proposal needs a human save and still creates no obligation", async () => {
+  agentRunner = async (context) => {
+    if (context.scope.kind !== "room") throw new Error("Expected room");
+    await context.prepareExpense({
+      roomId: context.scope.roomId,
+      description: "Shared noodles",
+      totalCents: 5001,
+      payerId: alice.id,
+      shares: [
+        { userId: alice.id, cents: 2501 },
+        { userId: bob.id, cents: 2500 },
+      ],
+    });
+    return "Review the proposed split below.";
+  };
+  render(<Harness chat />);
+  fireEvent.change(screen.getByLabelText("Message the room"), {
+    target: { value: "@Tab prepare our split" },
+  });
+  fireEvent.click(screen.getByRole("button", { name: "Send" }));
+  const save = await screen.findByRole("button", {
+    name: "Save editable draft",
+  });
+  assert.equal((await service.memberRoom(initial.id, bob)).expenses.length, 0);
+  fireEvent.click(save);
+  await screen.findByText("Review saved draft in Money ↗");
+  const saved = await service.memberRoom(initial.id, bob);
+  assert.equal(saved.expenses[0].status, "draft");
+  assert.equal(totals(saved, bob.id).owe, 0);
+});
+test("the private agent restores its server conversation and explicit preferences after remount", async () => {
+  let view = render(<Harness personal />);
+  fireEvent.change(screen.getByLabelText("Message Tab"), {
+    target: { value: "What do I owe?" },
+  });
+  fireEvent.click(screen.getByRole("button", { name: "Ask Tab" }));
+  await screen.findByText("Tab · personal assistant");
+  fireEvent.change(screen.getByLabelText("Your preferences"), {
+    target: { value: "Keep replies brief" },
+  });
+  fireEvent.click(screen.getByRole("button", { name: "Save notes" }));
+  await screen.findByText(/Version 1/);
+  view.unmount();
+  view = render(<Harness personal />);
+  await screen.findByText("What do I owe?");
+  await screen.findByDisplayValue("Keep replies brief");
+  assert.equal((await agent.session(alice)).messages.length, 2);
+  assert.equal((await agent.session(bob)).messages.length, 0);
+  view.unmount();
+});
+test("room Plan saves a shared agreement and a private reminder that appears on Today until dismissed", async () => {
+  const view = render(<Harness plan />);
+  const areas = await screen.findAllByLabelText("Shared notes");
+  await waitFor(() =>
+    assert.equal((areas[0] as HTMLTextAreaElement).disabled, false),
+  );
+  fireEvent.change(areas[0], { target: { value: "Meet Friday at seven" } });
+  fireEvent.click(screen.getAllByRole("button", { name: "Save notes" })[0]);
+  await screen.findByText(/Version 1/);
+  assert.equal(
+    (await agent.note(bob, { kind: "room", roomId: initial.id }, "agreements"))
+      .value.text,
+    "Meet Friday at seven",
+  );
+  fireEvent.change(screen.getByLabelText("When"), {
+    target: { value: "2099-01-01T09:00" },
+  });
+  fireEvent.click(
+    screen.getByRole("button", { name: "Save private reminder" }),
+  );
+  await screen.findByText("Private reminder saved. Find it on Today.");
+  view.unmount();
+  render(<Harness reminders />);
+  await screen.findByText(/Upcoming · Review my outstanding shares/);
+  fireEvent.click(screen.getByRole("button", { name: "Dismiss reminder" }));
+  await waitFor(async () =>
+    assert.equal((await agent.reminders(alice)).length, 0),
+  );
+  assert.equal((await agent.reminders(bob)).length, 0);
 });
