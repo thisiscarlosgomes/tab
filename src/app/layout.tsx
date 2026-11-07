@@ -1,4 +1,5 @@
 import "./globals.css";
+import { headers } from "next/headers";
 
 import type { Metadata } from "next";
 import type { Viewport } from "next";
@@ -13,7 +14,8 @@ const SITE_ORIGIN =
   process.env.NEXT_PUBLIC_SITE_URL?.replace(/\/$/, "") ?? "https://usetab.app";
 const SITE_NAME = "Tab";
 const DEFAULT_TITLE = "Tab";
-const DEFAULT_DESCRIPTION = "Split bills, send crypto, and get paid in seconds on Base.";
+const DEFAULT_DESCRIPTION =
+  "Split bills, send crypto, and get paid in seconds on Base.";
 
 const frame = {
   version: "next",
@@ -115,19 +117,23 @@ export async function generateMetadata(): Promise<Metadata> {
   };
 }
 
-export const viewport: Viewport = {
-  initialScale: 1,
-  width: "device-width",
-  viewportFit: "cover",
-  themeColor: "#0A0A14",
-};
+export async function generateViewport(): Promise<Viewport> {
+  const dinner = (await headers()).get("x-tab-surface") === "dinner";
+  return {
+    initialScale: 1,
+    width: "device-width",
+    viewportFit: "cover",
+    themeColor: dinner ? "#FAF9F6" : "#0A0A14",
+  };
+}
 
 // eslint-disable-next-line import/no-default-export
-export default function RootLayout({
+export default async function RootLayout({
   children,
 }: Readonly<{
   children: React.ReactNode;
 }>) {
+  const dinner = (await headers()).get("x-tab-surface") === "dinner";
   const structuredData = [
     {
       "@context": "https://schema.org",
@@ -157,7 +163,7 @@ export default function RootLayout({
   ];
 
   return (
-    <html lang="en" className="dark">
+    <html lang="en" className={dinner ? "light dinner-document" : "dark"}>
       <head>
         <link rel="preconnect" href="https://fonts.googleapis.com" />
         <link rel="preconnect" href="https://fonts.gstatic.com" />

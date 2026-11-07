@@ -11,7 +11,8 @@
     "lint": "eslint src tests/dinner --ext .js,.ts,.tsx",
     "test": "tsx --tsconfig tests/dinner/tsconfig.json --test --test-concurrency=1 tests/dinner/*.test.ts tests/dinner/*.test.tsx",
     "typecheck": "tsc --noEmit",
-    "verify:dinner": "npm run typecheck && npm run lint && npm test"
+    "verify:dinner": "npm run typecheck && npm run lint && npm test",
+    "test:theme-http": "tsx --test tests/dinner/theme-http.ts"
   },
   "dependencies": {
     "@ai-sdk/openai": "^3.0.36",

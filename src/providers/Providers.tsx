@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useLayoutEffect, useState } from "react";
+import { applyDocumentTheme, isDinnerPath } from "@/lib/dinner/theme";
 import { usePathname } from "next/navigation";
 import { PrivyProvider } from "@privy-io/react-auth";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
@@ -24,7 +25,10 @@ const client = new QueryClient({
 
 function Providers({ children }: React.PropsWithChildren) {
   const pathname = usePathname();
-  const dinnerMode = pathname === "/app" || pathname.startsWith("/app/");
+  const dinnerMode = isDinnerPath(pathname);
+  useLayoutEffect(() => {
+    applyDocumentTheme(document, dinnerMode);
+  }, [dinnerMode]);
   const [hasMounted, setHasMounted] = useState(false);
 
   useEffect(() => {
@@ -35,17 +39,23 @@ function Providers({ children }: React.PropsWithChildren) {
 
   const content = (
     <FrameSplashProvider>
-      <SkeletonTheme baseColor="#19191E" highlightColor="#0D0D13">
+      <SkeletonTheme
+        baseColor={dinnerMode ? "#E5E7E1" : "#19191E"}
+        highlightColor={dinnerMode ? "#FFFFFF" : "#0D0D13"}
+      >
         <QueryClientProvider client={client}>
           <WalletProvider>
             <ScanDrawerProvider>
               <SendDrawerProvider>
                 <Toaster
+                  theme={dinnerMode ? "light" : undefined}
                   richColors
                   expand={false}
                   position="top-center"
                   offset={{ top: "20px" }}
-                  mobileOffset={{ top: "calc(env(safe-area-inset-top) + 72px)" }}
+                  mobileOffset={{
+                    top: "calc(env(safe-area-inset-top) + 72px)",
+                  }}
                   toastOptions={{
                     classNames: {
                       toast:
@@ -58,8 +68,12 @@ function Providers({ children }: React.PropsWithChildren) {
                 />
                 <>
                   {children}
-                  <GlobalSendDrawer />
-                  <QRCodeScannerDrawerWrapper />
+                  {!dinnerMode && (
+                    <>
+                      <GlobalSendDrawer />
+                      <QRCodeScannerDrawerWrapper />
+                    </>
+                  )}
                 </>
               </SendDrawerProvider>
             </ScanDrawerProvider>
