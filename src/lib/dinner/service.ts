@@ -1,0 +1,628 @@
+import { TAB_BOT_ID, mentionsTab } from "./agent/model";
+import { createHash, randomBytes, randomUUID } from "node:crypto";
+import {
+  Actor,
+  OutsideReport,
+  Room,
+  Invitation,
+  Preview,
+  Message,
+  Expense,
+  DinnerError,
+  fail,
+  requireMember,
+  roomView,
+  invitationStatus,
+  roomInput,
+  inviteInput,
+  messageInput,
+  expenseInput,
+  validateShares,
+  retryId,
+} from "./model";
+
+export interface RoomStore {
+  insert(room: Room): Promise<Room>;
+  get(id: string): Promise<Room | null>;
+  list(userId: string, subject: string | null): Promise<Room[]>;
+  byToken(hash: string): Promise<Room | null>;
+  compareAndSwap(room: Room, revision: number): Promise<boolean>;
+}
+export function tokenHash(token: string): string {
+  return createHash("sha256").update(token).digest("hex");
+}
+function same(a: unknown, b: unknown): boolean {
+  return JSON.stringify(a) === JSON.stringify(b);
+}
+export class DinnerService {
+  constructor(
+    private store: RoomStore,
+    private now: () => string = () => new Date().toISOString(),
+  ) {}
+  async memberRoom(id: string, actor: Actor): Promise<Room> {
+    const room = (await this.store.get(id)) ?? fail(404, "Room not found");
+    requireMember(room, actor);
+    return room;
+  }
+  async change<T>(
+    id: string,
+    actor: Actor,
+    update: (room: Room) => T,
+  ): Promise<T> {
+    for (let attempt = 0; attempt < 15; attempt++) {
+      const room = await this.memberRoom(id, actor);
+      const revision = room.revision;
+      const result = update(room);
+      room.revision++;
+      if (await this.store.compareAndSwap(room, revision)) return result;
+    }
+    return fail(409, "Room is busy. Retry with the same request ID.");
+  }
+  async create(actor: Actor, raw: unknown) {
+    const input = roomInput.parse(raw);
+    return roomView(
+      await this.store.insert({
+        id: randomUUID(),
+        creationId: input.clientId,
+        revision: 0,
+        name: input.name,
+        purpose: input.purpose,
+        ownerId: actor.id,
+        createdAt: this.now(),
+        members: [
+          {
+            userId: actor.id,
+            name: actor.name,
+            role: "owner",
+            joinedAt: this.now(),
+            readSeq: 0,
+          },
+        ],
+        invitations: [],
+        messages: [],
+        expenses: [],
+      }),
+    );
+  }
+  async list(actor: Actor) {
+    const rooms = await this.store.list(actor.id, actor.twitterSubject);
+    return {
+      rooms: rooms
+        .filter((r) => r.members.some((m) => m.userId === actor.id))
+        .map((r) => ({
+          ...roomView(r),
+          messages: [],
+          unread: r.messages.filter(
+            (m) =>
+              m.seq >
+                (r.members.find((member) => member.userId === actor.id)
+                  ?.readSeq ?? 0) && m.authorId !== actor.id,
+          ).length,
+          lastMessage: r.messages.at(-1)?.text ?? null,
+        })),
+      invites: rooms.flatMap((r) =>
+        r.invitations
+          .filter(
+            (i) =>
+              i.targetSubject &&
+              i.targetSubject === actor.twitterSubject &&
+              invitationStatus(i, this.now()) === "pending",
+          )
+          .map((i) => ({
+            id: i.id,
+            roomId: r.id,
+            name: r.name,
+            purpose: r.purpose,
+            members: r.members.map((m) => m.name),
+            inviter:
+              r.members.find((m) => m.userId === i.inviterId)?.name ??
+              "A friend",
+            expiresAt: i.expiresAt,
+          })),
+      ),
+    };
+  }
+  async invite(id: string, actor: Actor, raw: unknown) {
+    const input = inviteInput.parse(raw);
+    const token = randomBytes(32).toString("base64url");
+    const invite: Invitation = {
+      id: randomUUID(),
+      clientId: input.clientId,
+      tokenHash: tokenHash(token),
+      inviterId: actor.id,
+      targetSubject: input.targetSubject ?? null,
+      targetLabel: input.targetLabel ?? null,
+      status: "pending",
+      resolvedBy: null,
+      expiresAt: new Date(Date.parse(this.now()) + 7 * 86400_000).toISOString(),
+      createdAt: this.now(),
+    };
+    await this.change(id, actor, (room) => {
+      if (
+        room.invitations.some(
+          (i) => i.clientId === input.clientId && i.inviterId === actor.id,
+        )
+      )
+        fail(409, "Link already created. Create a new link if you lost it.");
+      if (room.invitations.length >= 100)
+        fail(422, "This beta room has reached its invitation limit");
+      room.invitations.push(invite);
+    });
+    return { id: invite.id, token, expiresAt: invite.expiresAt };
+  }
+  async preview(token: string): Promise<Preview> {
+    if (!/^[A-Za-z0-9_-]{43}$/.test(token)) fail(404, "Invitation not found");
+    const room =
+      (await this.store.byToken(tokenHash(token))) ??
+      fail(404, "Invitation not found");
+    const invite =
+      room.invitations.find((i) => i.tokenHash === tokenHash(token)) ??
+      fail(404, "Invitation not found");
+    return {
+      roomId: room.id,
+      name: room.name,
+      purpose: room.purpose,
+      inviter:
+        room.members.find((m) => m.userId === invite.inviterId)?.name ??
+        "A friend",
+      members: room.members.map((m) => m.name),
+      status: invitationStatus(invite, this.now()),
+      targetLabel: invite.targetLabel,
+      accountBound: invite.targetSubject !== null,
+      expiresAt: invite.expiresAt,
+    };
+  }
+  async inviteAccount(token: string, actor: Actor) {
+    const preview = await this.preview(token);
+    const room =
+      (await this.store.byToken(tokenHash(token))) ??
+      fail(404, "Invitation not found");
+    const invite =
+      room.invitations.find((i) => i.tokenHash === tokenHash(token)) ??
+      fail(404, "Invitation not found");
+    if (preview.status === "accepted" || preview.status === "declined")
+      return {
+        canRespond: invite.resolvedBy === actor.id,
+        reason: invite.resolvedBy === actor.id ? null : "resolved_by_another",
+      };
+    if (preview.status !== "pending")
+      return { canRespond: false, reason: "unavailable" };
+    if (invite.targetSubject && invite.targetSubject !== actor.twitterSubject)
+      return { canRespond: false, reason: "different_account" };
+    return {
+      canRespond: preview.status === "pending",
+      reason: preview.status === "pending" ? null : "unavailable",
+    };
+  }
+  async respond(
+    actor: Actor,
+    input: { token?: string; roomId?: string; invitationId?: string },
+    decision: "accepted" | "declined",
+  ) {
+    const hash = input.token ? tokenHash(input.token) : null;
+    const found = hash
+      ? await this.store.byToken(hash)
+      : input.roomId
+        ? await this.store.get(input.roomId)
+        : null;
+    if (!found) fail(404, "Invitation not found");
+    for (let attempt = 0; attempt < 15; attempt++) {
+      const room =
+        (await this.store.get(found.id)) ?? fail(404, "Invitation not found");
+      const invite =
+        room.invitations.find((i) =>
+          hash
+            ? i.tokenHash === hash
+            : i.id === input.invitationId &&
+              i.targetSubject !== null &&
+              i.targetSubject === actor.twitterSubject,
+        ) ?? fail(404, "Invitation not found");
+      if (invite.status === decision && invite.resolvedBy === actor.id)
+        return { roomId: room.id, status: decision };
+      if (invite.targetSubject && invite.targetSubject !== actor.twitterSubject)
+        fail(
+          403,
+          "This invitation is for a different X account. Sign out and sign in with the invited X account; this link will stay here.",
+        );
+      if (invitationStatus(invite, this.now()) !== "pending")
+        fail(409, "This invitation is no longer pending");
+      if (
+        decision === "accepted" &&
+        !room.members.some((m) => m.userId === actor.id)
+      ) {
+        if (room.members.length >= 50)
+          fail(422, "This beta room has reached its member limit");
+        room.members.push({
+          userId: actor.id,
+          name: actor.name,
+          role: "member",
+          joinedAt: this.now(),
+          readSeq: 0,
+        });
+      }
+      invite.status = decision;
+      invite.resolvedBy = actor.id;
+      const revision = room.revision++;
+      if (await this.store.compareAndSwap(room, revision))
+        return { roomId: room.id, status: decision };
+    }
+    return fail(409, "Room is busy. Retry your invitation response.");
+  }
+  async revoke(id: string, actor: Actor, invitationId: string) {
+    return this.change(id, actor, (room) => {
+      const invite =
+        room.invitations.find((i) => i.id === invitationId) ??
+        fail(404, "Invitation not found");
+      if (actor.id !== invite.inviterId && actor.id !== room.ownerId)
+        fail(403, "Only the inviter or room owner can revoke");
+      if (invitationStatus(invite, this.now()) !== "pending")
+        fail(409, "Only pending invitations can be revoked");
+      invite.status = "revoked";
+      return { status: invite.status };
+    });
+  }
+  async send(id: string, actor: Actor, raw: unknown) {
+    const input = messageInput.parse(raw);
+    return this.change(id, actor, (room) => {
+      const previous = room.messages.find(
+        (m) => m.authorId === actor.id && m.clientId === input.clientId,
+      );
+      if (previous) {
+        if (
+          !same(
+            {
+              text: previous.text,
+              replyTo: previous.replyTo ?? undefined,
+              attachmentIds: previous.attachmentIds,
+            },
+            {
+              text: input.text,
+              replyTo: input.replyTo,
+              attachmentIds: input.attachmentIds,
+            },
+          )
+        )
+          fail(409, "Retry ID was already used for a different message");
+        return previous;
+      }
+      if (room.messages.length >= 1000)
+        fail(
+          422,
+          "This beta room has reached its message limit. History is preserved.",
+        );
+      if (input.replyTo && !room.messages.some((m) => m.id === input.replyTo))
+        fail(400, "Reply target does not exist in this room");
+      const message: Message = {
+        id: randomUUID(),
+        authorId: actor.id,
+        clientId: input.clientId,
+        text: input.text,
+        replyTo: input.replyTo ?? null,
+        attachmentIds: input.attachmentIds,
+        createdAt: this.now(),
+        seq: (room.messages.at(-1)?.seq ?? 0) + 1,
+        reactions: [],
+      };
+      room.messages.push(message);
+      return message;
+    });
+  }
+  async botReply(id: string, requester: Actor, sourceId: string, text: string) {
+    return this.change(id, requester, (room) => {
+      const source = room.messages.find(
+        (m) =>
+          m.id === sourceId && m.authorId === requester.id && m.kind !== "tab",
+      );
+      if (!source || !mentionsTab(source.text))
+        fail(
+          403,
+          "Only an addressed, persisted member message can request Tab",
+        );
+      const previous = room.messages.find(
+        (m) => m.kind === "tab" && m.runId === sourceId,
+      );
+      if (previous) return previous;
+      if (room.messages.length >= 1000)
+        fail(
+          422,
+          "This beta room has reached its message limit. History is preserved.",
+        );
+      const message: Message = {
+        id: randomUUID(),
+        authorId: TAB_BOT_ID,
+        clientId: sourceId,
+        kind: "tab",
+        requestedBy: requester.id,
+        runId: sourceId,
+        text,
+        replyTo: sourceId,
+        attachmentIds: [],
+        createdAt: this.now(),
+        seq: (room.messages.at(-1)?.seq ?? 0) + 1,
+        reactions: [],
+      };
+      room.messages.push(message);
+      return message;
+    });
+  }
+  async react(
+    id: string,
+    actor: Actor,
+    messageId: string,
+    emoji: string,
+    active: boolean,
+  ) {
+    if (!["👍", "❤️", "🎉"].includes(emoji)) fail(400, "Unsupported reaction");
+    return this.change(id, actor, (room) => {
+      const message =
+        room.messages.find((m) => m.id === messageId) ??
+        fail(404, "Message not found");
+      message.reactions = message.reactions.filter(
+        (r) => !(r.userId === actor.id && r.emoji === emoji),
+      );
+      if (active) message.reactions.push({ userId: actor.id, emoji });
+      return message;
+    });
+  }
+  async read(id: string, actor: Actor, seq: number) {
+    return this.change(id, actor, (room) => {
+      const member = requireMember(room, actor);
+      member.readSeq = Math.max(
+        member.readSeq,
+        Math.min(seq, room.messages.at(-1)?.seq ?? 0),
+      );
+      return { readSeq: member.readSeq };
+    });
+  }
+  async draft(id: string, actor: Actor, raw: unknown, expenseId?: string) {
+    const input = expenseInput.parse(raw);
+    return this.change(id, actor, (room) => {
+      validateShares(input, room);
+      if (expenseId) {
+        const expense =
+          room.expenses.find((e) => e.id === expenseId) ??
+          fail(404, "Expense not found");
+        if (expense.creatorId !== actor.id)
+          fail(403, "Only the author can edit this draft");
+        if (expense.status !== "draft")
+          fail(409, "Confirmed expenses cannot be edited");
+        Object.assign(expense, {
+          version: expense.version + 1,
+          description: input.description,
+          payerId: input.payerId,
+          totalCents: input.totalCents,
+          shares: input.shares,
+        });
+        if (input.attachmentId) expense.attachmentId = input.attachmentId;
+        else delete expense.attachmentId;
+        return expense;
+      }
+      const existing = room.expenses.find(
+        (e) => e.clientId === input.clientId && e.creatorId === actor.id,
+      );
+      if (existing) {
+        if (
+          !same(
+            {
+              description: existing.description,
+              payerId: existing.payerId,
+              totalCents: existing.totalCents,
+              shares: existing.shares,
+              attachmentId: existing.attachmentId,
+            },
+            {
+              description: input.description,
+              payerId: input.payerId,
+              totalCents: input.totalCents,
+              shares: input.shares,
+              attachmentId: input.attachmentId,
+            },
+          )
+        )
+          fail(
+            409,
+            "Retry ID was already used for a different expense. Review the saved draft before editing.",
+          );
+        return existing;
+      }
+      if (room.expenses.length >= 200)
+        fail(422, "This beta room has reached its expense limit");
+      const expense: Expense = {
+        ...input,
+        id: randomUUID(),
+        creatorId: actor.id,
+        status: "draft",
+        version: 1,
+        createdAt: this.now(),
+        flags: [],
+      };
+      room.expenses.push(expense);
+      return expense;
+    });
+  }
+  async confirm(
+    id: string,
+    actor: Actor,
+    expenseId: string,
+    requestId: string,
+    expectedVersion: number,
+  ) {
+    retryId.parse(requestId);
+    return this.change(id, actor, (room) => {
+      const expense =
+        room.expenses.find((e) => e.id === expenseId) ??
+        fail(404, "Expense not found");
+      if (expense.creatorId !== actor.id)
+        fail(403, "Only the author can confirm this expense");
+      if (expense.status === "confirmed") {
+        if (expense.confirmationId !== requestId)
+          fail(409, "Expense is already confirmed");
+        return expense;
+      }
+      if (expense.version !== expectedVersion)
+        fail(
+          409,
+          "The draft changed. Review the latest version before confirming.",
+        );
+      validateShares(expense, room);
+      const confirmed: Expense = {
+        ...expense,
+        status: "confirmed",
+        confirmedAt: this.now(),
+        confirmationId: requestId,
+        obligations: expense.shares
+          .filter((s) => s.userId !== expense.payerId && s.cents > 0)
+          .map((s) => ({
+            id: randomUUID(),
+            expenseId: expense.id,
+            debtorId: s.userId,
+            creditorId: expense.payerId,
+            cents: s.cents,
+            currency: "USD",
+            status: "outstanding",
+          })),
+      };
+      room.expenses = room.expenses.map((e) =>
+        e.id === expenseId ? confirmed : e,
+      );
+      return confirmed;
+    });
+  }
+  async reportOutside(
+    id: string,
+    actor: Actor,
+    obligationId: string,
+    clientId: string,
+  ) {
+    retryId.parse(clientId);
+    return this.change(id, actor, (room) => {
+      const expense = room.expenses.find(
+        (e) =>
+          e.status === "confirmed" &&
+          e.obligations.some((o) => o.id === obligationId),
+      );
+      if (!expense || expense.status !== "confirmed")
+        return fail(404, "Obligation not found");
+      const obligation =
+        expense.obligations.find((o) => o.id === obligationId) ??
+        fail(404, "Obligation not found");
+      if (actor.id !== obligation.debtorId && actor.id !== expense.creatorId)
+        fail(
+          403,
+          "Only the debtor or expense author can report an outside payment",
+        );
+      const reports = obligation.outsideReports ?? [];
+      const previous = reports.find(
+        (r) => r.clientId === clientId && r.reportedBy === actor.id,
+      );
+      if (previous) return previous;
+      if (obligation.status !== "outstanding")
+        fail(409, "The recipient already confirmed receipt outside Tab");
+      if (reports.some((r) => r.status === "pending"))
+        fail(409, "An outside report is already awaiting the recipient");
+      if (reports.length >= 50)
+        fail(
+          422,
+          "This obligation has reached its beta report limit. History is preserved.",
+        );
+      const report: OutsideReport = {
+        id: randomUUID(),
+        clientId,
+        reportedBy: actor.id,
+        cents: obligation.cents,
+        createdAt: this.now(),
+        status: "pending",
+      };
+      obligation.outsideReports = [...reports, report];
+      return report;
+    });
+  }
+  async resolveOutside(
+    id: string,
+    actor: Actor,
+    obligationId: string,
+    reportId: string,
+    decision: "confirmed" | "rejected" | "cancelled",
+    clientId: string,
+  ) {
+    retryId.parse(clientId);
+    return this.change(id, actor, (room) => {
+      const expense = room.expenses.find(
+        (e) =>
+          e.status === "confirmed" &&
+          e.obligations.some((o) => o.id === obligationId),
+      );
+      if (!expense || expense.status !== "confirmed")
+        return fail(404, "Obligation not found");
+      const obligation =
+        expense.obligations.find((o) => o.id === obligationId) ??
+        fail(404, "Obligation not found");
+      const report =
+        obligation.outsideReports?.find((r) => r.id === reportId) ??
+        fail(404, "Outside report not found");
+      if (
+        decision === "cancelled"
+          ? actor.id !== report.reportedBy
+          : actor.id !== obligation.creditorId
+      )
+        fail(
+          403,
+          decision === "cancelled"
+            ? "Only the reporter can cancel this report"
+            : "Only the recipient can confirm or reject this report",
+        );
+      if (report.status !== "pending") {
+        if (
+          report.status === decision &&
+          report.resolvedBy === actor.id &&
+          report.resolutionId === clientId
+        )
+          return report;
+        return fail(
+          409,
+          "This report was already resolved. Refresh to see its current state.",
+        );
+      }
+      if (obligation.status !== "outstanding")
+        fail(409, "This obligation is already closed");
+      const resolved: OutsideReport = {
+        ...report,
+        status: decision,
+        resolvedBy: actor.id,
+        resolutionId: clientId,
+        resolvedAt: this.now(),
+      };
+      obligation.outsideReports = (obligation.outsideReports ?? []).map((r) =>
+        r.id === reportId ? resolved : r,
+      );
+      if (decision === "confirmed") {
+        expense.obligations = expense.obligations.map((o) =>
+          o.id === obligationId
+            ? {
+                ...o,
+                status: "confirmed_outside",
+                confirmedReportId: report.id,
+              }
+            : o,
+        );
+      }
+      // Flags are independent, durable dispute records. Never clear them here.
+      return resolved;
+    });
+  }
+  async flag(id: string, actor: Actor, expenseId: string, reason: string) {
+    return this.change(id, actor, (room) => {
+      const expense =
+        room.expenses.find((e) => e.id === expenseId) ??
+        fail(404, "Expense not found");
+      if (
+        expense.status !== "confirmed" ||
+        !expense.shares.some((s) => s.userId === actor.id)
+      )
+        fail(403, "Only a participant can flag a confirmed share");
+      expense.flags = expense.flags.filter((f) => f.userId !== actor.id);
+      expense.flags.push({ userId: actor.id, reason });
+      return expense;
+    });
+  }
+}

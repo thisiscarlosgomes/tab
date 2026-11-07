@@ -20,7 +20,7 @@ export async function GET(req: NextRequest) {
   const db = client.db();
   const collection = db.collection("a-earn-deposit");
 
-  const query: any = { address };
+  const query: Record<string, unknown> = { address };
   if (before) {
     query.timestamp = { $lt: new Date(before) };
   }

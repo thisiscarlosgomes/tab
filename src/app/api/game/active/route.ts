@@ -16,7 +16,7 @@ export async function GET(req: NextRequest) {
   const db = client.db();
   const games = db.collection("a-split-game");
 
-  const query: any = {
+  const query: Record<string, unknown> = {
     chosen: { $ne: null },
     "paid.address": { $ne: address },
   };

@@ -581,6 +581,7 @@ export async function POST(req: NextRequest) {
   });
 
   const idempotencyKey = `server-settle:${splitId}:${userId}`;
+  if (!delegatedWalletId) return Response.json({ error: "Delegated wallet is missing" }, { status: 400 });
 
   try {
     const rawAmount = parseUnits(amount.toString(), tokenMeta.decimals ?? 18);

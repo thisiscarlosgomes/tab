@@ -31,7 +31,7 @@ export async function GET(req: NextRequest) {
 
     const [rawActivity, rawAgentTransfers] = await Promise.all([
       db
-        .collection("a-activity")
+        .collection<Parameters<typeof mapActivity>[0] & { address: string; createdAt?: Date }>("a-activity")
         .find(beforeDate ? { address, timestamp: { $lt: beforeDate } } : { address })
         .sort({ timestamp: -1 })
         .limit(limit)
@@ -108,8 +108,8 @@ export async function GET(req: NextRequest) {
     const raw = [...rawActivity, ...syntheticFromAgentTransfers, ...syntheticFromMoralis];
     raw.sort(
       (a, b) =>
-        new Date(b.timestamp ?? b.createdAt ?? 0).getTime() -
-        new Date(a.timestamp ?? a.createdAt ?? 0).getTime()
+        new Date(b.timestamp ?? ("createdAt" in b ? b.createdAt : undefined) ?? 0).getTime() -
+        new Date(a.timestamp ?? ("createdAt" in a ? a.createdAt : undefined) ?? 0).getTime()
     );
 
     const activity: Array<

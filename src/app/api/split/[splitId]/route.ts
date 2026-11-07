@@ -1,3 +1,4 @@
+import { LegacySocialParticipant } from "@/types/legacy-social";
 import { NextRequest } from "next/server";
 import clientPromise from "@/lib/mongodb";
 import { writeActivity } from "@/lib/writeActivity";
@@ -25,11 +26,11 @@ function getPublicBaseUrl(req: NextRequest) {
   ).replace(/\/$/, "");
 }
 
-function normalizeAddress(address?: string) {
+function normalizeAddress(address?: string | null) {
   return address ? address.toLowerCase() : address;
 }
 
-function normalizeFid(fid?: string | number) {
+function normalizeFid(fid?: string | number | null) {
   if (fid === undefined || fid === null) return fid;
   return Number(fid);
 }
@@ -38,7 +39,7 @@ function normalizeTwitterSubject(subject: unknown) {
   return typeof subject === "string" && subject.trim() ? subject.trim() : null;
 }
 
-function normalizeUser(user: any) {
+function normalizeUser(user: LegacySocialParticipant) {
   if (!user) return user;
   const address = normalizeAddress(user.address);
   const fid = resolveUserFid({ fid: normalizeFid(user.fid), address });
@@ -59,7 +60,7 @@ function normalizeUser(user: any) {
   };
 }
 
-function getUserKeys(user: any) {
+function getUserKeys(user: LegacySocialParticipant) {
   const keys = new Set<string>();
   if (!user) return keys;
 
@@ -89,7 +90,7 @@ function getUserKeys(user: any) {
   return keys;
 }
 
-function isSameUser(a: any, b: any) {
+function isSameUser(a: LegacySocialParticipant, b: LegacySocialParticipant) {
   if (!a || !b) return false;
 
   const aAddress = normalizeAddress(a.address);
@@ -106,7 +107,7 @@ function isSameUser(a: any, b: any) {
   return false;
 }
 
-async function resolvePreferredSplitUser(user: any) {
+async function resolvePreferredSplitUser(user: LegacySocialParticipant) {
   const normalized = normalizeUser(user);
   if (!normalized) return normalized;
 
@@ -234,7 +235,7 @@ export async function POST(req: NextRequest) {
 
   // recipient must never be invited
   if (
-    normalizedInvited.some((u: any) => isSameUser(u, normalizedRecipient))
+    normalizedInvited.some((u: LegacySocialParticipant) => isSameUser(u, normalizedRecipient))
   ) {
     return Response.json(
       { error: "Recipient cannot be invited (recipient never owes)" },
@@ -272,7 +273,7 @@ export async function POST(req: NextRequest) {
 
     invited: isReceiptOpen
       ? [] // lazy invites on join
-      : normalizedInvited.map((u: any) => ({
+      : normalizedInvited.map((u: LegacySocialParticipant) => ({
           ...u,
           amount: perPerson,
         })),
@@ -325,7 +326,7 @@ export async function POST(req: NextRequest) {
     }
 
     void Promise.allSettled(
-      doc.invited.map((invitedUser: any) =>
+      doc.invited.map((invitedUser: LegacySocialParticipant) =>
         sendWebNotificationToUser(
           {
             fid: invitedUser?.fid ?? null,
@@ -376,7 +377,7 @@ export async function PATCH(req: NextRequest) {
   }
 
   const isReceiptOpen = existing.splitType === "receipt_open";
-  const updateOps: any = {};
+  const updateOps: Record<string, Record<string, unknown>> = {};
   const arrayFilters: Record<string, unknown>[] = [];
 
   /* -------- JOIN -------- */
@@ -394,7 +395,7 @@ export async function PATCH(req: NextRequest) {
     }
 
     const isInvited = existing.invited?.some(
-      (invited: any) => isSameUser(invited, normalizedParticipant)
+      (invited: LegacySocialParticipant) => isSameUser(invited, normalizedParticipant)
     );
 
     // invited-only enforcement
@@ -425,11 +426,11 @@ export async function PATCH(req: NextRequest) {
     }
 
     const alreadyParticipant = existing.participants?.some(
-      (participant: any) => isSameUser(participant, normalizedParticipant)
+      (participant: LegacySocialParticipant) => isSameUser(participant, normalizedParticipant)
     );
 
     const invitedEntry = existing.invited.find(
-      (invited: any) => isSameUser(invited, normalizedParticipant)
+      (invited: LegacySocialParticipant) => isSameUser(invited, normalizedParticipant)
     );
 
     // Reconcile FID-first invites to the user's current Tab wallet once identity is proven.
@@ -495,7 +496,7 @@ export async function PATCH(req: NextRequest) {
       [...paymentKeys][0] ??
       null;
     const invitedEntry = existing.invited.find(
-      (invited: any) => isSameUser(invited, normalizedPayment)
+      (invited: LegacySocialParticipant) => isSameUser(invited, normalizedPayment)
     );
 
     if (!invitedEntry) {
@@ -503,7 +504,7 @@ export async function PATCH(req: NextRequest) {
     }
 
     const alreadyPaid = existing.paid?.some(
-      (paid: any) => isSameUser(paid, normalizedPayment)
+      (paid: LegacySocialParticipant) => isSameUser(paid, normalizedPayment)
     );
     if (!alreadyPaid) {
       // Keep invited entries aligned with the payer's current Tab wallet for future address lookups.
@@ -581,7 +582,7 @@ export async function PATCH(req: NextRequest) {
   await collection.updateOne(
     { splitId },
     updateOps,
-    arrayFilters.length ? ({ arrayFilters } as any) : undefined
+    arrayFilters.length ? { arrayFilters } : undefined
   );
   const updated = await collection.findOne({ splitId });
 

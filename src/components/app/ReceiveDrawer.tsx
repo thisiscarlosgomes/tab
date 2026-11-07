@@ -52,10 +52,7 @@ export function ReceiveDrawer({
   const [copied, setCopied] = useState(false);
   const [resolvedAddress, setResolvedAddress] = useState<string | null>(null);
   const linkedFarcasterAccount = user?.linkedAccounts?.find(
-    (
-      account
-    ): account is { type?: string; username?: string | null } =>
-      account?.type === "farcaster"
+    (account) => account.type === "farcaster"
   );
   const receiveUsername =
     tabUsername ??

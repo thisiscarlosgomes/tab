@@ -27,7 +27,7 @@ import { FriendsPickerDialog } from "@/components/app/FriendsPickerDialog";
 import { getSocialUserKey, SocialUser } from "@/lib/social";
 
 type InviteUser = SocialUser & {
-  verified_addresses: {
+  verified_addresses?: {
     primary?: {
       eth_address?: string | null;
     };
@@ -48,6 +48,8 @@ const getUserEthAddress = (user: InviteUser | null | undefined) => {
 type SplitType = "invited" | "pay_other" | "receipt_open";
 
 type ReceiptParseResult = {
+  totalAmount?: number | string | null;
+  currency?: string | null;
   total?: number | string | null;
   merchant?: string | null;
 };
@@ -362,7 +364,7 @@ export default function SplitNewPage() {
             `/api/neynar/user/search?q=${encodeURIComponent(trimmedQuery)}`
           );
           const data = await res.json().catch(() => null);
-          const remoteUsers = Array.isArray(data)
+          const remoteUsers: unknown[] = Array.isArray(data)
             ? data
             : Array.isArray(data?.users)
               ? data.users
@@ -643,7 +645,7 @@ export default function SplitNewPage() {
               username: f.username,
             };
           })
-          .filter(Boolean);
+          .filter((entry) => entry !== null);
       }
 
       const res = await fetch(`/api/split/${splitId}`, {

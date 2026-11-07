@@ -583,7 +583,7 @@ export function AssistantChatPage() {
           for (const result of settled) {
             if (result.status !== "fulfilled") continue;
             const value = result.value;
-            if (Array.isArray(value)) {
+            if (!("label" in value)) {
               for (const item of value) {
                 timingLines.push(`${item.label}:${item.ms}ms${item.ok ? "" : " (err)"}`);
               }

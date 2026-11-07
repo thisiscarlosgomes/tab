@@ -9,7 +9,7 @@ export function FundButton() {
 
   const onFund = async () => {
     if (!address || !isConnected) return;
-    await fundWallet(address);
+    await fundWallet({ address });
   };
 
   const isDisabled = !address || !isConnected;

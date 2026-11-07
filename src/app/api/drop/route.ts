@@ -108,7 +108,7 @@ export async function GET(req: NextRequest) {
     .sort({ createdAt: -1 })
     .toArray();
 
-  const grouped: Record<string, unknown[]> = {};
+  const grouped: Record<string, typeof allDrops> = {};
 
   for (const drop of allDrops) {
     const key = drop.groupId || drop.dropId;

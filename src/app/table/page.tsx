@@ -165,7 +165,7 @@ export default function SplitPage() {
         } else {
           const res = await fetch(`/api/neynar/user/search?q=${encodeURIComponent(inviteQuery)}`);
           const data = await res.json().catch(() => null);
-          const remoteUsers = Array.isArray(data)
+          const remoteUsers: unknown[] = Array.isArray(data)
             ? data
             : Array.isArray(data?.users)
               ? data.users

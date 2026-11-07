@@ -1,3 +1,4 @@
+import { LegacySocialParticipant } from "@/types/legacy-social";
 export const runtime = "nodejs";
 
 import { NextRequest } from "next/server";
@@ -29,7 +30,7 @@ function normalizeFid(value: unknown) {
   return Number.isFinite(n) && n > 0 ? n : null;
 }
 
-async function resolvePreferredGamePlayer(player: any) {
+async function resolvePreferredGamePlayer(player: LegacySocialParticipant) {
   const fallbackAddress = normalizeAddress(player?.address);
   const fid = normalizeFid(player?.fid);
 
@@ -56,7 +57,7 @@ async function resolvePreferredGamePlayer(player: any) {
   };
 }
 
-async function resolvePreferredInvitedPlayer(invited: any) {
+async function resolvePreferredInvitedPlayer(invited: LegacySocialParticipant) {
   const fallbackAddress = normalizeAddress(invited?.address);
   const fid = normalizeFid(invited?.fid);
   const provider =
@@ -134,7 +135,7 @@ export async function POST(req: NextRequest) {
   console.log("➡️ POST /api/game");
 
   /* ---------- parse body ---------- */
-  let body: any;
+  let body: { name?: string; player?: LegacySocialParticipant; amount?: number; spinToken?: string; invited?: LegacySocialParticipant[] };
   try {
     body = await req.json();
     console.log("✅ req.json:", body);
@@ -189,7 +190,7 @@ export async function POST(req: NextRequest) {
   const createdAt = new Date();
   const invitedInput = Array.isArray(invited) ? invited : [];
   const invitedResolvedRaw = await Promise.all(
-    invitedInput.map((entry: any) => resolvePreferredInvitedPlayer(entry).catch(() => null))
+    invitedInput.map((entry: LegacySocialParticipant) => resolvePreferredInvitedPlayer(entry).catch(() => null))
   );
   const seenInviteKeys = new Set<string>();
   const creatorAddressLower = address;

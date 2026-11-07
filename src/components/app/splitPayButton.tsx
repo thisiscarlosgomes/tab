@@ -172,7 +172,7 @@ export function SplitPayButton({
 
       if (
         bill?.paid?.some(
-          (p: any) =>
+          (p: { userKey?: string; address?: string }) =>
             (currentKey && p.userKey === currentKey) ||
             (p.address &&
               address &&

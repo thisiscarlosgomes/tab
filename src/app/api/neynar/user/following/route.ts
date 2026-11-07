@@ -1,3 +1,4 @@
+import { z } from "zod";
 import { neynarApi } from "@/lib/neynar";
 import { FollowSortType } from "@neynar/nodejs-sdk/build/api";
 import type { NextRequest } from "next/server";
@@ -28,7 +29,9 @@ export const GET = async (req: NextRequest) => {
       }
     } else if (address) {
       const farcasterUser = await fetchFarcasterUsersByAddresses(address);
-      fid = farcasterUser?.[address]?.fid ?? null;
+      const entry = farcasterUser[address];
+      const profile = z.object({ fid: z.number() }).safeParse(Array.isArray(entry) ? entry[0] : entry);
+      fid = profile.success ? profile.data.fid : null;
     }
 
     if (!fid) {

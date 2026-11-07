@@ -246,7 +246,7 @@ export default function DropCreatePage() {
 
       if (res.ok && Array.isArray(data.drops)) {
         data.drops.forEach(({ dropId, claimToken }: DropResponseItem) => {
-          localStorage.setItem(`claimToken:${dropId}`, claimToken);
+          if (claimToken) localStorage.setItem(`claimToken:${dropId}`, claimToken);
         });
 
         if (data.groupUrl) {

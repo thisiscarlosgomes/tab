@@ -215,7 +215,7 @@ export function FooterNav({
             : (isActive ? "bg-white/5 text-white" : "text-white/50 hover:text-white/80")
         );
 
-        if (item.action === "scan") {
+        if ("action" in item && item.action === "scan") {
           return (
             <button
               key="scan"

@@ -14,10 +14,10 @@ function getTokenDecimals(name: string) {
 
 export async function POST(
   req: NextRequest,
-  { params }: { params: { groupId: string } }
+  { params }: { params: Promise<{ groupId: string }> }
 ) {
   try {
-    const groupId = params.groupId?.toLowerCase();
+    const groupId = (await params).groupId?.toLowerCase();
     const { address, fid } = await req.json();
 
     if (!groupId || !address) {
