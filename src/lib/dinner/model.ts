@@ -67,7 +67,7 @@ export type Invitation = {
   expiresAt: string;
   createdAt: string;
 };
-export type Message = {
+type MessageBase = {
   id: string;
   seq: number;
   authorId: string;
@@ -78,6 +78,8 @@ export type Message = {
   createdAt: string;
   reactions: { userId: string; emoji: string }[];
 };
+export type Message = MessageBase &
+  ({ kind?: "member" } | { kind: "tab"; requestedBy: string; runId: string });
 // An outside report is a member claim, never evidence of an in-app transfer.
 const reportBase = z.object({
   id: entityId,

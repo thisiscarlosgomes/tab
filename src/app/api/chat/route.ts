@@ -1,4 +1,4 @@
-import { openai } from "@ai-sdk/openai";
+import { getTabChatModel } from "@/lib/tab-chat-model";
 import {
   convertToModelMessages,
   stepCountIs,
@@ -862,7 +862,7 @@ export async function POST(req: NextRequest) {
     : "{}";
 
   const result = streamText({
-    model: openai(process.env.OPENAI_CHAT_MODEL?.trim() || "gpt-4o-mini"),
+    model: getTabChatModel(),
     system: [
       "You are Tab Assistant inside the Tab app.",
       "You are currently in READ-ONLY mode.",

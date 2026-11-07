@@ -1,3 +1,4 @@
+import { TAB_BOT_ID, mentionsTab } from "./agent/model";
 import { createHash, randomBytes, randomUUID } from "node:crypto";
 import {
   Actor,
@@ -298,6 +299,44 @@ export class DinnerService {
         text: input.text,
         replyTo: input.replyTo ?? null,
         attachmentIds: input.attachmentIds,
+        createdAt: this.now(),
+        seq: (room.messages.at(-1)?.seq ?? 0) + 1,
+        reactions: [],
+      };
+      room.messages.push(message);
+      return message;
+    });
+  }
+  async botReply(id: string, requester: Actor, sourceId: string, text: string) {
+    return this.change(id, requester, (room) => {
+      const source = room.messages.find(
+        (m) =>
+          m.id === sourceId && m.authorId === requester.id && m.kind !== "tab",
+      );
+      if (!source || !mentionsTab(source.text))
+        fail(
+          403,
+          "Only an addressed, persisted member message can request Tab",
+        );
+      const previous = room.messages.find(
+        (m) => m.kind === "tab" && m.runId === sourceId,
+      );
+      if (previous) return previous;
+      if (room.messages.length >= 1000)
+        fail(
+          422,
+          "This beta room has reached its message limit. History is preserved.",
+        );
+      const message: Message = {
+        id: randomUUID(),
+        authorId: TAB_BOT_ID,
+        clientId: sourceId,
+        kind: "tab",
+        requestedBy: requester.id,
+        runId: sourceId,
+        text,
+        replyTo: sourceId,
+        attachmentIds: [],
         createdAt: this.now(),
         seq: (room.messages.at(-1)?.seq ?? 0) + 1,
         reactions: [],

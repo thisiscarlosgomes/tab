@@ -2,7 +2,7 @@ import { z } from "zod";
 import { expenseInput, obligationSchema } from "./model";
 
 export const meSchema = z.object({ id: z.string(), name: z.string() });
-export const messageSchema = z.object({
+const messageBase = z.object({
   id: z.string(),
   seq: z.number(),
   authorId: z.string(),
@@ -13,6 +13,14 @@ export const messageSchema = z.object({
   createdAt: z.string(),
   reactions: z.array(z.object({ userId: z.string(), emoji: z.string() })),
 });
+export const messageSchema = z.union([
+  messageBase.extend({ kind: z.literal("member").optional() }),
+  messageBase.extend({
+    kind: z.literal("tab"),
+    requestedBy: z.string(),
+    runId: z.string(),
+  }),
+]);
 const expenseBase = expenseInput.extend({
   id: z.string(),
   creatorId: z.string(),

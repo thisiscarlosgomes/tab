@@ -1,3 +1,4 @@
+import { DinnerAgentService } from "./agent/service";
 import { z, ZodError } from "zod";
 import {
   Actor,
@@ -17,6 +18,7 @@ export type DinnerDependencies = {
   actor: (request: Request) => Promise<Actor>;
   service: DinnerService;
   attachments: Attachments;
+  agent?: DinnerAgentService;
   friends?: (request: Request) => Promise<unknown>;
 };
 function json(value: unknown, status = 200) {
@@ -80,6 +82,64 @@ export async function handleDinner(
       deps.friends
     )
       return json(await deps.friends(request));
+    if (deps.agent) {
+      const agent = deps.agent;
+      if (path.length === 1 && path[0] === "wallet" && method === "GET")
+        return json(await agent.wallet(actor));
+      if (path[0] === "agent") {
+        if (path.length === 2 && path[1] === "session" && method === "GET")
+          return json(await agent.session(actor));
+        if (path.length === 2 && path[1] === "messages" && method === "POST")
+          return json(
+            await agent.personalSend(actor, await body(request)),
+            201,
+          );
+        if (path.length === 2 && path[1] === "respond" && method === "POST") {
+          const input = z
+            .object({ messageId: entityId })
+            .strict()
+            .parse(await body(request));
+          return json(
+            await agent.respond(actor, { kind: "personal" }, input.messageId),
+          );
+        }
+        if (path.length === 2 && path[1] === "memory") {
+          if (method === "GET")
+            return json(
+              (await agent.note(actor, { kind: "personal" }, "memory")).value,
+            );
+          if (method === "PUT")
+            return json(
+              await agent.saveNote(
+                actor,
+                { kind: "personal" },
+                "memory",
+                await body(request),
+              ),
+            );
+        }
+        if (path.length === 2 && path[1] === "reminders") {
+          if (method === "GET") return json(await agent.reminders(actor));
+          if (method === "POST")
+            return json(await agent.remind(actor, await body(request)), 201);
+        }
+        if (path.length === 3 && path[1] === "reminders" && method === "DELETE")
+          return json(await agent.dismiss(actor, entityId.parse(path[2])));
+        if (
+          path.length === 4 &&
+          path[1] === "proposals" &&
+          path[3] === "apply" &&
+          method === "POST"
+        ) {
+          z.object({ clientId: retryId })
+            .strict()
+            .parse(await body(request));
+          return json(
+            await agent.applyProposal(actor, entityId.parse(path[2])),
+          );
+        }
+      }
+    }
     if (path.length === 1 && path[0] === "me" && method === "GET")
       return json({ id: actor.id, name: actor.name });
     if (path.length === 1 && path[0] === "rooms") {
@@ -123,6 +183,35 @@ export async function handleDinner(
       );
     }
     await deps.service.memberRoom(roomId, actor);
+    if (deps.agent && path.length === 3) {
+      const scope = {
+        kind: "room",
+        roomId,
+      } satisfies import("./agent/capabilities").AgentScope;
+      if (path[2] === "bot" && method === "POST") {
+        const input = z
+          .object({ messageId: entityId })
+          .strict()
+          .parse(await body(request));
+        return json(await deps.agent.respond(actor, scope, input.messageId));
+      }
+      if (path[2] === "proposals" && method === "GET")
+        return json(await deps.agent.roomProposals(actor, roomId));
+      if (path[2] === "agreements" || path[2] === "memory") {
+        if (method === "GET")
+          return json((await deps.agent.note(actor, scope, path[2])).value);
+        if (method === "PUT")
+          return json(
+            await deps.agent.saveNote(
+              actor,
+              scope,
+              path[2],
+              await body(request),
+            ),
+          );
+      }
+    }
+
     if (path[2] === "invites" && path.length === 3 && method === "POST")
       return json(
         await deps.service.invite(roomId, actor, await body(request)),
