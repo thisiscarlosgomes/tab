@@ -22,6 +22,7 @@ import {
   prepareInput,
   mentionsTab,
 } from "./model";
+import { draftNudge, memberSummary, nudgeInput } from "./room-tools";
 import { AgentRunner, AgentScope, AgentContext } from "./capabilities";
 import { runTabAgent } from "./runtime";
 
@@ -349,6 +350,12 @@ export class DinnerAgentService {
     const room = await this.scopeRoom(actor, scope, input.roomId);
     const { roomId, ...fields } = input;
     validateShares({ ...fields, clientId: randomUUID() }, room);
+    // A receipt can only be linked if a member already posted it in this room. Tab never reads image bytes.
+    if (
+      fields.attachmentId &&
+      !room.messages.some((m) => m.attachmentIds.includes(fields.attachmentId!))
+    )
+      fail(400, "Receipt must be an image already shared in this room");
     const collection = this.db.collection<Proposal>("dinner-agent-proposals");
     const previous = await collection.findOne(
       { runKey },
@@ -374,7 +381,12 @@ export class DinnerAgentService {
     }
     return proposal;
   }
-  async respond(actor: Actor, scope: AgentScope, sourceId: string) {
+  async respond(
+    actor: Actor,
+    scope: AgentScope,
+    sourceId: string,
+    onDelta?: (text: string) => void,
+  ) {
     await this.ready;
     let conversation: AgentContext["conversation"];
     if (scope.kind === "room") {
@@ -398,7 +410,7 @@ export class DinnerAgentService {
           content:
             m.kind === "tab"
               ? m.text
-              : `${room.members.find((member) => member.userId === m.authorId)?.name ?? "Member"}: ${m.text}`,
+              : `${room.members.find((member) => member.userId === m.authorId)?.name ?? "Member"}: ${m.text}${m.attachmentIds.length ? ` [receipt/image attachmentIds: ${m.attachmentIds.join(", ")}; image contents are not available to Tab]` : ""}`,
         }));
     } else {
       const session = await this.session(actor);
@@ -488,6 +500,16 @@ export class DinnerAgentService {
               "Your obligations only, not available cash. No connected financial execution.",
           };
         },
+        memberSummary: async (roomId) => {
+          const facts = await readRoom(roomId);
+          return memberSummary(facts);
+        },
+        draftNudge: async (raw) => {
+          const input = nudgeInput.parse(raw);
+          const facts = await readRoom(input.roomId);
+          return draftNudge(facts, actor.id, input);
+        },
+        onDelta,
         prepareExpense: async (raw) => {
           await active();
           return this.prepare(actor, scope, key, raw);

@@ -5,8 +5,16 @@ import { agentViewSchema, Turn, turnSchema } from "@/lib/dinner/agent/model";
 import { useDinner } from "./DinnerShell";
 import { EditableNote } from "./Coordination";
 import { AgentCards } from "./AgentCards";
+import { LiveReply, SuggestedPrompts, useTabReply } from "./TabReply";
+
+const PERSONAL_PROMPTS = [
+  "Who owes whom across my rooms?",
+  "What's still pending?",
+  "Which outside reports need my confirmation?",
+];
 export function PersonalAgent() {
   const { api, me } = useDinner();
+  const tabReply = useTabReply("/agent/respond");
   const [view, setView] = useState<z.infer<typeof agentViewSchema>>({
     messages: [],
     proposals: [],
@@ -36,15 +44,8 @@ export function PersonalAgent() {
     setBusy(true);
     setError("");
     try {
-      await api(
-        "/agent/respond",
-        {
-          method: "POST",
-          body: JSON.stringify({ messageId: message.id }),
-          signal: AbortSignal.timeout(55_000),
-        },
-        z.object({ status: z.string(), text: z.string() }),
-      );
+      const result = await tabReply.ask(message.id);
+      if (result.status !== "complete") setError(result.text);
       await refresh();
     } catch (e) {
       setError(
@@ -124,7 +125,17 @@ export function PersonalAgent() {
                   split for one of your rooms.
                 </p>
               )}
+              {tabReply.live !== null && (
+                <LiveReply label="Tab · replying" text={tabReply.live} />
+              )}
             </div>
+            <SuggestedPrompts
+              prompts={PERSONAL_PROMPTS}
+              disabled={busy || !!pending}
+              onPick={(prompt) =>
+                void send({ clientId: crypto.randomUUID(), text: prompt })
+              }
+            />
             {error && (
               <p className="dinner-error" role="alert">
                 {error}

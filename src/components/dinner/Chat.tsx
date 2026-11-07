@@ -18,6 +18,14 @@ import { messageSchema } from "@/lib/dinner/client-schema";
 import { RoomView, Message, messageInput } from "@/lib/dinner/model";
 import { useDinner } from "./DinnerShell";
 import { PrivateImage } from "./PrivateImage";
+import { LiveReply, SuggestedPrompts, useTabReply } from "./TabReply";
+
+const ROOM_PROMPTS = [
+  "@Tab who owes whom?",
+  "@Tab what's still pending?",
+  "@Tab split this receipt equally, total $",
+  "@Tab draft a friendly nudge for ",
+];
 
 type Pending = {
   input: z.infer<typeof messageInput>;
@@ -32,6 +40,7 @@ export function Chat({
   refresh: () => Promise<void>;
 }) {
   const { api, me } = useDinner();
+  const tabReply = useTabReply(`/rooms/${room.id}/bot`);
   const [botBusy, setBotBusy] = useState(false);
   const [botError, setBotError] = useState("");
   const [proposals, setProposals] = useState<Proposal[]>([]);
@@ -135,15 +144,7 @@ export function Chat({
     setBotBusy(true);
     setBotError("");
     try {
-      const result = await api(
-        `/rooms/${room.id}/bot`,
-        {
-          method: "POST",
-          body: JSON.stringify({ messageId: message.id }),
-          signal: AbortSignal.timeout(55_000),
-        },
-        z.object({ status: z.string(), text: z.string() }),
-      );
+      const result = await tabReply.ask(message.id);
       if (result.status !== "complete") setBotError(result.text);
       await refresh();
       await loadProposals();
@@ -326,6 +327,17 @@ export function Chat({
                   </p>
                 )}
                 <p>{message.text}</p>
+                {message.kind === "tab" && (
+                  <button
+                    type="button"
+                    className="dinner-small dinner-quiet"
+                    onClick={() =>
+                      void navigator.clipboard?.writeText(message.text)
+                    }
+                  >
+                    Copy to send yourself
+                  </button>
+                )}
                 {message.kind !== "tab" &&
                   message.authorId === me?.id &&
                   mentionsTab(message.text) &&
@@ -392,6 +404,9 @@ export function Chat({
               </div>
             </article>
           ))}
+        {tabReply.live !== null && (
+          <LiveReply label="Tab · replying" text={tabReply.live} />
+        )}
         <div ref={bottom} />
       </div>
       {error && (
@@ -426,6 +441,11 @@ export function Chat({
       >
         Mention @Tab
       </button>
+      <SuggestedPrompts
+        prompts={ROOM_PROMPTS}
+        disabled={botBusy}
+        onPick={(prompt) => setText(prompt)}
+      />
       <AgentCards
         proposals={proposals}
         refresh={async () => {

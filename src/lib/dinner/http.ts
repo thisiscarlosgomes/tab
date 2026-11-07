@@ -27,6 +27,78 @@ function json(value: unknown, status = 200) {
     headers: { "Cache-Control": "private, no-store", Vary: "Authorization" },
   });
 }
+type Reply = { status: string; text: string };
+/**
+ * Streams addressed agent replies as NDJSON when the client asks for it. The member message is
+ * already persisted; the reply is persisted by the service before the final `done` line. Errors
+ * raised before any text keep their normal JSON status so authorization failures stay visible.
+ */
+function agentReply(
+  request: Request,
+  run: (onDelta?: (text: string) => void) => Promise<Reply>,
+): Promise<Response> {
+  if (!request.headers.get("accept")?.includes("application/x-ndjson"))
+    return run().then((reply) => json(reply));
+  const encoder = new TextEncoder();
+  return new Promise<Response>((resolve, reject) => {
+    let controller: ReadableStreamDefaultController<Uint8Array> | undefined;
+    const queue: Uint8Array[] = [];
+    let opened = false;
+    let finished = false;
+    const write = (value: unknown) => {
+      const line = encoder.encode(JSON.stringify(value) + "\n");
+      if (controller) controller.enqueue(line);
+      else queue.push(line);
+    };
+    const finish = () => {
+      finished = true;
+      controller?.close();
+    };
+    const open = () => {
+      if (opened) return;
+      opened = true;
+      resolve(
+        new Response(
+          new ReadableStream<Uint8Array>({
+            start(c) {
+              controller = c;
+              for (const line of queue.splice(0)) c.enqueue(line);
+              if (finished) c.close();
+            },
+          }),
+          {
+            headers: {
+              "Content-Type": "application/x-ndjson; charset=utf-8",
+              "Cache-Control": "private, no-store",
+              Vary: "Authorization",
+            },
+          },
+        ),
+      );
+    };
+    run((text) => {
+      write({ type: "delta", text });
+      open();
+    }).then(
+      (reply) => {
+        if (!opened) return resolve(json(reply));
+        write({ type: "done", ...reply });
+        finish();
+      },
+      (error: unknown) => {
+        if (!opened) return reject(error);
+        write({
+          type: "error",
+          error:
+            error instanceof DinnerError
+              ? error.message
+              : "Tab could not finish this reply. Your message is saved; retry it.",
+        });
+        finish();
+      },
+    );
+  });
+}
 async function body(request: Request): Promise<unknown> {
   if (Number(request.headers.get("content-length")) > 32_000)
     fail(413, "Request too large");
@@ -99,8 +171,13 @@ export async function handleDinner(
             .object({ messageId: entityId })
             .strict()
             .parse(await body(request));
-          return json(
-            await agent.respond(actor, { kind: "personal" }, input.messageId),
+          return await agentReply(request, (onDelta) =>
+            agent.respond(
+              actor,
+              { kind: "personal" },
+              input.messageId,
+              onDelta,
+            ),
           );
         }
         if (path.length === 2 && path[1] === "memory") {
@@ -193,7 +270,10 @@ export async function handleDinner(
           .object({ messageId: entityId })
           .strict()
           .parse(await body(request));
-        return json(await deps.agent.respond(actor, scope, input.messageId));
+        const agent = deps.agent;
+        return await agentReply(request, (onDelta) =>
+          agent.respond(actor, scope, input.messageId, onDelta),
+        );
       }
       if (path[2] === "proposals" && method === "GET")
         return json(await deps.agent.roomProposals(actor, roomId));

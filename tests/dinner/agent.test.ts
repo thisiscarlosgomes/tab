@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { before, after, beforeEach, test } from "node:test";
 import { randomUUID } from "node:crypto";
+import sharp from "sharp";
 import { MongoClient, Db } from "mongodb";
 import { MongoMemoryServer } from "mongodb-memory-server";
 import {
@@ -585,8 +586,12 @@ test("reminders reject past times, foreign rooms and body-supplied reminder owne
 });
 test("skills are versioned and loaded only from the allowlist, never legacy delegated payment skills", async () => {
   assert.equal(skillCatalog.length, 3);
+  for (const skill of skillCatalog)
+    assert.ok(
+      (await loadSkill(skill.name)).includes(`version: "${skill.version}"`),
+      `${skill.name} file version must match the catalog`,
+    );
   const text = await loadSkill("expense-preparation");
-  assert.ok(text.includes('version: "1.0"'));
   assert.ok(text.includes("human"));
   await assert.rejects(loadSkill("../tab-agent-send"));
   await assert.rejects(loadSkill("tab-agent-send"));
@@ -625,3 +630,192 @@ test("without a model key the real runtime gives a verified readable summary wit
     else process.env.OPENAI_API_KEY = savedKey;
   }
 });
+
+async function confirmedDinner() {
+  const r = await joined();
+  const { roomId, ...draftFields } = expense(r.id);
+  const d = await dinner.draft(roomId, alice, {
+    ...draftFields,
+    clientId: randomUUID(),
+  });
+  const e = await dinner.confirm(r.id, alice, d.id, randomUUID(), d.version);
+  if (e.status !== "confirmed") assert.fail("expense should confirm");
+  return { r, e };
+}
+function ndjsonRequest(
+  service: DinnerAgentService,
+  path: string,
+  body: unknown,
+) {
+  return handleDinner(
+    new Request(`http://localhost/api/dinner${path}`, {
+      method: "POST",
+      headers: { accept: "application/x-ndjson" },
+      body: JSON.stringify(body),
+    }),
+    path.split("/").filter(Boolean),
+    {
+      enabled: true,
+      actor: async () => alice,
+      service: dinner,
+      attachments: new Attachments(db, dinner),
+      agent: service,
+    },
+  );
+}
+const lines = async (response: Response) =>
+  (await response.text())
+    .split("\n")
+    .filter(Boolean)
+    .map((l) => JSON.parse(l) as Record<string, unknown>);
+
+test("addressed room replies stream deltas and persist the reply before the done line", async () => {
+  const r = await joined();
+  const source = await addressed(r.id);
+  const service = agent(async (context) => {
+    context.onDelta?.("Bob owes ");
+    context.onDelta?.("Alice $10.00.");
+    return "Bob owes Alice $10.00.";
+  });
+  const response = await ndjsonRequest(service, `/rooms/${r.id}/bot`, {
+    messageId: source.id,
+  });
+  assert.match(response.headers.get("content-type") ?? "", /ndjson/);
+  const events = await lines(response);
+  assert.deepEqual(
+    events.map((e) => e.type),
+    ["delta", "delta", "done"],
+  );
+  assert.equal(events[2].text, "Bob owes Alice $10.00.");
+  const saved = (await dinner.memberRoom(r.id, alice)).messages;
+  assert.equal(saved.filter((m) => m.kind === "tab").length, 1);
+  assert.ok(saved.some((m) => m.id === source.id));
+});
+
+test("personal replies stream too, and JSON clients keep the existing response shape", async () => {
+  const service = agent(async (context) => {
+    context.onDelta?.("Nothing owed.");
+    return "Nothing owed.";
+  });
+  const a = await service.personalSend(alice, {
+    clientId: randomUUID(),
+    text: "What do I owe?",
+  });
+  const events = await lines(
+    await ndjsonRequest(service, "/agent/respond", { messageId: a.id }),
+  );
+  assert.equal(events.at(-1)?.type, "done");
+  const b = await service.personalSend(alice, {
+    clientId: randomUUID(),
+    text: "Again?",
+  });
+  const plain = await http(service, alice, "/agent/respond", "POST", {
+    messageId: b.id,
+  });
+  assert.deepEqual(await plain.json(), {
+    status: "complete",
+    text: "Nothing owed.",
+  });
+});
+
+test("a stream that fails mid-reply reports an error, saves no bot reply and stays retryable", async () => {
+  const r = await joined();
+  const source = await addressed(r.id);
+  const failing = agent(async (context) => {
+    context.onDelta?.("Bob owes");
+    throw new Error("provider dropped");
+  });
+  const events = await lines(
+    await ndjsonRequest(failing, `/rooms/${r.id}/bot`, {
+      messageId: source.id,
+    }),
+  );
+  assert.equal(events.at(-1)?.type, "error");
+  const room = await dinner.memberRoom(r.id, alice);
+  assert.ok(room.messages.some((m) => m.id === source.id));
+  assert.equal(room.messages.filter((m) => m.kind === "tab").length, 0);
+  await agent().respond(alice, { kind: "room", roomId: r.id }, source.id);
+  assert.equal(
+    (await dinner.memberRoom(r.id, alice)).messages.filter(
+      (m) => m.kind === "tab",
+    ).length,
+    1,
+  );
+});
+
+test("member summary and nudge drafts are read-only and never post or settle anything", async () => {
+  const { r } = await confirmedDinner();
+  const before = await dinner.memberRoom(r.id, alice);
+  const source = await addressed(r.id, alice, "@Tab nudge Bob");
+  let summary:
+    | Awaited<ReturnType<AgentContextFns["memberSummary"]>>
+    | undefined;
+  let nudge: Awaited<ReturnType<AgentContextFns["draftNudge"]>> | undefined;
+  await agent(async (context) => {
+    summary = await context.memberSummary(r.id);
+    nudge = await context.draftNudge({ roomId: r.id, debtorId: bob.id });
+    await assert.rejects(
+      context.draftNudge({ roomId: r.id, debtorId: carol.id }),
+    );
+    await assert.rejects(context.memberSummary(randomUUID()));
+    return "Draft ready; copy it to send yourself.";
+  }).respond(alice, { kind: "room", roomId: r.id }, source.id);
+  const bobRow = summary?.members.find((m) => m.userId === bob.id);
+  assert.equal(bobRow?.oweCents, 1000);
+  assert.equal(
+    summary?.members.find((m) => m.userId === alice.id)?.owedCents,
+    1000,
+  );
+  assert.equal(nudge?.sent, false);
+  assert.match(nudge?.text ?? "", /\$10\.00/);
+  const after = await dinner.memberRoom(r.id, alice);
+  // Only the addressed message and Tab's reply were added; no nudge was posted.
+  assert.equal(after.messages.length, before.messages.length + 2);
+  assert.ok(!after.messages.some((m) => m.text === nudge?.text));
+  assert.deepEqual(
+    after.expenses.map((e) => e.status),
+    before.expenses.map((e) => e.status),
+  );
+});
+
+test("a proposal can link a receipt already shared in the room, never a guessed one", async () => {
+  const r = await joined();
+  const image = await sharp({
+    create: { width: 2, height: 2, channels: 3, background: "white" },
+  })
+    .png()
+    .toBuffer();
+  const upload = await new Attachments(db, dinner).upload(
+    r.id,
+    alice,
+    new Request(`http://localhost?clientId=${randomUUID()}`, {
+      method: "POST",
+      headers: { "content-type": "image/png" },
+      body: new Uint8Array(image),
+    }),
+  );
+  const source = await dinner.send(r.id, alice, {
+    clientId: randomUUID(),
+    text: "@Tab split this receipt, $20.01, Alice paid",
+    attachmentIds: [upload.id],
+  });
+  let seen = "";
+  const service = agent(async (context) => {
+    seen = context.conversation.at(-1)?.content ?? "";
+    await assert.rejects(
+      context.prepareExpense({ ...expense(r.id), attachmentId: randomUUID() }),
+    );
+    await context.prepareExpense({ ...expense(r.id), attachmentId: upload.id });
+    return "Review the proposal.";
+  });
+  await service.respond(alice, { kind: "room", roomId: r.id }, source.id);
+  assert.match(seen, new RegExp(upload.id));
+  const [proposal] = await service.roomProposals(alice, r.id);
+  assert.equal(proposal.fields.attachmentId, upload.id);
+  assert.equal(proposal.appliedExpenseId, null);
+  const draft = await service.applyProposal(alice, proposal.id);
+  assert.equal(draft.status, "draft");
+  assert.equal(draft.attachmentId, upload.id);
+});
+type AgentContextFns =
+  import("../../src/lib/dinner/agent/capabilities").AgentContext;

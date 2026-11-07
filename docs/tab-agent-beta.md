@@ -20,7 +20,10 @@ Use two accepted members to test a real shared obligation. A one-person room cre
 5. Inspect the proposed payer, total, and exact-cent shares. Choose **Save editable draft**.
 6. Open **Money**. Edit the draft if needed, then explicitly review and confirm it. The proposal alone creates no obligation.
 7. As the debtor, choose **Report paid outside Tab** after an actual outside payment. The share remains outstanding until the creditor explicitly reviews and confirms receipt in Money.
-8. Add a second expense in the same room. The conversation and earlier records remain.
+8. After confirming an expense, tap the **@Tab what's still pending?** prompt (it only prefills the composer), send it, and watch the reply stream under **Tab · replying** before it is saved.
+9. Ask `@Tab draft a friendly nudge for Bob`. Tab returns wording only; use **Copy to send yourself**. Nothing is posted or sent by Tab.
+10. Post a receipt image, then ask `@Tab split this receipt, $42.10, paid by Alice, equally`. The proposal links the posted receipt; Tab cannot read the image, so the amount comes from your message.
+11. Add a second expense in the same room. The conversation and earlier records remain.
 
 If generation fails, use **Ask Tab to reply** on the saved addressed message. Do not resend it to retry a reply. A crashed active run can need 70 seconds before its lease becomes retryable.
 

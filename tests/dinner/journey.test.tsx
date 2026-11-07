@@ -440,3 +440,13 @@ test("room Plan saves a shared agreement and a private reminder that appears on 
   );
   assert.equal((await agent.reminders(bob)).length, 0);
 });
+test("room suggested prompts only prefill an @Tab message; nothing is sent until the member sends it", async () => {
+  render(<Harness chat />);
+  fireEvent.click(screen.getByRole("button", { name: "@Tab who owes whom?" }));
+  const box = screen.getByLabelText<HTMLTextAreaElement>("Message the room");
+  assert.equal(box.value, "@Tab who owes whom?");
+  assert.equal(
+    (await service.memberRoom(initial.id, alice)).messages.length,
+    0,
+  );
+});

@@ -54,7 +54,7 @@ export const reminderSchema = z.object({
 });
 export type Reminder = z.infer<typeof reminderSchema>;
 export const prepareInput = expenseInput
-  .omit({ clientId: true, attachmentId: true })
+  .omit({ clientId: true })
   .extend({ roomId: entityId })
   .strict();
 export const proposalSchema = z.object({

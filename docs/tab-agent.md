@@ -8,7 +8,9 @@ Tab uses one runtime for addressed room messages and private conversations. It r
 
 The established Next.js app already uses Vercel AI SDK in `AssistantChatPage` and `/api/chat`. The dinner runtime uses the installed AI SDK 6 `ToolLoopAgent`, typed tools, and `stepCountIs(6)`. Both assistants share the existing OpenAI provider/model factory in `src/lib/tab-chat-model.ts`. The new runtime does not import legacy wallet or delegated execution tools. No `chat` package, adapter vendor, or separate eve app is added.
 
-Dinner uses a small authenticated HTTP transport rather than an optimistic streaming transcript. Sending first persists a human message. A separate response request then saves the assistant reply. This preserves a useful distinction: a model failure cannot turn an acknowledged member message into a failed send, or label a model reply as saved before persistence.
+Dinner uses a small authenticated HTTP transport rather than an optimistic streaming transcript. Sending first persists a human message. A separate response request then generates and saves the assistant reply. This preserves a useful distinction: a model failure cannot turn an acknowledged member message into a failed send, or label a model reply as saved before persistence.
+
+The response request streams. When a client sends `Accept: application/x-ndjson` to `POST /api/dinner/rooms/:id/bot` or `POST /api/dinner/agent/respond`, the runtime uses `ToolLoopAgent.stream` and the route emits `{"type":"delta"}` lines, then a final `{"type":"done","status","text"}` only after the reply is persisted. A failure after text has started emits `{"type":"error"}`; no bot reply is saved and **Ask Tab to reply** retries the same source message. Errors raised before any text (authorization, missing source) keep their normal JSON status codes. Clients that do not ask for NDJSON get the previous JSON response. The streamed text is an unsaved preview labelled **Tab · replying**; the saved reply replaces it on refresh. This borrows the legacy `/assistant` streaming experience without its optimistic `useChat` transcript, because rooms must persist the member message first.
 
 The research informed these choices:
 
@@ -22,14 +24,16 @@ AI SDK 7 is available upstream. This increment stays on the repository's install
 
 Every new API route sits behind `DINNER_ROOMS_ENABLED=true` and verified Privy identity. The server selects the internal user ID. Request bodies cannot supply an actor, wallet, role, or model scope.
 
-The runtime exposes four tools:
+The runtime exposes six tools:
 
 - `load_skill`: reads one of three allowlisted, versioned instruction files.
 - `read_context`: reads the current room, or the requesting user's room totals and pending reports.
 - `read_room`: reads shared facts only after membership validation. A room agent is fixed to its original room, even if the requester belongs to others.
-- `prepare_expense`: validates accepted members and integer-cent totals, then stores one review proposal per source message. It does not create an expense or obligation.
+- `member_summary`: read-only per-member outstanding owe/owed totals and pending outside-report counts for a member room (same room restriction as `read_room`).
+- `draft_nudge`: drafts reminder wording to a member who owes the requester. It returns `sent: false` and is never posted, delivered, or scheduled; the requester copies it (**Copy to send yourself** on Tab replies) and sends it themselves.
+- `prepare_expense`: validates accepted members and integer-cent totals, then stores one review proposal per source message. It does not create an expense or obligation. It may link a receipt via `attachmentId` only when that attachment was already posted in a message in this room; the model sees attachment IDs, never image bytes, so the total still comes from the member's words.
 
-Successful tool calls record their name, scope (`user-read`, `room-read`, or `room-prepare`), and outcome against the run. There is no generic HTTP, shell, filesystem, payment, receipt-confirmation, or memory-write tool. The fixed skill reader cannot load `skills/tab-agent-send` or a path supplied by a model.
+Successful tool calls record their name, scope (`user-read`, `room-read`, or `room-prepare`), and outcome against the run. There is no generic HTTP, shell, filesystem, payment, receipt-confirmation, message-send, or memory-write tool. The fixed skill reader cannot load `skills/tab-agent-send` or a path supplied by a model.
 
 Only the proposal's human requester can choose **Save editable draft**. That endpoint rechecks membership and calls `DinnerService.draft` with the proposal UUID as its stable retry ID. The existing Money flow still requires human review and confirmation before obligations exist. A private proposal is not visible to the room until the requester saves it as a financial draft. A room proposal is shared for review, but another member cannot apply it as its author.
 
@@ -63,9 +67,11 @@ Conversation text, memory, agreements, member names, and tool text are untrusted
 
 `/app/wallet` shows **You owe**, **Owed to you**, pending outside reports, and room Money links. Pending reports remain included in outstanding totals. **Available** is explicitly not connected, not $0 cash or a relabeled crypto portfolio value. Add money and Withdraw are disabled with truthful copy. The existing dark legacy wallet remains reachable separately.
 
+Room chat and `/app/agent` show suggested prompts. Room prompts (for example "@Tab who owes whom?", "@Tab what's still pending?", "@Tab split this receipt…", "@Tab draft a friendly nudge for…") only prefill the composer; nothing is sent or addressed to Tab until the member presses Send. Personal prompts send a private message to the member's own agent.
+
 Room **Plan** contains versioned agreements, shared memory, and a private reminder form. Reminders appear on Today when the app opens and refresh while it is visible. They do not send push notifications, run in a background service, contact anyone, or perform financial actions.
 
-There is no settlement rail, custody, funding, withdrawal, pot, refund, delegated payment execution, member removal, or confirmed-expense amendment in this increment. Receipt images remain private room attachments; the model is not given image bytes or permission to treat extraction as confirmation.
+There is no settlement rail, custody, funding, withdrawal, pot, refund, delegated payment execution, member removal, or confirmed-expense amendment in this increment. Receipt images remain private room attachments; the model is not given image bytes, does not extract amounts, and cannot treat a linked receipt as confirmation.
 
 ## Configuration and verification boundary
 
