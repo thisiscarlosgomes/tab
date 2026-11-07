@@ -62,11 +62,12 @@ async function api<T>(
   path: string,
   init: RequestInit,
   schema: z.ZodType<T>,
+  actor: Actor = alice,
 ): Promise<T> {
   const response = await handleDinner(
     new Request(`http://localhost/api/dinner${path}`, init),
     path.slice(1).split("/"),
-    { enabled: true, actor: async () => alice, service, attachments },
+    { enabled: true, actor: async () => actor, service, attachments },
   );
   const raw: unknown = await response.json();
   if (!response.ok) {
@@ -78,9 +79,11 @@ async function api<T>(
 function Harness({
   chat = false,
   loseAck = false,
+  actor = alice,
 }: {
   chat?: boolean;
   loseAck?: boolean;
+  actor?: Actor;
 }) {
   const lost = useRef(false);
   async function request<T>(
@@ -88,7 +91,7 @@ function Harness({
     init: RequestInit,
     schema: z.ZodType<T>,
   ): Promise<T> {
-    const result = await api(path, init, schema);
+    const result = await api(path, init, schema, actor);
     if (
       loseAck &&
       !lost.current &&
@@ -108,7 +111,7 @@ function Harness({
     <DinnerContext.Provider
       value={{
         api: request,
-        me: { id: alice.id, name: alice.name },
+        me: { id: actor.id, name: actor.name },
         image: async () => new Blob(),
       }}
     >
@@ -142,7 +145,7 @@ test("a member can draft, review and confirm a cent-exact expense through the re
     0,
   );
   fireEvent.click(screen.getByRole("button", { name: "Confirm expense" }));
-  await screen.findByText("Confirmed expense · not paid");
+  await screen.findByText("Confirmed expense · obligation record");
   const saved = await service.memberRoom(initial.id, alice);
   assert.equal(totals(saved, bob.id).owe, 6000);
   assert.equal(saved.expenses[0].totalCents, 12001);
@@ -211,4 +214,89 @@ test("a lost message acknowledgement is shown as retryable, then retries without
   fireEvent.click(screen.getByRole("button", { name: "Retry same message" }));
   await screen.findByText("Sent");
   assert.equal((await service.memberRoom(initial.id, bob)).messages.length, 1);
+});
+
+async function outsideReady() {
+  const draft = await service.draft(initial.id, alice, {
+    clientId: randomUUID(),
+    description: "Noodles",
+    totalCents: 5001,
+    payerId: alice.id,
+    shares: [
+      { userId: alice.id, cents: 2501 },
+      { userId: bob.id, cents: 2500 },
+    ],
+  });
+  await service.confirm(
+    initial.id,
+    alice,
+    draft.id,
+    randomUUID(),
+    draft.version,
+  );
+  initial = roomView(await service.memberRoom(initial.id, alice));
+}
+test("a debtor reports outside payment, then the recipient explicitly reviews and confirms receipt", async () => {
+  await outsideReady();
+  const view = render(<Harness actor={bob} />);
+  fireEvent.click(
+    screen.getByRole("button", { name: "Report paid outside Tab" }),
+  );
+  fireEvent.click(
+    screen.getByRole("button", { name: "Submit outside report" }),
+  );
+  await screen.findByText("Reported paid outside Tab");
+  assert.equal(
+    totals(await service.memberRoom(initial.id, bob), bob.id).owe,
+    2500,
+  );
+  assert.equal(
+    screen.queryByRole("button", { name: "Review outside report" }),
+    null,
+  );
+  view.rerender(<Harness actor={alice} />);
+  fireEvent.click(
+    screen.getByRole("button", { name: "Review outside report" }),
+  );
+  assert.ok(screen.getByText("Did you receive this money outside Tab?"));
+  fireEvent.click(
+    screen.getByRole("button", { name: "Confirm I received this outside Tab" }),
+  );
+  await waitFor(async () =>
+    assert.equal(
+      totals(await service.memberRoom(initial.id, bob), bob.id).owe,
+      0,
+    ),
+  );
+  await waitFor(() =>
+    assert.equal(
+      screen.queryByRole("button", { name: "Review outside report" }),
+      null,
+    ),
+  );
+  assert.ok(screen.getByText(/This is not a Tab payment receipt/));
+  assert.ok(screen.getByText("Reported paid outside Tab"));
+});
+test("the reporting debtor can cancel while unconfirmed without clearing the share", async () => {
+  await outsideReady();
+  render(<Harness actor={bob} />);
+  fireEvent.click(
+    screen.getByRole("button", { name: "Report paid outside Tab" }),
+  );
+  fireEvent.click(
+    screen.getByRole("button", { name: "Submit outside report" }),
+  );
+  await screen.findByText("Reported paid outside Tab");
+  fireEvent.click(
+    screen.getByRole("button", { name: "Cancel unconfirmed report" }),
+  );
+  fireEvent.click(
+    screen.getByRole("button", { name: "Cancel outside report" }),
+  );
+  await screen.findByRole("button", { name: "Report paid outside Tab" });
+  assert.equal(
+    totals(await service.memberRoom(initial.id, bob), bob.id).owe,
+    2500,
+  );
+  assert.ok(screen.getByText(/Reporter cancelled this report/));
 });

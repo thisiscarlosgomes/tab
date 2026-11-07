@@ -66,6 +66,14 @@ export async function handleDinner(
       return json(await deps.service.preview(path[1]));
     const actor = await deps.actor(request);
     if (
+      path[0] === "invites" &&
+      path[1] &&
+      path[2] === "account" &&
+      path.length === 3 &&
+      method === "GET"
+    )
+      return json(await deps.service.inviteAccount(path[1], actor));
+    if (
       path.length === 1 &&
       path[0] === "friends" &&
       method === "GET" &&
@@ -244,6 +252,43 @@ export async function handleDinner(
           input.reason,
         ),
       );
+    }
+    if (
+      path[2] === "obligations" &&
+      path[3] &&
+      path[4] === "reports" &&
+      method === "POST"
+    ) {
+      const obligationId = entityId.parse(path[3]);
+      const input = z
+        .object({ clientId: retryId })
+        .strict()
+        .parse(await body(request));
+      if (path.length === 5)
+        return json(
+          await deps.service.reportOutside(
+            roomId,
+            actor,
+            obligationId,
+            input.clientId,
+          ),
+          201,
+        );
+      if (path.length === 7) {
+        const decision = z
+          .enum(["confirmed", "rejected", "cancelled"])
+          .parse(path[6]);
+        return json(
+          await deps.service.resolveOutside(
+            roomId,
+            actor,
+            obligationId,
+            entityId.parse(path[5]),
+            decision,
+            input.clientId,
+          ),
+        );
+      }
     }
     if (path[2] === "attachments" && path.length === 3 && method === "POST")
       return json(await deps.attachments.upload(roomId, actor, request), 201);

@@ -1,6 +1,7 @@
 import { createHash, randomBytes, randomUUID } from "node:crypto";
 import {
   Actor,
+  OutsideReport,
   Room,
   Invitation,
   Preview,
@@ -166,7 +167,30 @@ export class DinnerService {
       members: room.members.map((m) => m.name),
       status: invitationStatus(invite, this.now()),
       targetLabel: invite.targetLabel,
+      accountBound: invite.targetSubject !== null,
       expiresAt: invite.expiresAt,
+    };
+  }
+  async inviteAccount(token: string, actor: Actor) {
+    const preview = await this.preview(token);
+    const room =
+      (await this.store.byToken(tokenHash(token))) ??
+      fail(404, "Invitation not found");
+    const invite =
+      room.invitations.find((i) => i.tokenHash === tokenHash(token)) ??
+      fail(404, "Invitation not found");
+    if (preview.status === "accepted" || preview.status === "declined")
+      return {
+        canRespond: invite.resolvedBy === actor.id,
+        reason: invite.resolvedBy === actor.id ? null : "resolved_by_another",
+      };
+    if (preview.status !== "pending")
+      return { canRespond: false, reason: "unavailable" };
+    if (invite.targetSubject && invite.targetSubject !== actor.twitterSubject)
+      return { canRespond: false, reason: "different_account" };
+    return {
+      canRespond: preview.status === "pending",
+      reason: preview.status === "pending" ? null : "unavailable",
     };
   }
   async respond(
@@ -192,10 +216,13 @@ export class DinnerService {
               i.targetSubject !== null &&
               i.targetSubject === actor.twitterSubject,
         ) ?? fail(404, "Invitation not found");
-      if (invite.targetSubject && invite.targetSubject !== actor.twitterSubject)
-        fail(403, "This invitation is for a different X account");
       if (invite.status === decision && invite.resolvedBy === actor.id)
         return { roomId: room.id, status: decision };
+      if (invite.targetSubject && invite.targetSubject !== actor.twitterSubject)
+        fail(
+          403,
+          "This invitation is for a different X account. Sign out and sign in with the invited X account; this link will stay here.",
+        );
       if (invitationStatus(invite, this.now()) !== "pending")
         fail(409, "This invitation is no longer pending");
       if (
@@ -420,6 +447,128 @@ export class DinnerService {
         e.id === expenseId ? confirmed : e,
       );
       return confirmed;
+    });
+  }
+  async reportOutside(
+    id: string,
+    actor: Actor,
+    obligationId: string,
+    clientId: string,
+  ) {
+    retryId.parse(clientId);
+    return this.change(id, actor, (room) => {
+      const expense = room.expenses.find(
+        (e) =>
+          e.status === "confirmed" &&
+          e.obligations.some((o) => o.id === obligationId),
+      );
+      if (!expense || expense.status !== "confirmed")
+        return fail(404, "Obligation not found");
+      const obligation =
+        expense.obligations.find((o) => o.id === obligationId) ??
+        fail(404, "Obligation not found");
+      if (actor.id !== obligation.debtorId && actor.id !== expense.creatorId)
+        fail(
+          403,
+          "Only the debtor or expense author can report an outside payment",
+        );
+      const reports = obligation.outsideReports ?? [];
+      const previous = reports.find(
+        (r) => r.clientId === clientId && r.reportedBy === actor.id,
+      );
+      if (previous) return previous;
+      if (obligation.status !== "outstanding")
+        fail(409, "The recipient already confirmed receipt outside Tab");
+      if (reports.some((r) => r.status === "pending"))
+        fail(409, "An outside report is already awaiting the recipient");
+      if (reports.length >= 50)
+        fail(
+          422,
+          "This obligation has reached its beta report limit. History is preserved.",
+        );
+      const report: OutsideReport = {
+        id: randomUUID(),
+        clientId,
+        reportedBy: actor.id,
+        cents: obligation.cents,
+        createdAt: this.now(),
+        status: "pending",
+      };
+      obligation.outsideReports = [...reports, report];
+      return report;
+    });
+  }
+  async resolveOutside(
+    id: string,
+    actor: Actor,
+    obligationId: string,
+    reportId: string,
+    decision: "confirmed" | "rejected" | "cancelled",
+    clientId: string,
+  ) {
+    retryId.parse(clientId);
+    return this.change(id, actor, (room) => {
+      const expense = room.expenses.find(
+        (e) =>
+          e.status === "confirmed" &&
+          e.obligations.some((o) => o.id === obligationId),
+      );
+      if (!expense || expense.status !== "confirmed")
+        return fail(404, "Obligation not found");
+      const obligation =
+        expense.obligations.find((o) => o.id === obligationId) ??
+        fail(404, "Obligation not found");
+      const report =
+        obligation.outsideReports?.find((r) => r.id === reportId) ??
+        fail(404, "Outside report not found");
+      if (
+        decision === "cancelled"
+          ? actor.id !== report.reportedBy
+          : actor.id !== obligation.creditorId
+      )
+        fail(
+          403,
+          decision === "cancelled"
+            ? "Only the reporter can cancel this report"
+            : "Only the recipient can confirm or reject this report",
+        );
+      if (report.status !== "pending") {
+        if (
+          report.status === decision &&
+          report.resolvedBy === actor.id &&
+          report.resolutionId === clientId
+        )
+          return report;
+        return fail(
+          409,
+          "This report was already resolved. Refresh to see its current state.",
+        );
+      }
+      if (obligation.status !== "outstanding")
+        fail(409, "This obligation is already closed");
+      const resolved: OutsideReport = {
+        ...report,
+        status: decision,
+        resolvedBy: actor.id,
+        resolutionId: clientId,
+        resolvedAt: this.now(),
+      };
+      obligation.outsideReports = (obligation.outsideReports ?? []).map((r) =>
+        r.id === reportId ? resolved : r,
+      );
+      if (decision === "confirmed") {
+        expense.obligations = expense.obligations.map((o) =>
+          o.id === obligationId
+            ? {
+                ...o,
+                status: "confirmed_outside",
+                confirmedReportId: report.id,
+              }
+            : o,
+        );
+      }
+      // Flags are independent, durable dispute records. Never clear them here.
+      return resolved;
     });
   }
   async flag(id: string, actor: Actor, expenseId: string, reason: string) {

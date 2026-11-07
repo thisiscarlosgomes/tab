@@ -12,6 +12,7 @@ import {
 } from "@/lib/dinner/model";
 import { expenseSchema } from "@/lib/dinner/client-schema";
 import { useDinner } from "./DinnerShell";
+import { OutsidePayments } from "./OutsidePayments";
 import { PrivateImage } from "./PrivateImage";
 
 export function Money({
@@ -32,6 +33,8 @@ export function Money({
   const [receipt, setReceipt] = useState("");
   const [clientId, setClientId] = useState(() => crypto.randomUUID());
   const [error, setError] = useState("");
+  const [flagging, setFlagging] = useState<string | null>(null);
+  const [flagReason, setFlagReason] = useState("");
   const [busy, setBusy] = useState(false);
   const name = (id: string) =>
     room.members.find((m) => m.userId === id)?.name ?? "Member";
@@ -137,9 +140,7 @@ export function Money({
     }
   }
   async function flag(expense: Expense) {
-    const reason = window.prompt(
-      "What looks wrong with your share? (No balance is changed automatically.)",
-    );
+    const reason = flagReason;
     if (!reason?.trim()) return;
     setBusy(true);
     setError("");
@@ -149,6 +150,8 @@ export function Money({
         { method: "POST", body: JSON.stringify({ reason }) },
         z.unknown(),
       );
+      setFlagging(null);
+      setFlagReason("");
       await refresh();
     } catch (e) {
       setError(e instanceof Error ? e.message : "Could not flag share");
@@ -158,7 +161,7 @@ export function Money({
   }
   const sum = totals(room, me?.id ?? "");
   const pairs = new Map<string, { from: string; to: string; cents: number }>();
-  for (const o of obligations(room)) {
+  for (const o of obligations(room).filter((o) => o.status === "outstanding")) {
     const key = `${o.debtorId}:${o.creditorId}`;
     const previous = pairs.get(key);
     pairs.set(key, {
@@ -338,8 +341,8 @@ export function Money({
           ))
         ) : (
           <p className="dinner-note">
-            No confirmed shares yet. A draft, message or reaction never creates
-            a payment.
+            No outstanding shares. A draft, message or reaction never confirms
+            receipt outside Tab.
           </p>
         )}
       </section>
@@ -353,7 +356,7 @@ export function Money({
                 <span className="dinner-chip">
                   {expense.status === "draft"
                     ? "Unconfirmed draft"
-                    : "Confirmed expense · not paid"}
+                    : "Confirmed expense · obligation record"}
                 </span>
                 <h2 style={{ marginTop: 12, marginBottom: 6 }}>
                   {expense.description}
@@ -384,7 +387,8 @@ export function Money({
                 {name(f.userId)} flagged their share: {f.reason}
                 <br />
                 <span className="dinner-note">
-                  Needs clarification. The recorded obligation is unchanged.
+                  Needs clarification. The flag and recorded share stay in
+                  history.
                 </span>
               </p>
             ))}
@@ -419,18 +423,64 @@ export function Money({
             ) : (
               <div className="dinner-actions" style={{ marginTop: 16 }}>
                 <span className="dinner-note">
-                  Outstanding · No in-app settlement in this beta.
+                  No in-app settlement in this beta. Outside receipt records
+                  appear below.
                 </span>
                 {expense.shares.some((s) => s.userId === me?.id) && (
                   <button
                     className="dinner-small dinner-quiet"
                     disabled={busy}
-                    onClick={() => void flag(expense)}
+                    onClick={() => {
+                      setFlagging(expense.id);
+                      setFlagReason("");
+                    }}
                   >
                     Flag my share
                   </button>
                 )}
               </div>
+            )}
+            {flagging === expense.id && (
+              <form
+                className="dinner-form dinner-outside-review"
+                onSubmit={(event) => {
+                  event.preventDefault();
+                  void flag(expense);
+                }}
+              >
+                <label>
+                  What looks wrong with your share?
+                  <textarea
+                    value={flagReason}
+                    onChange={(event) => setFlagReason(event.target.value)}
+                    maxLength={400}
+                    required
+                  />
+                </label>
+                <p className="dinner-note">
+                  This records a flag without changing the share or making a
+                  payment.
+                </p>
+                <div className="dinner-actions">
+                  <button disabled={busy || !flagReason.trim()}>
+                    Save share flag
+                  </button>
+                  <button
+                    type="button"
+                    className="dinner-quiet"
+                    onClick={() => setFlagging(null)}
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </form>
+            )}
+            {expense.status === "confirmed" && (
+              <OutsidePayments
+                expense={expense}
+                room={room}
+                refresh={refresh}
+              />
             )}
           </section>
         ))}

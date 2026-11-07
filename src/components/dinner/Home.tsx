@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { z } from "zod";
 import { listSchema, roomSchema } from "@/lib/dinner/client-schema";
+import { outsideActivity, pendingOutside } from "@/lib/dinner/projections";
 import { totals, usd } from "@/lib/dinner/model";
 import { useDinner } from "./DinnerShell";
 
@@ -95,6 +96,10 @@ export function Home({
         .filter((e) => e.status === "draft" && e.creatorId === me.id)
         .map((e) => ({ room: r, expense: e })),
     ) ?? [];
+  const reports = pendingOutside(data?.rooms ?? [], me.id);
+  const roomBalances = (data?.rooms ?? [])
+    .map((room) => ({ room, balance: totals(room, me.id) }))
+    .filter(({ balance }) => balance.owe > 0 || balance.owed > 0);
   const activities = (data?.rooms ?? [])
     .flatMap((r) => [
       {
@@ -113,6 +118,7 @@ export function Home({
           detail: "Membership only · no payment authority",
           at: m.joinedAt,
         })),
+      ...outsideActivity(r),
       ...r.expenses.map((e) => ({
         id: e.id,
         roomId: r.id,
@@ -301,6 +307,48 @@ export function Home({
                   </div>
                 </div>
               ))}
+              {reports.map((report) => (
+                <Link
+                  className="dinner-event"
+                  key={report.reportId}
+                  href={`/app/rooms/${report.roomId}?view=money`}
+                >
+                  <div>
+                    <h3>
+                      {report.needsConfirmation
+                        ? "Review outside receipt report"
+                        : "Awaiting recipient confirmation"}
+                    </h3>
+                    <p className="dinner-note">
+                      Reported paid outside Tab · {usd(report.cents)} ·{" "}
+                      {report.roomName} · {report.description}
+                    </p>
+                    <p className="dinner-note">
+                      {report.needsConfirmation
+                        ? "Confirm only if you received the money outside Tab."
+                        : `Waiting for ${report.recipient}.`}{" "}
+                      Still outstanding; not a Tab payment receipt.
+                    </p>
+                  </div>
+                  <span>↗</span>
+                </Link>
+              ))}
+              {roomBalances.map(({ room, balance }) => (
+                <Link
+                  className="dinner-event"
+                  key={`balance-${room.id}`}
+                  href={`/app/rooms/${room.id}?view=money`}
+                >
+                  <div>
+                    <h3>Review balances · {room.name}</h3>
+                    <p className="dinner-note">
+                      You owe {usd(balance.owe)} · Owed to you{" "}
+                      {usd(balance.owed)} · Obligations, not cash
+                    </p>
+                  </div>
+                  <span>↗</span>
+                </Link>
+              ))}
               {drafts.map((d) => (
                 <Link
                   className="dinner-event"
@@ -322,14 +370,18 @@ export function Home({
                   Money view to review them.
                 </p>
               )}
-              {!data.invites.length && !drafts.length && !sum.owe && (
-                <>
-                  <p>Nothing to chase right now.</p>
-                  <p className="dinner-note">
-                    Invitations and drafts that need you will land here.
-                  </p>
-                </>
-              )}
+              {!data.invites.length &&
+                !drafts.length &&
+                !reports.length &&
+                !sum.owe &&
+                !sum.owed && (
+                  <>
+                    <p>Nothing to chase right now.</p>
+                    <p className="dinner-note">
+                      Invitations and drafts that need you will land here.
+                    </p>
+                  </>
+                )}
             </section>
             <section className="dinner-card">
               <p className="dinner-eyebrow">A room for the whole plan</p>

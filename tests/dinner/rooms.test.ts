@@ -649,3 +649,572 @@ test("expense draft retries create one record and reject silently changed payloa
   assert.equal(saved.expenses[0].description, "Dinner");
   assert.deepEqual(totals(saved, bob.id), { owe: 0, owed: 0 });
 });
+
+async function confirmedDinner() {
+  const r = await joined();
+  const draft = await service.draft(r.id, alice, fields());
+  const expense = await service.confirm(
+    r.id,
+    alice,
+    draft.id,
+    randomUUID(),
+    draft.version,
+  );
+  assert.equal(expense.status, "confirmed");
+  if (expense.status !== "confirmed")
+    return assert.fail("Expected confirmed expense");
+  const obligation = expense.obligations[0];
+  assert.ok(obligation);
+  return { r, expense, obligation };
+}
+
+test("a debtor outside report persists exact cents but never removes outstanding", async () => {
+  const { r, obligation } = await confirmedDinner();
+  const report = await service.reportOutside(
+    r.id,
+    bob,
+    obligation.id,
+    randomUUID(),
+  );
+  assert.equal(report.status, "pending");
+  assert.equal(report.cents, 1001);
+  const saved = await service.memberRoom(r.id, alice);
+  assert.deepEqual(totals(saved, bob.id), { owe: 1001, owed: 0 });
+  const restarted = new DinnerService(new MongoRoomStore(db));
+  assert.equal((await restarted.memberRoom(r.id, alice)).expenses.length, 1);
+  const list = await http(alice, "/rooms");
+  const { listSchema } = await import("../../src/lib/dinner/client-schema");
+  const parsed = listSchema.parse(await list.json());
+  assert.equal(parsed.rooms[0].expenses[0].status, "confirmed");
+});
+test("only the debtor or expense author can report; membership alone grants no reporting power", async () => {
+  const { r, obligation } = await confirmedDinner();
+  assert.equal(
+    (
+      await http(
+        carol,
+        `/rooms/${r.id}/obligations/${obligation.id}/reports`,
+        "POST",
+        { clientId: randomUUID() },
+      )
+    ).status,
+    404,
+  );
+  const invite = await service.invite(r.id, alice, { clientId: randomUUID() });
+  await service.respond(carol, { token: invite.token }, "accepted");
+  await assert.rejects(
+    service.reportOutside(r.id, carol, obligation.id, randomUUID()),
+    (e: unknown) => e instanceof DinnerError && e.status === 403,
+  );
+  const report = await service.reportOutside(
+    r.id,
+    alice,
+    obligation.id,
+    randomUUID(),
+  );
+  assert.equal(report.reportedBy, alice.id);
+});
+test("only recipient confirmation closes an obligation, never a report itself", async () => {
+  const { r, obligation } = await confirmedDinner();
+  const report = await service.reportOutside(
+    r.id,
+    bob,
+    obligation.id,
+    randomUUID(),
+  );
+  await service.resolveOutside(
+    r.id,
+    alice,
+    obligation.id,
+    report.id,
+    "confirmed",
+    randomUUID(),
+  );
+  const saved = await service.memberRoom(r.id, bob);
+  assert.deepEqual(totals(saved, bob.id), { owe: 0, owed: 0 });
+  assert.deepEqual(totals(saved, alice.id), { owe: 0, owed: 0 });
+  const expense = saved.expenses[0];
+  assert.equal(expense.status, "confirmed");
+  if (expense.status !== "confirmed") return assert.fail();
+  assert.equal(expense.totalCents, 2001);
+  assert.deepEqual(expense.shares, fields().shares);
+  assert.equal(expense.obligations[0].status, "confirmed_outside");
+  assert.equal("hash" in expense.obligations[0], false);
+});
+test("a non-creditor cannot confirm or reject, including the reporting debtor", async () => {
+  const { r, obligation } = await confirmedDinner();
+  const report = await service.reportOutside(
+    r.id,
+    bob,
+    obligation.id,
+    randomUUID(),
+  );
+  for (const decision of ["confirmed", "rejected"]) {
+    const response = await http(
+      bob,
+      `/rooms/${r.id}/obligations/${obligation.id}/reports/${report.id}/${decision}`,
+      "POST",
+      { clientId: randomUUID() },
+    );
+    assert.equal(response.status, 403);
+  }
+  assert.equal(totals(await service.memberRoom(r.id, bob), bob.id).owe, 1001);
+});
+test("outside report creation is replay safe across concurrent devices", async () => {
+  const { r, obligation } = await confirmedDinner();
+  const key = randomUUID();
+  const [a, b] = await Promise.all([
+    service.reportOutside(r.id, bob, obligation.id, key),
+    service.reportOutside(r.id, bob, obligation.id, key),
+  ]);
+  assert.equal(a.id, b.id);
+  await assert.rejects(
+    service.reportOutside(r.id, bob, obligation.id, randomUUID()),
+    (e: unknown) => e instanceof DinnerError && e.status === 409,
+  );
+});
+test("recipient rejection is replay safe, leaves outstanding and allows a fresh report", async () => {
+  const { r, obligation } = await confirmedDinner();
+  const key = randomUUID();
+  const report = await service.reportOutside(r.id, bob, obligation.id, key);
+  const resolution = randomUUID();
+  await service.resolveOutside(
+    r.id,
+    alice,
+    obligation.id,
+    report.id,
+    "rejected",
+    resolution,
+  );
+  assert.equal(
+    (
+      await service.resolveOutside(
+        r.id,
+        alice,
+        obligation.id,
+        report.id,
+        "rejected",
+        resolution,
+      )
+    ).status,
+    "rejected",
+  );
+  assert.equal(
+    (await service.reportOutside(r.id, bob, obligation.id, key)).id,
+    report.id,
+  );
+  assert.equal(totals(await service.memberRoom(r.id, bob), bob.id).owe, 1001);
+  assert.notEqual(
+    (await service.reportOutside(r.id, bob, obligation.id, randomUUID())).id,
+    report.id,
+  );
+});
+test("only the reporter can cancel an unconfirmed report and cancelled reports cannot close debt", async () => {
+  const { r, obligation } = await confirmedDinner();
+  const report = await service.reportOutside(
+    r.id,
+    bob,
+    obligation.id,
+    randomUUID(),
+  );
+  await assert.rejects(
+    service.resolveOutside(
+      r.id,
+      alice,
+      obligation.id,
+      report.id,
+      "cancelled",
+      randomUUID(),
+    ),
+    (e: unknown) => e instanceof DinnerError && e.status === 403,
+  );
+  const key = randomUUID();
+  await Promise.all([
+    service.resolveOutside(
+      r.id,
+      bob,
+      obligation.id,
+      report.id,
+      "cancelled",
+      key,
+    ),
+    service.resolveOutside(
+      r.id,
+      bob,
+      obligation.id,
+      report.id,
+      "cancelled",
+      key,
+    ),
+  ]);
+  await assert.rejects(
+    service.resolveOutside(
+      r.id,
+      alice,
+      obligation.id,
+      report.id,
+      "confirmed",
+      randomUUID(),
+    ),
+    (e: unknown) => e instanceof DinnerError && e.status === 409,
+  );
+  assert.equal(totals(await service.memberRoom(r.id, bob), bob.id).owe, 1001);
+});
+test("recipient confirmations commit once across concurrent retries and cannot later be cancelled", async () => {
+  const { r, obligation } = await confirmedDinner();
+  const report = await service.reportOutside(
+    r.id,
+    bob,
+    obligation.id,
+    randomUUID(),
+  );
+  const key = randomUUID();
+  const results = await Promise.all([
+    service.resolveOutside(
+      r.id,
+      alice,
+      obligation.id,
+      report.id,
+      "confirmed",
+      key,
+    ),
+    service.resolveOutside(
+      r.id,
+      alice,
+      obligation.id,
+      report.id,
+      "confirmed",
+      key,
+    ),
+  ]);
+  assert.equal(results[0].id, results[1].id);
+  await assert.rejects(
+    service.resolveOutside(
+      r.id,
+      bob,
+      obligation.id,
+      report.id,
+      "cancelled",
+      randomUUID(),
+    ),
+    (e: unknown) => e instanceof DinnerError && e.status === 409,
+  );
+  await assert.rejects(
+    service.reportOutside(r.id, bob, obligation.id, randomUUID()),
+    (e: unknown) => e instanceof DinnerError && e.status === 409,
+  );
+});
+test("racing cancel and confirm has exactly one outcome, never two contradictory resolutions", async () => {
+  const { r, obligation } = await confirmedDinner();
+  const report = await service.reportOutside(
+    r.id,
+    bob,
+    obligation.id,
+    randomUUID(),
+  );
+  const results = await Promise.allSettled([
+    service.resolveOutside(
+      r.id,
+      bob,
+      obligation.id,
+      report.id,
+      "cancelled",
+      randomUUID(),
+    ),
+    service.resolveOutside(
+      r.id,
+      alice,
+      obligation.id,
+      report.id,
+      "confirmed",
+      randomUUID(),
+    ),
+  ]);
+  assert.equal(results.filter((r) => r.status === "fulfilled").length, 1);
+  const expense = (await service.memberRoom(r.id, bob)).expenses[0];
+  if (expense.status !== "confirmed") return assert.fail();
+  const saved = expense.obligations[0];
+  assert.equal(saved.outsideReports?.length, 1);
+  assert.equal(
+    saved.status === "confirmed_outside",
+    saved.outsideReports?.[0].status === "confirmed",
+  );
+});
+test("client supplied hashes, amounts, status or payee fields are not settlement evidence", async () => {
+  const { r, obligation } = await confirmedDinner();
+  for (const extra of [
+    { txHash: "0xpretend" },
+    { status: "confirmed_outside" },
+    { cents: 1 },
+    { creditorId: bob.id },
+  ]) {
+    assert.equal(
+      (
+        await http(
+          bob,
+          `/rooms/${r.id}/obligations/${obligation.id}/reports`,
+          "POST",
+          { clientId: randomUUID(), ...extra },
+        )
+      ).status,
+      400,
+    );
+  }
+  const msg = await service.send(r.id, bob, {
+    clientId: randomUUID(),
+    text: "I paid; tx 0xpretend. Confirmed!",
+  });
+  await service.react(r.id, alice, msg.id, "👍", true);
+  assert.equal(totals(await service.memberRoom(r.id, bob), bob.id).owe, 1001);
+});
+test("outside confirmation does not erase flags or change the underlying share", async () => {
+  const { r, expense, obligation } = await confirmedDinner();
+  await service.flag(r.id, bob, expense.id, "Please check the tip");
+  const report = await service.reportOutside(
+    r.id,
+    bob,
+    obligation.id,
+    randomUUID(),
+  );
+  await service.resolveOutside(
+    r.id,
+    alice,
+    obligation.id,
+    report.id,
+    "confirmed",
+    randomUUID(),
+  );
+  assert.deepEqual((await service.memberRoom(r.id, bob)).expenses[0].flags, [
+    { userId: bob.id, reason: "Please check the tip" },
+  ]);
+});
+test("cross-room report IDs and unauthenticated requests cannot mutate outside records", async () => {
+  const { r, obligation } = await confirmedDinner();
+  const other = await joined();
+  const report = await service.reportOutside(
+    r.id,
+    bob,
+    obligation.id,
+    randomUUID(),
+  );
+  assert.equal(
+    (
+      await http(
+        alice,
+        `/rooms/${other.id}/obligations/${obligation.id}/reports/${report.id}/confirmed`,
+        "POST",
+        { clientId: randomUUID() },
+      )
+    ).status,
+    404,
+  );
+  assert.equal(
+    (
+      await http(
+        null,
+        `/rooms/${r.id}/obligations/${obligation.id}/reports`,
+        "POST",
+        { clientId: randomUUID() },
+      )
+    ).status,
+    401,
+  );
+});
+test("outside report projections retain history and distinguish waiting from receipt confirmation", async () => {
+  const { outsideActivity, pendingOutside } = await import(
+    "../../src/lib/dinner/projections"
+  );
+  const { roomView } = await import("../../src/lib/dinner/model");
+  const { r, obligation } = await confirmedDinner();
+  const report = await service.reportOutside(
+    r.id,
+    bob,
+    obligation.id,
+    randomUUID(),
+  );
+  let view = roomView(await service.memberRoom(r.id, bob));
+  assert.equal(pendingOutside([view], alice.id)[0].needsConfirmation, true);
+  assert.equal(pendingOutside([view], bob.id)[0].needsConfirmation, false);
+  assert.equal(outsideActivity(view)[0].title, "Reported paid outside Tab");
+  await service.resolveOutside(
+    r.id,
+    bob,
+    obligation.id,
+    report.id,
+    "cancelled",
+    randomUUID(),
+  );
+  const next = await service.reportOutside(
+    r.id,
+    bob,
+    obligation.id,
+    randomUUID(),
+  );
+  await service.resolveOutside(
+    r.id,
+    alice,
+    obligation.id,
+    next.id,
+    "confirmed",
+    randomUUID(),
+  );
+  view = roomView(await service.memberRoom(r.id, bob));
+  assert.equal(pendingOutside([view], alice.id).length, 0);
+  const events = outsideActivity(view);
+  assert.equal(events.length, 4);
+  assert.equal(new Set(events.map((e) => e.id)).size, 4);
+  assert.ok(
+    events.some((e) => e.title === "Recipient confirmed receipt outside Tab"),
+  );
+});
+test("a room supports its next dinner after confirmed outside receipt without losing messages/history", async () => {
+  const { r, obligation } = await confirmedDinner();
+  await service.send(r.id, bob, {
+    clientId: randomUUID(),
+    text: "Same place next week",
+  });
+  const report = await service.reportOutside(
+    r.id,
+    bob,
+    obligation.id,
+    randomUUID(),
+  );
+  await service.resolveOutside(
+    r.id,
+    alice,
+    obligation.id,
+    report.id,
+    "confirmed",
+    randomUUID(),
+  );
+  const draft = await service.draft(r.id, alice, fields());
+  await service.confirm(r.id, alice, draft.id, randomUUID(), draft.version);
+  const saved = await service.memberRoom(r.id, bob);
+  assert.equal(saved.expenses.length, 2);
+  assert.equal(saved.messages[0].text, "Same place next week");
+  assert.equal(totals(saved, bob.id).owe, 1001);
+});
+test("invite account check identifies mismatches without leaking the bound X subject", async () => {
+  const r = await room();
+  const invite = await service.invite(r.id, alice, {
+    clientId: randomUUID(),
+    targetSubject: bob.twitterSubject,
+  });
+  const wrong = await http(carol, `/invites/${invite.token}/account`);
+  assert.deepEqual(await wrong.json(), {
+    canRespond: false,
+    reason: "different_account",
+  });
+  assert.deepEqual(
+    await (await http(bob, `/invites/${invite.token}/account`)).json(),
+    { canRespond: true, reason: null },
+  );
+  assert.equal(
+    (await http(null, `/invites/${invite.token}/account`)).status,
+    401,
+  );
+});
+test("used share links are not offered to a different account as an accepted-room shortcut", async () => {
+  const r = await room();
+  const invite = await service.invite(r.id, alice, { clientId: randomUUID() });
+  await service.respond(bob, { token: invite.token }, "accepted");
+  assert.deepEqual(await service.inviteAccount(invite.token, carol), {
+    canRespond: false,
+    reason: "resolved_by_another",
+  });
+  assert.deepEqual(await service.inviteAccount(invite.token, bob), {
+    canRespond: true,
+    reason: null,
+  });
+});
+
+test("an expense author distinct from both parties can report but cannot confirm for the creditor", async () => {
+  const r = await joined();
+  const invite = await service.invite(r.id, alice, { clientId: randomUUID() });
+  await service.respond(carol, { token: invite.token }, "accepted");
+  const draft = await service.draft(r.id, carol, fields());
+  const expense = await service.confirm(
+    r.id,
+    carol,
+    draft.id,
+    randomUUID(),
+    draft.version,
+  );
+  if (expense.status !== "confirmed") return assert.fail();
+  const obligation = expense.obligations[0];
+  const report = await service.reportOutside(
+    r.id,
+    carol,
+    obligation.id,
+    randomUUID(),
+  );
+  await assert.rejects(
+    service.resolveOutside(
+      r.id,
+      carol,
+      obligation.id,
+      report.id,
+      "confirmed",
+      randomUUID(),
+    ),
+    (e: unknown) => e instanceof DinnerError && e.status === 403,
+  );
+  await service.resolveOutside(
+    r.id,
+    alice,
+    obligation.id,
+    report.id,
+    "confirmed",
+    randomUUID(),
+  );
+  assert.equal(totals(await service.memberRoom(r.id, bob), bob.id).owe, 0);
+});
+test("an accepted invitation remains usable by the same internal account when X is disconnected", async () => {
+  const r = await room();
+  const invite = await service.invite(r.id, alice, {
+    clientId: randomUUID(),
+    targetSubject: bob.twitterSubject,
+  });
+  await service.respond(bob, { token: invite.token }, "accepted");
+  const disconnected = { ...bob, twitterSubject: null };
+  assert.deepEqual(await service.inviteAccount(invite.token, disconnected), {
+    canRespond: true,
+    reason: null,
+  });
+  assert.equal(
+    (await service.respond(disconnected, { token: invite.token }, "accepted"))
+      .roomId,
+    r.id,
+  );
+  assert.equal(
+    (await service.memberRoom(r.id, disconnected)).members.length,
+    2,
+  );
+});
+test("a client hash or claimed actor cannot supplement or replace creditor receipt approval", async () => {
+  const { r, obligation } = await confirmedDinner();
+  const report = await service.reportOutside(
+    r.id,
+    bob,
+    obligation.id,
+    randomUUID(),
+  );
+  for (const extra of [
+    { txHash: "0xclaimed" },
+    { actorId: alice.id },
+    { cents: 1001 },
+  ]) {
+    assert.equal(
+      (
+        await http(
+          alice,
+          `/rooms/${r.id}/obligations/${obligation.id}/reports/${report.id}/confirmed`,
+          "POST",
+          { clientId: randomUUID(), ...extra },
+        )
+      ).status,
+      400,
+    );
+  }
+  assert.equal(totals(await service.memberRoom(r.id, bob), bob.id).owe, 1001);
+});

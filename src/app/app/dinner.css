@@ -608,3 +608,20 @@
     margin: 16px auto;
   }
 }
+
+.dinner-outside {
+  padding: 20px 0;
+  border-top: 1px solid var(--rule);
+  margin-top: 16px;
+}
+.dinner-outside-history,
+.dinner-outside-review {
+  padding: 16px;
+  margin: 12px 0;
+  border: 1px solid var(--rule);
+  border-radius: 20px;
+  background: var(--surface);
+}
+.dinner-outside-review {
+  background: var(--canvas);
+}

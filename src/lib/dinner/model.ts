@@ -78,15 +78,42 @@ export type Message = {
   createdAt: string;
   reactions: { userId: string; emoji: string }[];
 };
-export type Obligation = {
-  id: string;
-  expenseId: string;
-  debtorId: string;
-  creditorId: string;
-  cents: number;
-  currency: "USD";
-  status: "outstanding";
-};
+// An outside report is a member claim, never evidence of an in-app transfer.
+const reportBase = z.object({
+  id: entityId,
+  clientId: retryId,
+  reportedBy: entityId,
+  cents: cents.refine((n) => n > 0),
+  createdAt: z.string(),
+});
+export const outsideReportSchema = z.discriminatedUnion("status", [
+  reportBase.extend({ status: z.literal("pending") }),
+  reportBase.extend({
+    status: z.enum(["confirmed", "rejected", "cancelled"]),
+    resolvedBy: entityId,
+    resolutionId: retryId,
+    resolvedAt: z.string(),
+  }),
+]);
+export type OutsideReport = z.infer<typeof outsideReportSchema>;
+const obligationBase = z.object({
+  id: entityId,
+  expenseId: entityId,
+  debtorId: entityId,
+  creditorId: entityId,
+  cents: cents.refine((n) => n > 0),
+  currency: z.literal("USD"),
+  // Optional for existing beta records; no legacy documents are rewritten.
+  outsideReports: z.array(outsideReportSchema).optional(),
+});
+export const obligationSchema = z.discriminatedUnion("status", [
+  obligationBase.extend({ status: z.literal("outstanding") }),
+  obligationBase.extend({
+    status: z.literal("confirmed_outside"),
+    confirmedReportId: entityId,
+  }),
+]);
+export type Obligation = z.infer<typeof obligationSchema>;
 type ExpenseBase = Omit<ExpenseFields, "clientId"> & {
   id: string;
   version: number;
@@ -127,6 +154,7 @@ export type Preview = {
   members: string[];
   status: Invitation["status"] | "expired";
   targetLabel: string | null;
+  accountBound: boolean;
   expiresAt: string;
 };
 export class DinnerError extends Error {
@@ -212,10 +240,13 @@ export function obligations(room: Pick<Room, "expenses">): Obligation[] {
 }
 export function totals(room: Pick<Room, "expenses">, userId: string) {
   return obligations(room).reduce(
-    (sum, o) => ({
-      owe: sum.owe + (o.debtorId === userId ? o.cents : 0),
-      owed: sum.owed + (o.creditorId === userId ? o.cents : 0),
-    }),
+    (sum, o) =>
+      o.status !== "outstanding"
+        ? sum
+        : {
+            owe: sum.owe + (o.debtorId === userId ? o.cents : 0),
+            owed: sum.owed + (o.creditorId === userId ? o.cents : 0),
+          },
     { owe: 0, owed: 0 },
   );
 }
