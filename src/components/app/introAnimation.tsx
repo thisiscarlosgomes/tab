@@ -82,6 +82,7 @@ export default function TabGuideAnimation() {
                 >
                   <div className="flex items-center gap-3">
                     <img
+                      alt=""
                       src={u.pfp}
                       className="w-10 h-10 rounded-full border border-white/10"
                     />
@@ -119,6 +120,7 @@ export default function TabGuideAnimation() {
                     style={{ zIndex: 4 - i }}
                   >
                     <img
+                      alt=""
                       src={`https://api.dicebear.com/9.x/fun-emoji/svg?seed=${name}`}
                       className="w-full h-full object-cover"
                     />
@@ -147,6 +149,7 @@ export default function TabGuideAnimation() {
                       style={{ zIndex: 6 - i }}
                     >
                       <img
+                        alt=""
                         src={`https://api.dicebear.com/9.x/fun-emoji/svg?seed=${name}`}
                         className="w-full h-full object-cover"
                       />

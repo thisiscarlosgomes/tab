@@ -21,7 +21,7 @@ export default function GroupClaimPage() {
   const { address, isConnected, fid } = useTabIdentity();
   const { login } = usePrivy();
 
-  const [drops, setDrops] = useState<any[]>([]);
+  const [drops, setDrops] = useState<{ claimed?: boolean; claimedByFid?: number; claimedBy?: string; amount: string; token: string; dropId: string; txHash?: string; creator?: { name?: string; address?: string; pfp?: string } }[]>([]);
   const [resolvedClaimUsername, setResolvedClaimUsername] = useState<
     string | null
   >(null);
@@ -45,7 +45,7 @@ export default function GroupClaimPage() {
 
       if (address || fid) {
         const claimedByUser = data.drops.some(
-          (d: any) =>
+          (d: { claimed?: boolean; claimedByFid?: number; claimedBy?: string }) =>
             d.claimed &&
             ((fid !== null && fid !== undefined && d.claimedByFid === fid) ||
               (address &&

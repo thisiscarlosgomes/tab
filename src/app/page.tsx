@@ -1343,7 +1343,7 @@ export default function Home() {
         >
           <h2 className="ml-2 text-white font-2xl font-medium mb-2 flex items-center gap-1 mt-1">
             Portfolio
-            <img src="/base.png" className="w-4 h-4 opacity-90" />
+            <img src="/base.png" alt="Base" className="w-4 h-4 opacity-90" />
           </h2>
 
           <p

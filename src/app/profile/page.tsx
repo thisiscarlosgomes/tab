@@ -1,5 +1,6 @@
 "use client";
 
+import { z } from "zod";
 import { useEffect, useState, useCallback, useMemo, useRef } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -195,34 +196,43 @@ export default function ProfilePage() {
       return null;
     };
 
-    const parseHeroFromUser = (user: any): FarcasterHeroState => {
+    const readNested = (input: unknown, ...path: string[]): unknown => {
+      let value = input;
+      for (const key of path) {
+        const record = z.record(z.unknown()).safeParse(value);
+        if (!record.success) return undefined;
+        value = record.data[key];
+      }
+      return value;
+    };
+    const parseHeroFromUser = (user: unknown): FarcasterHeroState => {
       const nestedPfp =
-        readString(user?.pfp_url) ??
-        readString(user?.pfp?.url) ??
-        readString(user?.pfpUrl) ??
+        readString(readNested(user, "pfp_url")) ??
+        readString(readNested(user, "pfp", "url")) ??
+        readString(readNested(user, "pfpUrl")) ??
         pfp ??
         null;
       const nestedDisplayName =
-        readString(user?.display_name) ??
-        readString(user?.displayName) ??
+        readString(readNested(user, "display_name")) ??
+        readString(readNested(user, "displayName")) ??
         displayName ??
         null;
-      const nestedUsername = readString(user?.username) ?? username ?? null;
+      const nestedUsername = readString(readNested(user, "username")) ?? username ?? null;
       const bioText =
-        readString(user?.profile?.bio?.text) ??
-        readString(user?.bio?.text) ??
-        readString(user?.profile?.bio) ??
+        readString(readNested(user, "profile", "bio", "text")) ??
+        readString(readNested(user, "bio", "text")) ??
+        readString(readNested(user, "profile", "bio")) ??
         null;
       const followerCount =
-        readNumber(user?.follower_count) ??
-        readNumber(user?.followerCount) ??
+        readNumber(readNested(user, "follower_count")) ??
+        readNumber(readNested(user, "followerCount")) ??
         null;
       const joinedAt =
-        readDate(user?.created_at) ??
-        readDate(user?.createdAt) ??
-        readDate(user?.registered_at) ??
-        readDate(user?.registeredAt) ??
-        readDate(user?.custody_registered_at) ??
+        readDate(readNested(user, "created_at")) ??
+        readDate(readNested(user, "createdAt")) ??
+        readDate(readNested(user, "registered_at")) ??
+        readDate(readNested(user, "registeredAt")) ??
+        readDate(readNested(user, "custody_registered_at")) ??
         null;
 
       return {
@@ -361,12 +371,12 @@ export default function ProfilePage() {
           });
           if (followingRes.ok) {
             const raw = await followingRes.json();
-            const list = Array.isArray(raw) ? raw : [];
+            const list: unknown[] = Array.isArray(raw) ? raw : [];
             const preview = list
-              .map((entry: any) => (entry?.user && typeof entry.user === "object" ? entry.user : entry))
+              .map((entry) => { const nested = readNested(entry, "user"); return nested && typeof nested === "object" ? nested : entry; })
               .map(
-                (u: any) =>
-                  readString(u?.pfp_url) ?? readString(u?.pfp?.url) ?? readString(u?.pfpUrl)
+                (u) =>
+                  readString(readNested(u, "pfp_url")) ?? readString(readNested(u, "pfp", "url")) ?? readString(readNested(u, "pfpUrl"))
               )
               .filter((v: string | null): v is string => Boolean(v))
               .slice(0, 3);

@@ -763,10 +763,10 @@ export default function JackpotPage() {
           ) : guaranteedPrizes && Object.keys(guaranteedPrizes).length > 0 ? (
             Object.values(guaranteedPrizes).map((entry, idx: number) => {
               const prizeAmount = entry.prizeValueTotal;
-              const claimedDate = format(
+              const claimedDate = entry.claimedAt ? format(
                 parseISO(entry.claimedAt),
                 "MMMM d, yyyy"
-              );
+              ) : "Not yet claimed";
               const txLinks = entry.claimTransactionHashes || [];
 
               const handleSharePrize = async () => {

@@ -9,7 +9,7 @@ const transports = [
   http("https://base.llamarpc.com", { timeout: 8_000, retryCount: 1 }),
   http("https://base-rpc.publicnode.com", { timeout: 8_000, retryCount: 1 }),
   http("https://base.drpc.org", { timeout: 8_000, retryCount: 1 }),
-].filter(Boolean);
+].filter((transport) => transport !== null);
 
 const client = createPublicClient({
   chain: base,

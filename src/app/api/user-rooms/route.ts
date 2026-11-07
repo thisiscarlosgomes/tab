@@ -6,6 +6,7 @@ import clientPromise from "@/lib/mongodb";
    Types
 ========================= */
 interface Participant {
+  fid?: number | null;
   name?: string;
   address: string;
   pfp?: string;

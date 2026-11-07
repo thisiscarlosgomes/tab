@@ -1,6 +1,8 @@
+import { z } from "zod";
 export const PROXY_API_URL = process.env.PROXY_API_URL ?? "https://proxy.terminal.co/v1";
 
-type FarcasterUsersByAddress = Record<string, any>;
+const addressProfiles = z.record(z.unknown());
+type FarcasterUsersByAddress = z.infer<typeof addressProfiles>;
 
 export const fetchFarcasterUsersByAddresses = async (
   addresses: string
@@ -21,8 +23,9 @@ export const fetchFarcasterUsersByAddresses = async (
 
     if (!res.ok) return {};
 
-    const data = await res.json();
-    return data && typeof data === "object" ? data : {};
+    const data: unknown = await res.json();
+    const parsed = addressProfiles.safeParse(data);
+    return parsed.success ? parsed.data : {};
   } catch {
     return {};
   } finally {

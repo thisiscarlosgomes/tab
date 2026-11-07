@@ -21,6 +21,7 @@ interface Paid {
 }
 
 interface GameState {
+  name?: string;
   gameId: string;
   participants: Player[];
   invited?: InvitedPlayer[];

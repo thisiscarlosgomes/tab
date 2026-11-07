@@ -151,7 +151,7 @@ export default function AgentAccessPage() {
   const isAgentLive = Boolean(state?.status === "ACTIVE" && hasDelegation);
 
   const authHeaders = useMemo(
-    () =>
+    (): Record<string, string> =>
       authToken
         ? {
           Authorization: `Bearer ${authToken}`,

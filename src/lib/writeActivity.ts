@@ -37,9 +37,9 @@ export interface ActivityInput {
 
   counterparty?: {
     address: string;
-    name?: string;
+    name?: string | null;
     username?: string;
-    pfp?: string;
+    pfp?: string | null;
   };
 
   timestamp: Date;

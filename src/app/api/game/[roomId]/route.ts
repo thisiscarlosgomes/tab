@@ -1,3 +1,4 @@
+import { LegacySocialParticipant } from "@/types/legacy-social";
 export const runtime = "nodejs";
 
 import { NextRequest } from "next/server";
@@ -36,7 +37,7 @@ function normalizeFid(value: unknown) {
   return Number.isFinite(n) && n > 0 ? n : null;
 }
 
-async function resolvePreferredGamePlayer(player: any) {
+async function resolvePreferredGamePlayer(player: LegacySocialParticipant) {
   const fallbackAddress = normalizeAddress(player?.address);
   const fid = normalizeFid(player?.fid);
 
@@ -138,7 +139,7 @@ export async function POST(req: NextRequest) {
   }
 
   const alreadyInGame = game.participants.some(
-    (p: any) => p.address.toLowerCase() === address
+    (p: { address: string }) => p.address.toLowerCase() === address
   );
 
   if (!alreadyInGame) {
@@ -262,7 +263,7 @@ export async function PATCH(req: NextRequest) {
     return Response.json({ error: "Room not found" }, { status: 404 });
   }
 
-  const update: any = {};
+  const update: Record<string, Record<string, unknown>> = {};
   const caller = address?.toLowerCase();
 
   /* -------- settings (admin only) -------- */
@@ -300,7 +301,7 @@ export async function PATCH(req: NextRequest) {
       );
     }
 
-    const alreadyClosed = game.paid?.some((p: any) => p.address === caller);
+    const alreadyClosed = game.paid?.some((p: { address: string }) => p.address === caller);
     if (alreadyClosed) {
       return Response.json({ error: "Tab already closed" }, { status: 400 });
     }
@@ -368,7 +369,7 @@ export async function PATCH(req: NextRequest) {
     }
 
     const alreadyPaid = game.paid?.some(
-      (p: any) => p.address === payment.address.toLowerCase()
+      (p: { address: string }) => p.address === payment.address.toLowerCase()
     );
     if (alreadyPaid) {
       return Response.json({ error: "Already paid" }, { status: 400 });
