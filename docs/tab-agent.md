@@ -29,7 +29,7 @@ The runtime exposes six tools:
 - `load_skill`: reads one of three allowlisted, versioned instruction files.
 - `read_context`: reads the current room, or the requesting user's room totals and pending reports.
 - `read_room`: reads shared facts only after membership validation. A room agent is fixed to its original room, even if the requester belongs to others.
-- `member_summary`: read-only per-member outstanding owe/owed totals and pending outside-report counts for a member room (same room restriction as `read_room`).
+- `member_summary`: read-only per-member outstanding owe/owed totals and pending outside-report counts for a member room (same room restriction as `read_room`). Totals include integer US cents (`oweCents` / `owedCents`) plus formatted `oweUsd` / `owedUsd` (50 cents is `$0.50`); replies should use the formatted fields.
 - `draft_nudge`: drafts reminder wording to a member who owes the requester. It returns `sent: false` and is never posted, delivered, or scheduled; the requester copies it (**Copy to send yourself** on Tab replies) and sends it themselves.
 - `prepare_expense`: validates accepted members and integer-cent totals, then stores one review proposal per source message. It does not create an expense or obligation. It may link a receipt via `attachmentId` only when that attachment was already posted in a message in this room; the model sees attachment IDs, never image bytes, so the total still comes from the member's words.
 

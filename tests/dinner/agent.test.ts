@@ -27,6 +27,7 @@ import {
 } from "../../src/lib/dinner/agent/model";
 import { messageSchema } from "../../src/lib/dinner/client-schema";
 import { loadSkill, skillCatalog } from "../../src/lib/dinner/agent/skills";
+import { memberSummary } from "../../src/lib/dinner/agent/room-tools";
 let mongo: MongoMemoryServer;
 let client: MongoClient;
 let db: Db;
@@ -762,9 +763,14 @@ test("member summary and nudge drafts are read-only and never post or settle any
   }).respond(alice, { kind: "room", roomId: r.id }, source.id);
   const bobRow = summary?.members.find((m) => m.userId === bob.id);
   assert.equal(bobRow?.oweCents, 1000);
+  assert.equal(bobRow?.oweUsd, "$10.00");
   assert.equal(
     summary?.members.find((m) => m.userId === alice.id)?.owedCents,
     1000,
+  );
+  assert.equal(
+    summary?.members.find((m) => m.userId === alice.id)?.owedUsd,
+    "$10.00",
   );
   assert.equal(nudge?.sent, false);
   assert.match(nudge?.text ?? "", /\$10\.00/);
@@ -776,6 +782,33 @@ test("member summary and nudge drafts are read-only and never post or settle any
     after.expenses.map((e) => e.status),
     before.expenses.map((e) => e.status),
   );
+});
+
+
+test("member summary formats 50 cents as $0.50, not $50", () => {
+  const summary = memberSummary({
+    members: [
+      { userId: "carlos", name: "Carlos" },
+      { userId: "bob", name: "Bob" },
+    ],
+    obligations: [
+      {
+        id: "o1",
+        expenseId: "e1",
+        debtorId: "bob",
+        creditorId: "carlos",
+        cents: 50,
+        currency: "USD",
+        status: "outstanding",
+      },
+    ],
+  });
+  const carlos = summary.members.find((m) => m.userId === "carlos");
+  assert.equal(carlos?.owedCents, 50);
+  assert.equal(carlos?.owedUsd, "$0.50");
+  assert.notEqual(carlos?.owedUsd, "$50");
+  assert.notEqual(carlos?.owedUsd, "$50.00");
+  assert.match(summary.notice, /50 means \$0\.50/);
 });
 
 test("a proposal can link a receipt already shared in the room, never a guessed one", async () => {

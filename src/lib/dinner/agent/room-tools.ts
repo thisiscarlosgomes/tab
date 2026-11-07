@@ -11,17 +11,19 @@ export type MemberSummary = {
   name: string;
   oweCents: number;
   owedCents: number;
+  oweUsd: string;
+  owedUsd: string;
   pendingOutsideReports: number;
 };
 export function memberSummary(facts: Facts) {
-  const members: MemberSummary[] = facts.members.map(({ userId, name }) => ({
+  const rows = facts.members.map(({ userId, name }) => ({
     userId,
     name,
     oweCents: 0,
     owedCents: 0,
     pendingOutsideReports: 0,
   }));
-  const find = (id: string) => members.find((m) => m.userId === id);
+  const find = (id: string) => rows.find((m) => m.userId === id);
   for (const o of facts.obligations) {
     if (o.status !== "outstanding") continue;
     const debtor = find(o.debtorId);
@@ -32,9 +34,13 @@ export function memberSummary(facts: Facts) {
       debtor.pendingOutsideReports += 1;
   }
   return {
-    members,
+    members: rows.map((row) => ({
+      ...row,
+      oweUsd: usd(row.oweCents),
+      owedUsd: usd(row.owedCents),
+    })),
     notice:
-      "Outstanding shared obligations, not cash. A pending outside report stays outstanding until the creditor confirms it in Money.",
+      "Outstanding shared obligations, not cash. oweCents and owedCents are integer US cents (50 means $0.50). Speak amounts using oweUsd and owedUsd only. A pending outside report stays outstanding until the creditor confirms it in Money.",
   };
 }
 export const nudgeInput = z
