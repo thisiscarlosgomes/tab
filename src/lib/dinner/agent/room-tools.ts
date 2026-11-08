@@ -5,6 +5,7 @@ import { entityId, Obligation, usd } from "../model";
 type Facts = {
   members: { userId: string; name: string }[];
   obligations: Obligation[];
+  formerMembers?: { userId: string; name: string }[];
 };
 export type MemberSummary = {
   userId: string;
@@ -16,9 +17,15 @@ export type MemberSummary = {
   pendingOutsideReports: number;
 };
 export function memberSummary(facts: Facts) {
-  const rows = facts.members.map(({ userId, name }) => ({
+  const rows = [
+    ...facts.members,
+    ...(facts.formerMembers ?? []).filter(
+      (m) => !facts.members.some((a) => a.userId === m.userId),
+    ),
+  ].map(({ userId, name }) => ({
     userId,
     name,
+    accepted: facts.members.some((m) => m.userId === userId),
     oweCents: 0,
     owedCents: 0,
     pendingOutsideReports: 0,

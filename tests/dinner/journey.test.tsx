@@ -14,6 +14,7 @@ import {
 import { MongoMemoryServer } from "mongodb-memory-server";
 import { MongoClient } from "mongodb";
 import { DinnerContext } from "../../src/components/dinner/DinnerShell";
+import { Members } from "../../src/components/dinner/Members";
 import { Money } from "../../src/components/dinner/Money";
 import { DinnerAgentService } from "../../src/lib/dinner/agent/service";
 import { AgentRunner } from "../../src/lib/dinner/agent/capabilities";
@@ -90,6 +91,7 @@ async function api<T>(
   return schema.parse(raw);
 }
 function Harness({
+  members = false,
   chat = false,
   loseAck = false,
   actor = alice,
@@ -97,6 +99,7 @@ function Harness({
   plan = false,
   reminders = false,
 }: {
+  members?: boolean;
   chat?: boolean;
   loseAck?: boolean;
   actor?: Actor;
@@ -137,7 +140,9 @@ function Harness({
         image: async () => new Blob(),
       }}
     >
-      {personal ? (
+      {members ? (
+        <Members room={room} refresh={refresh} />
+      ) : personal ? (
         <PersonalAgent />
       ) : plan ? (
         <RoomPlan roomId={room.id} />
@@ -448,5 +453,56 @@ test("room suggested prompts only prefill an @Tab message; nothing is sent until
   assert.equal(
     (await service.memberRoom(initial.id, alice)).messages.length,
     0,
+  );
+});
+
+test("Money correction is reviewable, leaves balances unchanged until accepted and shows history", async () => {
+  render(<Harness />);
+  await draftDinner();
+  fireEvent.click(screen.getByRole("button", { name: "Confirm expense" }));
+  await screen.findByRole("button", { name: "Correct this expense" });
+  const original = totals(
+    await service.memberRoom(initial.id, alice),
+    bob.id,
+  ).owe;
+  fireEvent.click(screen.getByRole("button", { name: "Correct this expense" }));
+  fireEvent.change(screen.getByLabelText("Total (USD)"), {
+    target: { value: "100.00" },
+  });
+  fireEvent.click(
+    screen.getByRole("button", { name: "Save correction proposal" }),
+  );
+  await screen.findByRole("button", { name: "Accept correction" });
+  assert.equal(
+    totals(await service.memberRoom(initial.id, alice), bob.id).owe,
+    original,
+  );
+  fireEvent.click(screen.getByRole("button", { name: "Accept correction" }));
+  await screen.findByText("Version history and recorded reversals");
+  assert.equal(
+    totals(await service.memberRoom(initial.id, alice), bob.id).owe,
+    5000,
+  );
+  assert.ok(screen.getByText(/Current version 2/));
+});
+
+test("Members discloses removal policy and only removes after the explicit action", async () => {
+  render(<Harness members />);
+  fireEvent.click(screen.getByRole("button", { name: "Remove Bob" }));
+  assert.ok(screen.getByRole("group", { name: "Review member removal" }));
+  assert.match(
+    screen.getByRole("group", { name: "Review member removal" }).textContent ??
+      "",
+    /does not forgive debt/,
+  );
+  assert.equal((await service.memberRoom(initial.id, bob)).members.length, 2);
+  fireEvent.click(screen.getByRole("button", { name: "Remove from room" }));
+  await waitFor(() =>
+    assert.ok(!screen.queryByRole("button", { name: "Remove Bob" })),
+  );
+  await assert.rejects(service.memberRoom(initial.id, bob));
+  assert.equal(
+    (await service.memberRoom(initial.id, alice)).removals?.length,
+    1,
   );
 });

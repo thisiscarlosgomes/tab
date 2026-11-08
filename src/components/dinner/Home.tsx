@@ -5,7 +5,11 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { z } from "zod";
 import { listSchema, roomSchema } from "@/lib/dinner/client-schema";
-import { outsideActivity, pendingOutside } from "@/lib/dinner/projections";
+import {
+  outsideActivity,
+  pendingOutside,
+  coordinationActivity,
+} from "@/lib/dinner/projections";
 import { totals, usd } from "@/lib/dinner/model";
 import { PrivateReminders } from "./PrivateReminders";
 import { useDinner } from "./DinnerShell";
@@ -120,6 +124,7 @@ export function Home({
           at: m.joinedAt,
         })),
       ...outsideActivity(r),
+      ...coordinationActivity(r),
       ...r.expenses.map((e) => ({
         id: e.id,
         roomId: r.id,

@@ -1,4 +1,5 @@
 "use client";
+import { DinnerError } from "@/lib/dinner/model";
 
 import {
   createContext,
@@ -70,7 +71,8 @@ export function DinnerShell({ children }: { children: ReactNode }) {
         const parsed = z
           .object({ error: z.string() })
           .safeParse(await res.json());
-        throw new Error(
+        throw new DinnerError(
+          res.status,
           parsed.success
             ? parsed.data.error
             : "Could not complete that request",

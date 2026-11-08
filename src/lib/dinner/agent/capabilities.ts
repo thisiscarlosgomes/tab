@@ -1,4 +1,4 @@
-import type { Proposal } from "./model";
+import type { Proposal, NeedsDetails } from "./model";
 import type { prepareInput } from "./model";
 import type { z } from "zod";
 import type { MemberSummary, NudgeDraft, nudgeInput } from "./room-tools";
@@ -18,7 +18,9 @@ export type AgentContext = {
   draftNudge: (input: z.input<typeof nudgeInput>) => Promise<NudgeDraft>;
   /** Optional live text sink. Persistence still happens only after the run completes. */
   onDelta?: (text: string) => void;
-  prepareExpense: (input: z.infer<typeof prepareInput>) => Promise<Proposal>;
+  prepareExpense: (
+    input: z.infer<typeof prepareInput>,
+  ) => Promise<Proposal | NeedsDetails>;
   recordTool: (
     name: string,
     scope: "user-read" | "room-read" | "room-prepare",

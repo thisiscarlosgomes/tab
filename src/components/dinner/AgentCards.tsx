@@ -42,12 +42,13 @@ export function AgentCards({
         <article className="dinner-card dinner-agent-proposal" key={p.id}>
           <span className="dinner-chip">
             Tab prepared · human review required
+            {p.correctionOf ? " · expense correction" : ""}
           </span>
           <h3>
             {p.fields.description} · {usd(p.fields.totalCents)}
           </h3>
           <p className="dinner-note">
-            Payer ID:{" "}
+            Payer:{" "}
             {p.members.find((member) => member.userId === p.fields.payerId)
               ?.name ?? "Member"}
             . Participants and exact shares are below. Check names and edit in
@@ -63,8 +64,9 @@ export function AgentCards({
             </div>
           ))}
           <p className="dinner-note">
-            No debt or payment yet. Saving makes an editable draft visible to
-            the room. Only a human can confirm it in Money.
+            {p.correctionOf
+              ? "Existing balances are unchanged. Save this correction proposal, then review or edit it in Money. The expense author or room owner must accept it."
+              : "No debt or payment yet. Saving makes an editable draft visible to the room. Only a human can confirm it in Money."}
           </p>
           <div className="dinner-actions">
             {p.appliedExpenseId ? (

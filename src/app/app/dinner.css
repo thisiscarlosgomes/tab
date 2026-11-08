@@ -59,7 +59,7 @@
   padding: 8px 16px;
 }
 .dinner-app button.dinner-small {
-  min-height: 36px;
+  min-height: 44px;
   padding: 5px 12px;
   font-size: 13px;
 }
@@ -651,5 +651,25 @@
 @media (max-width: 767px) {
   .dinner-nav {
     grid-template-columns: repeat(4, 1fr);
+  }
+}
+
+.dinner-app summary {
+  min-height: 44px;
+  padding: 10px 0;
+  cursor: pointer;
+}
+.dinner-app .dinner-outside,
+.dinner-app .dinner-outside-review {
+  overflow-wrap: anywhere;
+  min-width: 0;
+}
+@media (prefers-reduced-motion: reduce) {
+  .dinner-app *,
+  .dinner-app *::before,
+  .dinner-app *::after {
+    animation: none !important;
+    transition: none !important;
+    scroll-behavior: auto !important;
   }
 }

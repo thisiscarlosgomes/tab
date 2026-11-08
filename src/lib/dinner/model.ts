@@ -45,6 +45,23 @@ export const expenseInput = z
     attachmentId: entityId.optional(),
   })
   .strict();
+export const correctionInput = expenseInput
+  .extend({ expectedVersion: z.number().int().min(1) })
+  .strict();
+export const correctionSchema = z.object({
+  id: entityId,
+  clientId: retryId,
+  proposedBy: entityId,
+  createdAt: z.string(),
+  expectedVersion: z.number().int(),
+  fields: expenseInput.omit({ clientId: true }),
+  status: z.enum(["proposed", "disputed", "applied"]),
+  flags: z.array(z.object({ userId: entityId, reason: z.string() })),
+  appliedAt: z.string().optional(),
+  appliedBy: entityId.optional(),
+  confirmationId: retryId.optional(),
+});
+export type Correction = z.infer<typeof correctionSchema>;
 export type ExpenseFields = z.infer<typeof expenseInput>;
 export type MessageFields = z.infer<typeof messageInput>;
 export type Actor = { id: string; name: string; twitterSubject: string | null };
@@ -124,6 +141,27 @@ type ExpenseBase = Omit<ExpenseFields, "clientId"> & {
   createdAt: string;
   flags: { userId: string; reason: string }[];
 };
+export const expenseHistorySchema = expenseInput
+  .omit({ clientId: true })
+  .extend({
+    version: z.number().int(),
+    confirmedAt: z.string(),
+    confirmationId: z.string(),
+    obligations: z.array(obligationSchema),
+    flags: z.array(z.object({ userId: z.string(), reason: z.string() })),
+    reversedAt: z.string(),
+    reversedBy: entityId,
+    correctionId: entityId,
+  });
+export const removalSchema = z.object({
+  id: entityId,
+  clientId: retryId,
+  userId: entityId,
+  name: z.string(),
+  joinedAt: z.string(),
+  removedAt: z.string(),
+  removedBy: entityId,
+});
 export type Expense =
   | (ExpenseBase & { status: "draft" })
   | (ExpenseBase & {
@@ -131,6 +169,8 @@ export type Expense =
       confirmedAt: string;
       confirmationId: string;
       obligations: Obligation[];
+      history?: z.infer<typeof expenseHistorySchema>[];
+      corrections?: Correction[];
     });
 export type Room = {
   id: string;
@@ -142,6 +182,7 @@ export type Room = {
   createdAt: string;
   members: Member[];
   invitations: Invitation[];
+  removals?: z.infer<typeof removalSchema>[];
   messages: Message[];
   expenses: Expense[];
 };
@@ -251,4 +292,50 @@ export function totals(room: Pick<Room, "expenses">, userId: string) {
           },
     { owe: 0, owed: 0 },
   );
+}
+
+export function memberName(
+  room: Pick<Room, "members" | "removals">,
+  id: string,
+) {
+  return (
+    room.members.find((m) => m.userId === id)?.name ??
+    room.removals?.find((m) => m.userId === id)?.name ??
+    "Member"
+  );
+}
+// Corrections may retain a removed person's existing participation, but never add or increase it.
+export function validateCorrectionShares(
+  input: ExpenseFields,
+  room: Room,
+  expense: Expense,
+) {
+  const retained = (room.removals ?? [])
+    .filter(
+      (m) =>
+        (m.userId === expense.payerId && input.payerId === expense.payerId) ||
+        expense.shares.some(
+          (s) =>
+            s.userId === m.userId &&
+            input.shares.some(
+              (n) => n.userId === s.userId && n.cents <= s.cents,
+            ),
+        ),
+    )
+    .map((m) => ({
+      userId: m.userId,
+      name: m.name,
+      role: "member" as const,
+      joinedAt: m.joinedAt,
+      readSeq: 0,
+    }));
+  validateShares(input, { ...room, members: [...room.members, ...retained] });
+  for (const share of input.shares) {
+    if (
+      !room.members.some((m) => m.userId === share.userId) &&
+      share.cents >
+        (expense.shares.find((s) => s.userId === share.userId)?.cents ?? 0)
+    )
+      fail(400, "A correction cannot add debt to a removed member");
+  }
 }

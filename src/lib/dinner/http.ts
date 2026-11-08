@@ -5,6 +5,7 @@ import {
   DinnerError,
   entityId,
   expenseInput,
+  correctionInput,
   fail,
   messageInput,
   roomView,
@@ -292,6 +293,72 @@ export async function handleDinner(
       }
     }
 
+    if (path[2] === "members" && path.length === 4 && method === "DELETE") {
+      const input = z
+        .object({ clientId: retryId })
+        .strict()
+        .parse(await body(request));
+      return json(
+        await deps.service.removeMember(
+          roomId,
+          actor,
+          entityId.parse(path[3]),
+          input.clientId,
+        ),
+      );
+    }
+    if (
+      path[2] === "expenses" &&
+      path[4] === "corrections" &&
+      method === "POST"
+    ) {
+      const expenseId = entityId.parse(path[3]);
+      if (path.length === 5) {
+        const input = correctionInput.parse(await body(request));
+        await deps.attachments.assertInRoom(
+          roomId,
+          actor,
+          input.attachmentId ? [input.attachmentId] : [],
+        );
+        return json(
+          await deps.service.proposeCorrection(roomId, actor, expenseId, input),
+          201,
+        );
+      }
+      if (path.length === 7) {
+        const correctionId = entityId.parse(path[5]);
+        if (path[6] === "confirm") {
+          const input = z
+            .object({ clientId: retryId })
+            .strict()
+            .parse(await body(request));
+          return json(
+            await deps.service.confirmCorrection(
+              roomId,
+              actor,
+              expenseId,
+              correctionId,
+              input.clientId,
+            ),
+          );
+        }
+        if (path[6] === "flag") {
+          const input = z
+            .object({ reason: z.string().trim().min(1).max(400) })
+            .strict()
+            .parse(await body(request));
+          return json(
+            await deps.service.disputeCorrection(
+              roomId,
+              actor,
+              expenseId,
+              correctionId,
+              input.reason,
+            ),
+          );
+        }
+      }
+    }
     if (path[2] === "invites" && path.length === 3 && method === "POST")
       return json(
         await deps.service.invite(roomId, actor, await body(request)),

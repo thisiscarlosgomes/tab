@@ -22,7 +22,7 @@ Use two accepted members to test a real shared obligation. A one-person room cre
 7. As the debtor, choose **Report paid outside Tab** after an actual outside payment. The share remains outstanding until the creditor explicitly reviews and confirms receipt in Money.
 8. After confirming an expense, tap the **@Tab what's still pending?** prompt (it only prefills the composer), send it, and watch the reply stream under **Tab · replying** before it is saved.
 9. Ask `@Tab draft a friendly nudge for Bob`. Tab returns wording only; use **Copy to send yourself**. Nothing is posted or sent by Tab.
-10. Post a receipt image, then ask `@Tab split this receipt, $42.10, paid by Alice, equally`. The proposal links the posted receipt; Tab cannot read the image, so the amount comes from your message.
+10. Post a receipt image, then ask `@Tab split this receipt, $42.10, paid by Alice, equally`. The existing receipt parser extracts the posted image server-side. Tab receives those fields and links the protected original; if the total, payer or participants are missing, it asks. Try “total $” with no amount to verify the clarification path.
 11. Add a second expense in the same room. The conversation and earlier records remain.
 
 If generation fails, use **Ask Tab to reply** on the saved addressed message. Do not resend it to retry a reply. A crashed active run can need 70 seconds before its lease becomes retryable.
@@ -53,3 +53,14 @@ After a production build, run `npm run test:agent-trace` to verify that all thre
 After starting the app, run `npm run test:theme-http`. Set `DINNER_THEME_SMOKE_URL` if the server is not on localhost:3000. The theme gate checks dinner server-rendered documents and preserved legacy dark routes, without logging in.
 
 See [the agent design and verification limits](tab-agent.md) before expanding the beta.
+
+## Remove a member and correct an expense
+
+1. As the room owner, open Members, choose **Remove [name]**, review the access/financial-retention policy, then **Remove from room**. The owner cannot be removed. In the removed account, refresh: room/chat/image access is denied while Wallet retains financial totals.
+2. In Money, choose **Correct this expense**, change the total, payer or shares, then **Save correction proposal**. Current balances do not change. Removed participants may retain or reduce existing shares but cannot receive new debt.
+3. As an affected participant, **Dispute correction** records a reason and blocks acceptance. Resolve the disagreement outside this mechanism and save a new proposal; the old dispute remains.
+4. As the expense author or owner, review the proposed fields and choose **Accept correction**. Pending outside reports must be resolved/cancelled first. Inspect **Version history and recorded reversals**, Wallet and Activity; ask `@Tab who owes whom?` and check the same values.
+5. Ask Tab to prepare a correction to a named current expense. Save the review card; it creates only a correction proposal. Accept it separately in Money. Tab never applies it.
+6. Verify an already acknowledged outside payment remains credited after a reduced share. Any difference is recorded as owed back, never described as an executed refund.
+
+Automated tests use a disposable real MongoDB, HTTP handlers and DOM controls with injected assistant/parser fixtures (no live model, Privy/X or financial calls). Live staging checks with two accounts and a real receipt remain necessary before merging. No production build or live-provider verification is implied by these tests.

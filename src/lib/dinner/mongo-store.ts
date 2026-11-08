@@ -12,6 +12,7 @@ export class MongoRoomStore implements RoomStore {
       { key: { id: 1 }, unique: true },
       { key: { ownerId: 1, creationId: 1 }, unique: true },
       { key: { "members.userId": 1 } },
+      { key: { "removals.userId": 1 } },
       { key: { "invitations.tokenHash": 1 } },
       { key: { "invitations.targetSubject": 1 } },
     ]);
@@ -59,10 +60,16 @@ export class MongoRoomStore implements RoomStore {
           ? {
               $or: [
                 { "members.userId": userId },
+                { "removals.userId": userId },
                 { "invitations.targetSubject": subject },
               ],
             }
-          : { "members.userId": userId },
+          : {
+              $or: [
+                { "members.userId": userId },
+                { "removals.userId": userId },
+              ],
+            },
         { projection: { _id: 0 } },
       )
       .sort({ createdAt: -1 })

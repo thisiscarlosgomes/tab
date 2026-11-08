@@ -1,5 +1,11 @@
 import { z } from "zod";
-import { expenseInput, obligationSchema } from "./model";
+import {
+  expenseInput,
+  obligationSchema,
+  correctionSchema,
+  expenseHistorySchema,
+  removalSchema,
+} from "./model";
 
 export const meSchema = z.object({ id: z.string(), name: z.string() });
 const messageBase = z.object({
@@ -35,6 +41,8 @@ export const expenseSchema = z.discriminatedUnion("status", [
     confirmedAt: z.string(),
     confirmationId: z.string(),
     obligations: z.array(obligationSchema),
+    history: z.array(expenseHistorySchema).optional(),
+    corrections: z.array(correctionSchema).optional(),
   }),
 ]);
 export const roomSchema = z.object({
@@ -53,6 +61,7 @@ export const roomSchema = z.object({
       readSeq: z.number(),
     }),
   ),
+  removals: z.array(removalSchema).optional(),
   messages: z.array(messageSchema),
   expenses: z.array(expenseSchema),
   invitations: z.array(

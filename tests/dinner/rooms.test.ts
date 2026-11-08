@@ -1218,3 +1218,308 @@ test("a client hash or claimed actor cannot supplement or replace creditor recei
   }
   assert.equal(totals(await service.memberRoom(r.id, bob), bob.id).owe, 1001);
 });
+
+test("owner removal revokes protected access, preserves records and is retry safe", async () => {
+  const r = await joined();
+  const draft = await service.draft(r.id, alice, fields());
+  const confirmed = await service.confirm(
+    r.id,
+    alice,
+    draft.id,
+    randomUUID(),
+    draft.version,
+  );
+  const obligation = confirmed.obligations[0];
+  await service.reportOutside(r.id, bob, obligation.id, randomUUID());
+  const original = await service.memberRoom(r.id, bob);
+  const clientId = randomUUID();
+  const results = await Promise.all([
+    service.removeMember(r.id, alice, bob.id, clientId),
+    service.removeMember(r.id, alice, bob.id, clientId),
+  ]);
+  assert.equal(results[0].id, results[1].id);
+  const saved = await service.memberRoom(r.id, alice);
+  assert.equal(saved.removals?.length, 1);
+  assert.equal(saved.ownerId, alice.id);
+  assert.deepEqual(saved.expenses, original.expenses);
+  assert.equal(totals(saved, bob.id).owe, 1001);
+  assert.equal((await service.list(bob)).rooms.length, 0);
+  assert.equal(
+    totals((await service.financialRooms(bob))[0], bob.id).owe,
+    1001,
+  );
+  for (const path of ["", "/messages", `/attachments/${randomUUID()}`])
+    assert.equal((await http(bob, `/rooms/${r.id}${path}`)).status, 404);
+  assert.equal(
+    (
+      await http(bob, `/rooms/${r.id}/messages`, "POST", {
+        clientId: randomUUID(),
+        text: "no",
+      })
+    ).status,
+    404,
+  );
+  await assert.rejects(service.draft(r.id, alice, fields()), /accepted/);
+  await assert.rejects(
+    service.removeMember(r.id, alice, alice.id, randomUUID()),
+    /owner/,
+  );
+  await assert.rejects(
+    service.removeMember(r.id, alice, alice.id, clientId),
+    /retry changed/,
+  );
+});
+
+test("removal denies non-admin, signed-out and cross-room callers", async () => {
+  const r = await joined();
+  const path = `/rooms/${r.id}/members/${bob.id}`;
+  assert.equal(
+    (await http(bob, path, "DELETE", { clientId: randomUUID() })).status,
+    403,
+  );
+  assert.equal(
+    (await http(carol, path, "DELETE", { clientId: randomUUID() })).status,
+    404,
+  );
+  assert.equal(
+    (await http(null, path, "DELETE", { clientId: randomUUID() })).status,
+    401,
+  );
+  assert.equal((await service.memberRoom(r.id, bob)).members.length, 2);
+});
+
+test("accepted corrections append reversal history and update exact-cent obligations once", async () => {
+  const r = await joined();
+  const draft = await service.draft(r.id, alice, fields());
+  const old = await service.confirm(
+    r.id,
+    alice,
+    draft.id,
+    randomUUID(),
+    draft.version,
+  );
+  const input = {
+    ...fields(),
+    expectedVersion: old.version,
+    totalCents: 3001,
+    shares: [
+      { userId: alice.id, cents: 1500 },
+      { userId: bob.id, cents: 1501 },
+    ],
+  };
+  const proposal = await service.proposeCorrection(r.id, bob, old.id, input);
+  assert.equal(totals(await service.memberRoom(r.id, alice), bob.id).owe, 1001);
+  const duplicate = await service.proposeCorrection(r.id, bob, old.id, input);
+  assert.equal(proposal.id, duplicate.id);
+  await assert.rejects(
+    service.proposeCorrection(r.id, bob, old.id, {
+      ...input,
+      totalCents: 3002,
+    }),
+    /retry changed/,
+  );
+  await assert.rejects(
+    service.confirmCorrection(r.id, bob, old.id, proposal.id, randomUUID()),
+    /author or room owner/,
+  );
+  const requestId = randomUUID();
+  const updated = await service.confirmCorrection(
+    r.id,
+    alice,
+    old.id,
+    proposal.id,
+    requestId,
+  );
+  assert.equal(updated.version, 2);
+  assert.equal(updated.totalCents, 3001);
+  assert.deepEqual(updated.history?.[0].obligations, old.obligations);
+  assert.deepEqual(updated.history?.[0].shares, old.shares);
+  assert.equal(updated.history?.[0].correctionId, proposal.id);
+  assert.equal(totals(await service.memberRoom(r.id, alice), bob.id).owe, 1501);
+  assert.equal(
+    (
+      await service.confirmCorrection(
+        r.id,
+        alice,
+        old.id,
+        proposal.id,
+        requestId,
+      )
+    ).history?.length,
+    1,
+  );
+  assert.equal((await service.memberRoom(r.id, alice)).expenses.length, 1);
+});
+
+test("disputed and stale corrections cannot change balances; money and identities are validated", async () => {
+  const r = await joined();
+  const d = await service.draft(r.id, alice, fields());
+  const e = await service.confirm(r.id, alice, d.id, randomUUID(), d.version);
+  const input = { ...fields(), expectedVersion: e.version };
+  for (const invalid of [
+    { ...input, totalCents: 2002 },
+    { ...input, shares: [{ userId: bob.id, cents: -1 }] },
+    { ...input, shares: [{ userId: carol.id, cents: 2001 }] },
+    { ...input, payerId: carol.id },
+  ])
+    await assert.rejects(service.proposeCorrection(r.id, alice, e.id, invalid));
+  const disputed = await service.proposeCorrection(r.id, alice, e.id, input);
+  await service.disputeCorrection(r.id, bob, e.id, disputed.id, "Wrong share");
+  await assert.rejects(
+    service.confirmCorrection(r.id, alice, e.id, disputed.id, randomUUID()),
+    /Disputed/,
+  );
+  const first = await service.proposeCorrection(r.id, alice, e.id, {
+    ...input,
+    clientId: randomUUID(),
+  });
+  const stale = await service.proposeCorrection(r.id, alice, e.id, {
+    ...input,
+    clientId: randomUUID(),
+  });
+  await service.confirmCorrection(r.id, alice, e.id, first.id, randomUUID());
+  await assert.rejects(
+    service.confirmCorrection(r.id, alice, e.id, stale.id, randomUUID()),
+    /Expense changed/,
+  );
+  assert.equal(totals(await service.memberRoom(r.id, alice), bob.id).owe, 1001);
+});
+
+test("correction preserves paid-outside credits and records an overpayment owed back, even after removal", async () => {
+  const r = await joined();
+  const d = await service.draft(r.id, alice, fields());
+  const e = await service.confirm(r.id, alice, d.id, randomUUID(), d.version);
+  const o = e.obligations[0];
+  const report = await service.reportOutside(r.id, bob, o.id, randomUUID());
+  const proposal = await service.proposeCorrection(r.id, alice, e.id, {
+    ...fields(),
+    expectedVersion: e.version,
+    totalCents: 1500,
+    shares: [
+      { userId: alice.id, cents: 1000 },
+      { userId: bob.id, cents: 500 },
+    ],
+  });
+  await assert.rejects(
+    service.confirmCorrection(r.id, alice, e.id, proposal.id, randomUUID()),
+    /pending outside reports/,
+  );
+  await service.resolveOutside(
+    r.id,
+    alice,
+    o.id,
+    report.id,
+    "confirmed",
+    randomUUID(),
+  );
+  await service.removeMember(r.id, alice, bob.id, randomUUID());
+  const updated = await service.confirmCorrection(
+    r.id,
+    alice,
+    e.id,
+    proposal.id,
+    randomUUID(),
+  );
+  assert.equal(updated.obligations[0].debtorId, alice.id);
+  assert.equal(updated.obligations[0].creditorId, bob.id);
+  assert.equal(updated.obligations[0].cents, 501);
+  assert.equal(
+    updated.history?.[0].obligations[0].outsideReports?.[0].status,
+    "confirmed",
+  );
+  assert.equal(
+    totals((await service.financialRooms(bob))[0], bob.id).owed,
+    501,
+  );
+  await assert.rejects(
+    service.proposeCorrection(r.id, alice, e.id, {
+      ...fields(),
+      expectedVersion: 2,
+    }),
+    /accepted|removed/,
+  );
+  // A second accepted version must not lose or double-count the old receipt credit.
+  const next = await service.proposeCorrection(r.id, alice, e.id, {
+    ...fields(),
+    expectedVersion: 2,
+    totalCents: 1400,
+    shares: [
+      { userId: alice.id, cents: 1000 },
+      { userId: bob.id, cents: 400 },
+    ],
+  });
+  const latest = await service.confirmCorrection(
+    r.id,
+    alice,
+    e.id,
+    next.id,
+    randomUUID(),
+  );
+  assert.equal(latest.obligations[0].cents, 601);
+  assert.equal(latest.history?.length, 2);
+});
+
+test("removed members' receipts remain protected and available to remaining members", async () => {
+  const r = await joined();
+  const bytes = await sharp({
+    create: { width: 2, height: 2, channels: 3, background: "white" },
+  })
+    .png()
+    .toBuffer();
+  const upload = await attachments.upload(
+    r.id,
+    bob,
+    new Request(`http://localhost?clientId=${randomUUID()}`, {
+      method: "POST",
+      headers: { "content-type": "image/png" },
+      body: new Uint8Array(bytes),
+    }),
+  );
+  await service.send(r.id, bob, {
+    clientId: randomUUID(),
+    text: "Receipt",
+    attachmentIds: [upload.id],
+  });
+  await service.removeMember(r.id, alice, bob.id, randomUUID());
+  assert.equal(
+    (await attachments.download(r.id, upload.id, alice)).status,
+    200,
+  );
+  await assert.rejects(
+    attachments.download(r.id, upload.id, bob),
+    /Room not found/,
+  );
+  assert.equal(
+    (await service.memberRoom(r.id, alice)).messages[0].attachmentIds[0],
+    upload.id,
+  );
+});
+
+test("correction HTTP endpoints deny signed-out and cross-room calls and enforce human acceptance", async () => {
+  const r = await joined();
+  const d = await service.draft(r.id, alice, fields());
+  const e = await service.confirm(r.id, alice, d.id, randomUUID(), d.version);
+  const path = `/rooms/${r.id}/expenses/${e.id}/corrections`;
+  const input = { ...fields(), expectedVersion: e.version };
+  assert.equal((await http(null, path, "POST", input)).status, 401);
+  assert.equal((await http(carol, path, "POST", input)).status, 404);
+  const response = await http(bob, path, "POST", input);
+  assert.equal(response.status, 201);
+  const proposal = await response.json();
+  assert.equal(
+    (
+      await http(bob, `${path}/${proposal.id}/confirm`, "POST", {
+        clientId: randomUUID(),
+      })
+    ).status,
+    403,
+  );
+  assert.equal(
+    (
+      await http(alice, `${path}/${proposal.id}/confirm`, "POST", {
+        clientId: randomUUID(),
+      })
+    ).status,
+    200,
+  );
+});

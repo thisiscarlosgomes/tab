@@ -19,6 +19,9 @@ import {
   expenseInput,
   validateShares,
   retryId,
+  correctionInput,
+  validateCorrectionShares,
+  Obligation,
 } from "./model";
 
 export interface RoomStore {
@@ -121,6 +124,54 @@ export class DinnerService {
           })),
       ),
     };
+  }
+  async removeMember(
+    id: string,
+    actor: Actor,
+    userId: string,
+    clientId: string,
+  ) {
+    retryId.parse(clientId);
+    return this.change(id, actor, (room) => {
+      if (room.ownerId !== actor.id)
+        fail(403, "Only the room owner can remove a member");
+      const previous = room.removals?.find(
+        (r) => r.clientId === clientId && r.removedBy === actor.id,
+      );
+      if (previous) {
+        if (previous.userId !== userId) fail(409, "Removal retry changed");
+        return previous;
+      }
+      if (userId === room.ownerId)
+        fail(409, "The room owner cannot be removed or transferred here");
+      const member =
+        room.members.find((m) => m.userId === userId) ??
+        fail(404, "Accepted member not found");
+      if ((room.removals?.length ?? 0) >= 100)
+        fail(422, "Membership history limit reached");
+      const event = {
+        id: randomUUID(),
+        clientId,
+        userId,
+        name: member.name,
+        joinedAt: member.joinedAt,
+        removedAt: this.now(),
+        removedBy: actor.id,
+      };
+      room.removals = [...(room.removals ?? []), event];
+      room.members = room.members.filter((m) => m.userId !== userId);
+      return event;
+    });
+  }
+  // Used only for personal money projections, never as authorization to read a room.
+  async financialRooms(actor: Actor) {
+    return (await this.store.list(actor.id, null))
+      .filter(
+        (r) =>
+          r.members.some((m) => m.userId === actor.id) ||
+          r.removals?.some((m) => m.userId === actor.id),
+      )
+      .map(roomView);
   }
   async invite(id: string, actor: Actor, raw: unknown) {
     const input = inviteInput.parse(raw);
@@ -226,6 +277,13 @@ export class DinnerService {
         );
       if (invitationStatus(invite, this.now()) !== "pending")
         fail(409, "This invitation is no longer pending");
+      if (
+        decision === "accepted" &&
+        room.removals?.some(
+          (m) => m.userId === actor.id && invite.createdAt <= m.removedAt,
+        )
+      )
+        fail(409, "Ask the room owner for a new invitation after removal");
       if (
         decision === "accepted" &&
         !room.members.some((m) => m.userId === actor.id)
@@ -486,6 +544,205 @@ export class DinnerService {
         e.id === expenseId ? confirmed : e,
       );
       return confirmed;
+    });
+  }
+  async proposeCorrection(
+    id: string,
+    actor: Actor,
+    expenseId: string,
+    raw: unknown,
+  ) {
+    const input = correctionInput.parse(raw);
+    return this.change(id, actor, (room) => {
+      const expense = room.expenses.find((e) => e.id === expenseId);
+      if (!expense || expense.status !== "confirmed")
+        return fail(404, "Confirmed expense not found");
+      const { clientId, expectedVersion, ...fields } = input;
+      const previous = expense.corrections?.find(
+        (c) => c.clientId === clientId && c.proposedBy === actor.id,
+      );
+      if (previous) {
+        if (
+          !same(previous.fields, fields) ||
+          previous.expectedVersion !== expectedVersion
+        )
+          fail(409, "Correction retry changed");
+        return previous;
+      }
+      if (expense.version !== expectedVersion)
+        fail(409, "Expense changed. Review its current version");
+      validateCorrectionShares({ ...fields, clientId }, room, expense);
+      if ((expense.corrections?.length ?? 0) >= 50)
+        fail(422, "Correction history limit reached");
+      const correction = {
+        id: randomUUID(),
+        clientId,
+        expectedVersion,
+        fields,
+        proposedBy: actor.id,
+        createdAt: this.now(),
+        status: "proposed" as const,
+        flags: [],
+      };
+      expense.corrections = [...(expense.corrections ?? []), correction];
+      return correction;
+    });
+  }
+  async disputeCorrection(
+    id: string,
+    actor: Actor,
+    expenseId: string,
+    correctionId: string,
+    reason: string,
+  ) {
+    return this.change(id, actor, (room) => {
+      const expense = room.expenses.find((e) => e.id === expenseId);
+      if (!expense || expense.status !== "confirmed")
+        return fail(404, "Expense not found");
+      const correction =
+        expense.corrections?.find((c) => c.id === correctionId) ??
+        fail(404, "Correction not found");
+      if (
+        ![
+          expense.payerId,
+          correction.fields.payerId,
+          ...expense.shares.map((s) => s.userId),
+          ...correction.fields.shares.map((s) => s.userId),
+        ].includes(actor.id)
+      )
+        fail(403, "Only an affected participant can dispute this correction");
+      if (correction.status === "applied")
+        fail(409, "Already applied. Flag the current share instead");
+      correction.status = "disputed";
+      correction.flags = [
+        ...correction.flags.filter((f) => f.userId !== actor.id),
+        { userId: actor.id, reason },
+      ];
+      return correction;
+    });
+  }
+  async confirmCorrection(
+    id: string,
+    actor: Actor,
+    expenseId: string,
+    correctionId: string,
+    clientId: string,
+  ) {
+    retryId.parse(clientId);
+    return this.change(id, actor, (room) => {
+      const expense = room.expenses.find((e) => e.id === expenseId);
+      if (!expense || expense.status !== "confirmed")
+        return fail(404, "Expense not found");
+      if (![expense.creatorId, room.ownerId].includes(actor.id))
+        fail(
+          403,
+          "Only the expense author or room owner can accept a correction",
+        );
+      const correction =
+        expense.corrections?.find((c) => c.id === correctionId) ??
+        fail(404, "Correction not found");
+      if (correction.status === "applied") {
+        if (
+          correction.confirmationId === clientId &&
+          correction.appliedBy === actor.id
+        )
+          return expense;
+        fail(409, "Correction already applied");
+      }
+      if (correction.status === "disputed")
+        fail(
+          409,
+          "Disputed correction cannot be applied. Prepare a new proposal after clarification",
+        );
+      if (correction.expectedVersion !== expense.version)
+        fail(
+          409,
+          "Expense changed. Prepare a correction against its current version",
+        );
+      validateCorrectionShares(
+        { ...correction.fields, clientId },
+        room,
+        expense,
+      );
+      if (
+        expense.obligations.some((o) =>
+          o.outsideReports?.some((r) => r.status === "pending"),
+        )
+      )
+        fail(
+          409,
+          "Resolve or cancel pending outside reports before accepting a correction",
+        );
+      const at = this.now();
+      const history = expense.history ?? [];
+      // Deduplicate settled obligations across snapshots. Credits stay real even if a share is reduced;
+      // a negative remainder becomes an obligation back to the person who overpaid, never a refund payment.
+      const paid = new Map<string, Obligation>();
+      for (const o of [
+        ...history.flatMap((h) => h.obligations),
+        ...expense.obligations,
+      ])
+        if (o.status === "confirmed_outside") paid.set(o.id, o);
+      const net = new Map<string, { a: string; b: string; cents: number }>();
+      const add = (from: string, to: string, cents: number) => {
+        const [a, b] = [from, to].sort();
+        const key = `${a}:${b}`;
+        const row = net.get(key) ?? { a, b, cents: 0 };
+        row.cents += from === a ? cents : -cents;
+        net.set(key, row);
+      };
+      for (const share of correction.fields.shares)
+        if (share.userId !== correction.fields.payerId)
+          add(share.userId, correction.fields.payerId, share.cents);
+      for (const o of paid.values()) add(o.debtorId, o.creditorId, -o.cents);
+      const next: Obligation[] = [...net.values()]
+        .filter((n) => n.cents !== 0)
+        .map((n) => ({
+          id: randomUUID(),
+          expenseId,
+          debtorId: n.cents > 0 ? n.a : n.b,
+          creditorId: n.cents > 0 ? n.b : n.a,
+          cents: Math.abs(n.cents),
+          currency: "USD",
+          status: "outstanding",
+        }));
+      if (next.some((o) => o.cents > 100_000_000))
+        fail(
+          422,
+          "Adjustment exceeds the beta amount limit; history is preserved",
+        );
+      expense.history = [
+        ...history,
+        {
+          description: expense.description,
+          payerId: expense.payerId,
+          totalCents: expense.totalCents,
+          shares: expense.shares,
+          ...(expense.attachmentId
+            ? { attachmentId: expense.attachmentId }
+            : {}),
+          version: expense.version,
+          confirmedAt: expense.confirmedAt,
+          confirmationId: expense.confirmationId,
+          flags: expense.flags,
+          obligations: expense.obligations,
+          reversedAt: at,
+          reversedBy: actor.id,
+          correctionId,
+        },
+      ];
+      delete expense.attachmentId;
+      Object.assign(expense, correction.fields, {
+        version: expense.version + 1,
+        obligations: next,
+        confirmedAt: at,
+        confirmationId: clientId,
+      });
+      correction.status = "applied";
+      correction.appliedAt = at;
+      correction.appliedBy = actor.id;
+      correction.confirmationId = clientId;
+      return expense;
     });
   }
   async reportOutside(

@@ -3,6 +3,9 @@ import { useState, type FormEvent } from "react";
 import { z } from "zod";
 import {
   Expense,
+  Correction,
+  correctionSchema,
+  memberName,
   RoomView,
   obligations,
   parseUsd,
@@ -13,6 +16,7 @@ import {
 import { expenseSchema } from "@/lib/dinner/client-schema";
 import { useDinner } from "./DinnerShell";
 import { OutsidePayments } from "./OutsidePayments";
+import { Corrections } from "./Corrections";
 import { PrivateImage } from "./PrivateImage";
 
 export function Money({
@@ -36,8 +40,7 @@ export function Money({
   const [flagging, setFlagging] = useState<string | null>(null);
   const [flagReason, setFlagReason] = useState("");
   const [busy, setBusy] = useState(false);
-  const name = (id: string) =>
-    room.members.find((m) => m.userId === id)?.name ?? "Member";
+  const name = (id: string) => memberName(room, id);
   function even(amount: string, ids: string[]) {
     const cents = parseUsd(amount);
     if (cents !== null)
@@ -50,21 +53,23 @@ export function Money({
         ),
       );
   }
-  function start(expense?: Expense) {
+  function start(expense?: Expense, correction?: Correction) {
+    const fields = correction?.fields ?? expense;
     setEditing(expense ?? null);
-    setDescription(expense?.description ?? "");
-    setTotal(expense ? (expense.totalCents / 100).toFixed(2) : "");
-    setPayer(expense?.payerId ?? me?.id ?? "");
-    const ids = expense?.shares.map((s) => s.userId) ?? [];
+    setDescription(fields?.description ?? "");
+    setTotal(fields ? (fields.totalCents / 100).toFixed(2) : "");
+    setPayer(fields?.payerId ?? me?.id ?? "");
+    const ids = fields?.shares.map((s) => s.userId) ?? [];
     setSelected(ids);
     setShares(
       Object.fromEntries(
-        expense?.shares.map((s) => [s.userId, (s.cents / 100).toFixed(2)]) ??
-          [],
+        fields?.shares.map((s) => [s.userId, (s.cents / 100).toFixed(2)]) ?? [],
       ),
     );
-    setReceipt(expense?.attachmentId ?? "");
-    setClientId(expense?.clientId ?? crypto.randomUUID());
+    setReceipt(fields?.attachmentId ?? "");
+    setClientId(
+      expense?.status === "draft" ? expense.clientId : crypto.randomUUID(),
+    );
     setError("");
     setShowForm(true);
   }
@@ -94,11 +99,14 @@ export function Money({
     setError("");
     try {
       await api(
-        `/rooms/${room.id}/expenses${editing ? `/${editing.id}` : ""}`,
+        `/rooms/${room.id}/expenses${editing ? `/${editing.id}${editing.status === "confirmed" ? "/corrections" : ""}` : ""}`,
         {
-          method: editing ? "PATCH" : "POST",
+          method: editing?.status === "draft" ? "PATCH" : "POST",
           body: JSON.stringify({
             clientId,
+            ...(editing?.status === "confirmed"
+              ? { expectedVersion: editing.version }
+              : {}),
             description,
             totalCents,
             payerId: payer,
@@ -106,7 +114,7 @@ export function Money({
             ...(receipt ? { attachmentId: receipt } : {}),
           }),
         },
-        expenseSchema,
+        z.union([expenseSchema, correctionSchema]),
       );
       setShowForm(false);
       await refresh();
@@ -170,6 +178,18 @@ export function Money({
       cents: (previous?.cents ?? 0) + o.cents,
     });
   }
+  const formMembers = [
+    ...room.members,
+    ...(editing?.status === "confirmed"
+      ? (room.removals ?? []).filter(
+          (m, i, all) =>
+            !room.members.some((a) => a.userId === m.userId) &&
+            all.findIndex((a) => a.userId === m.userId) === i &&
+            (editing.payerId === m.userId ||
+              editing.shares.some((s) => s.userId === m.userId)),
+        )
+      : []),
+  ];
   const imageIds = [...new Set(room.messages.flatMap((m) => m.attachmentIds))];
   return (
     <div className="dinner-stack">
@@ -200,7 +220,13 @@ export function Money({
       )}
       {showForm && (
         <section className="dinner-card">
-          <h2>{editing ? "Edit expense draft" : "Add an expense"}</h2>
+          <h2>
+            {editing?.status === "confirmed"
+              ? "Correct this expense"
+              : editing
+                ? "Edit expense draft"
+                : "Add an expense"}
+          </h2>
           <form className="dinner-form" onSubmit={save}>
             <label>
               What was it for?
@@ -232,7 +258,7 @@ export function Money({
                   value={payer}
                   onChange={(e) => setPayer(e.target.value)}
                 >
-                  {room.members.map((m) => (
+                  {formMembers.map((m) => (
                     <option key={m.userId} value={m.userId}>
                       {m.name}
                     </option>
@@ -253,9 +279,10 @@ export function Money({
               </div>
               <p className="dinner-note">
                 Select accepted members only. Pending invitees are never added
-                automatically.
+                automatically. Corrections may retain or reduce a removed
+                member’s existing share; they cannot add debt to that person.
               </p>
-              {room.members.map((m) => (
+              {formMembers.map((m) => (
                 <div className="dinner-share" key={m.userId}>
                   <label>
                     <input
@@ -310,12 +337,17 @@ export function Money({
               </label>
             )}
             <p className="dinner-note">
-              Save first, then review before confirming. Drafts do not create
-              obligations. Recording a share never authorizes payment.
+              {editing?.status === "confirmed"
+                ? "Save the proposal, then review before accepting. Unconfirmed corrections do not change balances. No payment is authorized."
+                : "Save first, then review before confirming. Drafts do not create obligations. Recording a share never authorizes payment."}
             </p>
             <div className="dinner-actions">
               <button disabled={busy} type="submit">
-                {busy ? "Saving…" : "Save draft"}
+                {busy
+                  ? "Saving…"
+                  : editing?.status === "confirmed"
+                    ? "Save correction proposal"
+                    : "Save draft"}
               </button>
               <button
                 type="button"
@@ -477,6 +509,23 @@ export function Money({
                   </button>
                 </div>
               </form>
+            )}
+            {expense.status === "confirmed" && (
+              <>
+                <button
+                  className="dinner-quiet"
+                  disabled={busy}
+                  onClick={() => start(expense)}
+                >
+                  Correct this expense
+                </button>
+                <Corrections
+                  expense={expense}
+                  room={room}
+                  refresh={refresh}
+                  edit={(c) => start(expense, c)}
+                />
+              </>
             )}
             {expense.status === "confirmed" && (
               <OutsidePayments

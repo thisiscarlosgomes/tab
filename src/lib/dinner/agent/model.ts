@@ -55,7 +55,12 @@ export const reminderSchema = z.object({
 export type Reminder = z.infer<typeof reminderSchema>;
 export const prepareInput = expenseInput
   .omit({ clientId: true })
-  .extend({ roomId: entityId })
+  .partial()
+  .extend({
+    roomId: entityId,
+    correctionOf: entityId.optional(),
+    expectedVersion: z.number().int().min(1).optional(),
+  })
   .strict();
 export const proposalSchema = z.object({
   id: entityId,
@@ -67,7 +72,15 @@ export const proposalSchema = z.object({
   createdAt: z.string(),
   fields: expenseInput.omit({ clientId: true }),
   appliedExpenseId: entityId.nullable(),
+  correctionOf: entityId.optional(),
+  expectedVersion: z.number().int().optional(),
 });
+export type NeedsDetails = {
+  kind: "needs_details";
+  missing: string[];
+  message: string;
+  extracted: unknown;
+};
 export type Proposal = z.infer<typeof proposalSchema>;
 export const agentViewSchema = z.object({
   messages: z.array(turnSchema),

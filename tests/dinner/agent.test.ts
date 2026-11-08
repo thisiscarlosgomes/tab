@@ -73,7 +73,13 @@ async function joined() {
 function agent(
   runner: AgentRunner = async () => "Verified summary; nothing paid.",
 ) {
-  return new DinnerAgentService(db, dinner, runner);
+  return new DinnerAgentService(db, dinner, runner, async () => ({
+    merchant: null,
+    totalAmount: null,
+    currency: null,
+    items: [],
+    confidence: 0,
+  }));
 }
 const denied = (e: unknown) =>
   e instanceof DinnerError && (e.status === 404 || e.status === 403);
@@ -412,6 +418,7 @@ test("typed expense preparation creates only a proposal until its human owner sa
   const service = agent(async (context) => {
     const proposal = await context.prepareExpense(expense(r.id));
     proposalSchema.parse(proposal);
+    assert.ok("id" in proposal);
     proposalId = proposal.id;
     await context.recordTool(
       "prepare_expense",
@@ -784,7 +791,6 @@ test("member summary and nudge drafts are read-only and never post or settle any
   );
 });
 
-
 test("member summary formats 50 cents as $0.50, not $50", () => {
   const summary = memberSummary({
     members: [
@@ -852,3 +858,220 @@ test("a proposal can link a receipt already shared in the room, never a guessed 
 });
 type AgentContextFns =
   import("../../src/lib/dinner/agent/capabilities").AgentContext;
+
+async function postedReceipt(roomId: string) {
+  const bytes = await sharp({
+    create: { width: 2, height: 2, channels: 3, background: "white" },
+  })
+    .png()
+    .toBuffer();
+  const upload = await new Attachments(db, dinner).upload(
+    roomId,
+    alice,
+    new Request(`http://localhost?clientId=${randomUUID()}`, {
+      method: "POST",
+      headers: { "content-type": "image/png" },
+      body: new Uint8Array(bytes),
+    }),
+  );
+  await dinner.send(roomId, alice, {
+    clientId: randomUUID(),
+    text: "Receipt",
+    attachmentIds: [upload.id],
+  });
+  return upload.id;
+}
+
+test("receipt extraction populates a review proposal, asks for missing participants and never passes pixels to Tab", async () => {
+  const r = await joined();
+  const attachmentId = await postedReceipt(r.id);
+  let calls = 0;
+  const service = new DinnerAgentService(
+    db,
+    dinner,
+    async (context) => {
+      assert.match(context.conversation.at(-1)?.content ?? "", /20.01/);
+      assert.doesNotMatch(
+        JSON.stringify(context.conversation),
+        /data:image|base64/,
+      );
+      const missing = await context.prepareExpense({
+        roomId: r.id,
+        attachmentId,
+      });
+      assert.ok("kind" in missing);
+      assert.deepEqual(missing.missing, [
+        "payer",
+        "participants and exact shares",
+      ]);
+      const prepared = await context.prepareExpense({
+        roomId: r.id,
+        attachmentId,
+        payerId: alice.id,
+        shares: expense(r.id).shares,
+      });
+      assert.ok("id" in prepared);
+      assert.equal(prepared.fields.totalCents, 2001);
+      assert.equal(prepared.fields.description, "Noodle house");
+      assert.equal(prepared.appliedExpenseId, null);
+      await assert.rejects(
+        context.prepareExpense({
+          ...expense(r.id),
+          attachmentId: randomUUID(),
+        }),
+        /already shared/,
+      );
+      return "Review the proposed receipt split; nothing confirmed.";
+    },
+    async (image) => {
+      calls++;
+      assert.match(image, /^data:image\/webp;base64,/);
+      return {
+        merchant: "Noodle house",
+        totalAmount: 20.01,
+        currency: "USD",
+        items: [{ name: "Dinner", price: 20.01 }],
+        confidence: 0.95,
+      };
+    },
+  );
+  const source = await addressed(
+    r.id,
+    alice,
+    "@Tab split this receipt total $",
+  );
+  await service.respond(alice, { kind: "room", roomId: r.id }, source.id);
+  assert.equal(calls, 1);
+  assert.equal((await dinner.memberRoom(r.id, alice)).expenses.length, 0);
+  assert.equal(
+    (await new Attachments(db, dinner).download(r.id, attachmentId, alice))
+      .status,
+    200,
+  );
+});
+
+test("unreadable receipt asks for USD total; guessed identities and cross-room attachments still fail", async () => {
+  const r = await joined();
+  const attachmentId = await postedReceipt(r.id);
+  const other = await room();
+  const otherImage = await postedReceipt(other.id);
+  const service = new DinnerAgentService(
+    db,
+    dinner,
+    async (context) => {
+      const input = expense(r.id);
+      const missing = await context.prepareExpense({
+        roomId: r.id,
+        attachmentId,
+        payerId: alice.id,
+        shares: input.shares,
+      });
+      assert.ok("kind" in missing);
+      assert.deepEqual(missing.missing, ["total in USD"]);
+      await assert.rejects(
+        context.prepareExpense({
+          roomId: r.id,
+          attachmentId,
+          payerId: carol.id,
+        }),
+        /accepted member/,
+      );
+      await assert.rejects(
+        context.prepareExpense({ ...input, attachmentId: otherImage }),
+        /already shared/,
+      );
+      return missing.message;
+    },
+    async () => ({
+      merchant: null,
+      totalAmount: null,
+      currency: null,
+      items: [],
+      confidence: 0,
+    }),
+  );
+  const source = await addressed(
+    r.id,
+    alice,
+    "@Tab split this receipt total $",
+  );
+  const result = await service.respond(
+    alice,
+    { kind: "room", roomId: r.id },
+    source.id,
+  );
+  assert.match(result.text, /total in USD/);
+  assert.equal((await service.roomProposals(alice, r.id)).length, 0);
+});
+
+test("assistant correction is draft only and projections track the human-accepted version", async () => {
+  const r = await joined();
+  const { roomId: _roomId, ...fields } = expense(r.id);
+  const d = await dinner.draft(r.id, alice, {
+    ...fields,
+    clientId: randomUUID(),
+  });
+  const e = await dinner.confirm(r.id, alice, d.id, randomUUID(), d.version);
+  const service = agent(async (context) => {
+    await context.prepareExpense({
+      ...expense(r.id),
+      totalCents: 3000,
+      shares: [
+        { userId: alice.id, cents: 1500 },
+        { userId: bob.id, cents: 1500 },
+      ],
+      correctionOf: e.id,
+      expectedVersion: e.version,
+    });
+    return "Review correction in Money";
+  });
+  const source = await addressed(r.id);
+  await service.respond(alice, { kind: "room", roomId: r.id }, source.id);
+  const [p] = await service.roomProposals(alice, r.id);
+  assert.equal(p.correctionOf, e.id);
+  assert.equal((await service.wallet(bob)).owe, 1000);
+  await service.applyProposal(alice, p.id);
+  await service.applyProposal(alice, p.id);
+  const before = (await dinner.memberRoom(r.id, alice)).expenses[0];
+  assert.equal(before.status, "confirmed");
+  if (before.status !== "confirmed") throw new Error("Expected confirmed");
+  assert.equal(before.corrections?.length, 1);
+  assert.equal((await service.wallet(bob)).owe, 1000);
+  await dinner.confirmCorrection(
+    r.id,
+    alice,
+    e.id,
+    before.corrections![0].id,
+    randomUUID(),
+  );
+  assert.equal((await service.wallet(bob)).owe, 1500);
+  const summary = agent(async (context) => {
+    const data = await context.memberSummary(r.id);
+    assert.equal(
+      data.members.find((m) => m.userId === bob.id)?.oweUsd,
+      "$15.00",
+    );
+    return "Bob owes $15.00";
+  });
+  const question = await addressed(r.id);
+  await summary.respond(alice, { kind: "room", roomId: r.id }, question.id);
+  await dinner.removeMember(r.id, alice, bob.id, randomUUID());
+  const wallet = await service.wallet(bob);
+  assert.equal(wallet.owe, 1500);
+  assert.equal(wallet.balances[0].hasRoomAccess, false);
+  const removed = agent(async (context) => {
+    const facts = (await context.readRoom(r.id)) as {
+      members: { userId: string }[];
+    };
+    assert.ok(!facts.members.some((m) => m.userId === bob.id));
+    assert.equal(
+      (await context.memberSummary(r.id)).members.find(
+        (m) => m.userId === bob.id,
+      )?.oweCents,
+      1500,
+    );
+    return "Historical obligations preserved";
+  });
+  const q = await addressed(r.id);
+  await removed.respond(alice, { kind: "room", roomId: r.id }, q.id);
+});

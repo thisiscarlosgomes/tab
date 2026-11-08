@@ -3,7 +3,7 @@ import { RoomPlan } from "./Coordination";
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { roomSchema } from "@/lib/dinner/client-schema";
-import { RoomView } from "@/lib/dinner/model";
+import { RoomView, DinnerError } from "@/lib/dinner/model";
 import { useDinner } from "./DinnerShell";
 import { Chat } from "./Chat";
 import { Money } from "./Money";
@@ -24,6 +24,8 @@ export function Room({ id }: { id: string }) {
       setError("");
       setLastSync(new Date().toISOString());
     } catch (e) {
+      if (e instanceof DinnerError && [401, 403, 404].includes(e.status))
+        setRoom(null);
       setError(e instanceof Error ? e.message : "Could not refresh room");
     }
   }, [api, id]);
@@ -124,8 +126,10 @@ export function Room({ id }: { id: string }) {
                       No money is held or moved here. Mention @Tab for a scoped
                       summary or a proposed split. Only addressed requests send
                       recent room text and shared notes to the configured model
-                      provider. Ordinary conversation triggers no assistant
-                      reply.
+                      provider. Addressed receipt requests also send the
+                      selected image to the existing receipt parser; only
+                      extracted fields reach Tab. Ordinary conversation triggers
+                      no assistant reply.
                     </p>
                     <button
                       className="dinner-small dinner-quiet"

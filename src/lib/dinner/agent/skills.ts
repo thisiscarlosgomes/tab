@@ -9,12 +9,12 @@ export const skillName = z.enum([
 export const skillCatalog = [
   {
     name: "room-status",
-    version: "1.2",
+    version: "1.3",
     description: "Room/personal obligation status and summaries",
   },
   {
     name: "expense-preparation",
-    version: "1.1",
+    version: "1.2",
     description: "Prepare a proposed split for human review",
   },
   {
