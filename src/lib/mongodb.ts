@@ -1,23 +1,26 @@
 import { MongoClient } from "mongodb";
+import {
+  getMongoConnection,
+  type MongoConnectionCache,
+} from "./mongo-connection";
 
 if (!process.env.MONGODB_URI) {
   throw new Error('Invalid/Missing environment variable: "MONGODB_URI"');
 }
 
 const uri = process.env.MONGODB_URI;
-const options = {};
-
-let client;
-let clientPromise: Promise<MongoClient> | undefined;
+const localCache: MongoConnectionCache = {};
 
 async function ensureIndexes(mongoClient: MongoClient) {
   const db = mongoClient.db();
 
   await Promise.all([
-    db.collection("a-split-game").createIndex(
-      { gameId: 1 },
-      { unique: true, collation: { locale: "en", strength: 2 } }
-    ),
+    db
+      .collection("a-split-game")
+      .createIndex(
+        { gameId: 1 },
+        { unique: true, collation: { locale: "en", strength: 2 } },
+      ),
     db
       .collection("a-split-game")
       .createIndex({ "participants.address": 1, createdAt: -1 }),
@@ -45,7 +48,9 @@ async function ensureIndexes(mongoClient: MongoClient) {
       .collection("a-web-push-dedupe")
       .createIndex({ createdAt: 1 }, { expireAfterSeconds: 60 * 60 * 24 * 14 }),
 
-    db.collection("a-agent-access").createIndex({ address: 1 }, { unique: true }),
+    db
+      .collection("a-agent-access")
+      .createIndex({ address: 1 }, { unique: true }),
     db.collection("a-agent-access").createIndex({ userId: 1 }),
     db.collection("a-agent-access").createIndex({ status: 1, updatedAt: -1 }),
 
@@ -86,13 +91,18 @@ async function ensureIndexes(mongoClient: MongoClient) {
       .collection("a-agent-link-claims")
       .createIndex({ status: 1, expiresAt: 1 }),
 
-    db.collection("a-user-profile").createIndex({ userId: 1 }, { unique: true }),
-    db.collection("a-user-profile").createIndex({ fid: 1 }, { unique: true, sparse: true }),
-    db.collection("a-user-profile").createIndex(
-      { usernameLower: 1 },
-      { unique: true, sparse: true }
-    ),
-    db.collection("a-user-profile").createIndex({ primaryAddress: 1 }, { sparse: true }),
+    db
+      .collection("a-user-profile")
+      .createIndex({ userId: 1 }, { unique: true }),
+    db
+      .collection("a-user-profile")
+      .createIndex({ fid: 1 }, { unique: true, sparse: true }),
+    db
+      .collection("a-user-profile")
+      .createIndex({ usernameLower: 1 }, { unique: true, sparse: true }),
+    db
+      .collection("a-user-profile")
+      .createIndex({ primaryAddress: 1 }, { sparse: true }),
     db
       .collection("a-twitter-oauth")
       .createIndex({ userId: 1 }, { unique: true }),
@@ -118,34 +128,14 @@ async function ensureIndexes(mongoClient: MongoClient) {
 }
 
 function getClientPromise(): Promise<MongoClient> {
-  if (clientPromise) return clientPromise;
-
   if (process.env.NODE_ENV === "development") {
     const globalWithMongo = global as typeof globalThis & {
-      _mongoClientPromise?: Promise<MongoClient>;
+      _mongoConnectionCache?: MongoConnectionCache;
     };
-
-    if (!globalWithMongo._mongoClientPromise) {
-      client = new MongoClient(uri, options);
-      globalWithMongo._mongoClientPromise = client
-        .connect()
-        .then(async (connectedClient) => {
-          await ensureIndexes(connectedClient);
-          return connectedClient;
-        });
-    }
-
-    clientPromise = globalWithMongo._mongoClientPromise;
-    return clientPromise;
+    const cache = (globalWithMongo._mongoConnectionCache ??= {});
+    return getMongoConnection(cache, uri, ensureIndexes);
   }
-
-  client = new MongoClient(uri, options);
-  clientPromise = client.connect().then(async (connectedClient) => {
-    await ensureIndexes(connectedClient);
-    return connectedClient;
-  });
-
-  return clientPromise;
+  return getMongoConnection(localCache, uri, ensureIndexes);
 }
 
 const lazyClientPromise = {
@@ -153,9 +143,7 @@ const lazyClientPromise = {
     onfulfilled?:
       | ((value: MongoClient) => TResult1 | PromiseLike<TResult1>)
       | null,
-    onrejected?:
-      | ((reason: unknown) => TResult2 | PromiseLike<TResult2>)
-      | null
+    onrejected?: ((reason: unknown) => TResult2 | PromiseLike<TResult2>) | null,
   ) {
     return getClientPromise().then(onfulfilled, onrejected);
   },
