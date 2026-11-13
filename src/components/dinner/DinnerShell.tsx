@@ -19,8 +19,22 @@ type Api = <T = unknown>(
   init: RequestInit,
   schema: z.ZodType<T>,
 ) => Promise<T>;
+export type ReplyResult = { status: string; text: string };
+/** POSTs an agent reply request and reports NDJSON text deltas as they arrive. */
+export type StreamReply = (
+  path: string,
+  messageId: string,
+  onDelta: (text: string) => void,
+) => Promise<ReplyResult>;
+const replyLine = z.discriminatedUnion("type", [
+  z.object({ type: z.literal("delta"), text: z.string() }),
+  z.object({ type: z.literal("done"), status: z.string(), text: z.string() }),
+  z.object({ type: z.literal("error"), error: z.string() }),
+]);
+const replyJson = z.object({ status: z.string(), text: z.string() });
 export const DinnerContext = createContext<{
   api: Api;
+  streamReply?: StreamReply;
   me: z.infer<typeof meSchema> | null;
   image: (path: string) => Promise<Blob>;
 } | null>(null);
@@ -64,6 +78,51 @@ export function DinnerShell({ children }: { children: ReactNode }) {
       }
       const value: unknown = await res.json();
       return schema.parse(value);
+    },
+    [identityToken, getAccessToken],
+  );
+  const streamReply: StreamReply = useCallback(
+    async (path, messageId, onDelta) => {
+      const token = identityToken ?? (await getAccessToken());
+      const headers = new Headers({
+        "Content-Type": "application/json",
+        Accept: "application/x-ndjson, application/json",
+      });
+      if (token) headers.set("Authorization", `Bearer ${token}`);
+      const res = await fetch(`/api/dinner${path}`, {
+        method: "POST",
+        headers,
+        body: JSON.stringify({ messageId }),
+        cache: "no-store",
+        signal: AbortSignal.timeout(55_000),
+      });
+      if (!res.ok) {
+        const parsed = z
+          .object({ error: z.string() })
+          .safeParse(await res.json().catch(() => null));
+        throw new Error(
+          parsed.success ? parsed.data.error : "Tab could not reply",
+        );
+      }
+      if (!res.headers.get("content-type")?.includes("ndjson") || !res.body)
+        return replyJson.parse(await res.json());
+      const reader = res.body.pipeThrough(new TextDecoderStream()).getReader();
+      let buffer = "";
+      while (true) {
+        const next = await reader.read();
+        if (next.done) break;
+        buffer += next.value;
+        const lines = buffer.split("\n");
+        buffer = lines.pop() ?? "";
+        for (const raw of lines) {
+          if (!raw.trim()) continue;
+          const line = replyLine.parse(JSON.parse(raw));
+          if (line.type === "delta") onDelta(line.text);
+          else if (line.type === "error") throw new Error(line.error);
+          else return { status: line.status, text: line.text };
+        }
+      }
+      throw new Error("Tab's reply was interrupted. Your message is saved.");
     },
     [identityToken, getAccessToken],
   );
@@ -145,7 +204,7 @@ export function DinnerShell({ children }: { children: ReactNode }) {
           </Link>
         ))}
       </nav>
-      <DinnerContext.Provider value={{ api, me, image }}>
+      <DinnerContext.Provider value={{ api, streamReply, me, image }}>
         <main className="dinner-main" key={me?.id ?? "signed-out"}>
           {!ready ? (
             <p role="status">Getting Tab ready…</p>
