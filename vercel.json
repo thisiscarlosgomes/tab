@@ -1,0 +1,7 @@
+{
+  "functions": {
+    "src/app/api/queues/room-agent/route.ts": {
+      "experimentalTriggers": [{ "type": "queue/v2beta", "topic": "tab-room-agent" }]
+    }
+  }
+}

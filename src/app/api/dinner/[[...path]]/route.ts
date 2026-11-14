@@ -1,10 +1,11 @@
-import { DinnerAgentService } from "@/lib/dinner/agent/service";
-import { NextRequest } from "next/server";
+import { PlanService } from "@/lib/dinner/plans/service";
+import { getDinnerServices } from "@/lib/dinner/services";
+import { AgentJobs } from "@/lib/dinner/agent/jobs";
+import { publishAgentJob } from "@/lib/dinner/agent/queue";
+import { after, NextRequest } from "next/server";
 import { handleDinner } from "@/lib/dinner/http";
 import { verifyDinnerSession } from "@/lib/dinner/auth";
-import { actorForProfile, MongoRoomStore } from "@/lib/dinner/mongo-store";
-import { DinnerService } from "@/lib/dinner/service";
-import { Attachments } from "@/lib/dinner/attachments";
+import { actorForProfile } from "@/lib/dinner/mongo-store";
 
 export const maxDuration = 60;
 export const runtime = "nodejs";
@@ -19,15 +20,21 @@ async function handler(
       { status: 404 },
     );
   try {
-    const { default: clientPromise } = await import("@/lib/mongodb");
-    const db = (await clientPromise).db();
-    const service = new DinnerService(new MongoRoomStore(db));
+    const { db, service, agent, attachments } = await getDinnerServices();
     return handleDinner(request, (await context.params).path ?? [], {
       enabled: true,
       actor: async (req) => actorForProfile(db, await verifyDinnerSession(req)),
       service,
-      agent: new DinnerAgentService(db, service),
-      attachments: new Attachments(db, service),
+      plans: new PlanService(db, service),
+      agent,
+      attachments,
+      enqueueAgent: async (actor, roomId, source) => {
+        const jobs = new AgentJobs(db, service, agent);
+        await jobs.enqueue(actor, roomId, source, process.env.VERCEL === "1" ? publishAgentJob : async delivery => {
+          // Plain next dev has no hosted queue worker. Persistence stays identical.
+          after(async () => { try { await jobs.process(delivery); } catch { console.warn("Local agent work remains retryable"); } });
+        });
+      },
       friends: async (req) => {
         const profile = await verifyDinnerSession(req);
         if (!profile.twitterSubject) return [];

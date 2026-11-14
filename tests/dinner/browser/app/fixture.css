@@ -1,0 +1,17 @@
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border-width: 0;
+}
+
+.lab-controls summary { cursor: pointer; font-weight: 600; }
+.lab-controls[open] summary { margin-bottom: 12px; }
+
+.dinner-app .lab-controls { flex: 0 0 auto; padding: 10px 16px; margin-bottom: 12px !important; font-size: 13px; }
+.lab-controls[open] { max-height: 30dvh; overflow: auto; }

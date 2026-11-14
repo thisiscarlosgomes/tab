@@ -10,10 +10,21 @@ import {
   useToken,
   useWallets,
 } from "@privy-io/react-auth";
-import { Header } from "@/components/header";
-import { FooterNav } from "@/components/footer-nav";
-import { InstallQrCard } from "@/components/InstallQrCard";
-import { InlineTabAssistant } from "@/components/app/InlineTabAssistant";
+import dynamic from "next/dynamic";
+const Header = dynamic(() =>
+  import("@/components/header").then((m) => m.Header),
+);
+const FooterNav = dynamic(() =>
+  import("@/components/footer-nav").then((m) => m.FooterNav),
+);
+const InstallQrCard = dynamic(() =>
+  import("@/components/InstallQrCard").then((m) => m.InstallQrCard),
+);
+const InlineTabAssistant = dynamic(() =>
+  import("@/components/app/InlineTabAssistant").then(
+    (m) => m.InlineTabAssistant,
+  ),
+);
 
 export function AppShell({ children }: { children: React.ReactNode }) {
   const router = useRouter();
@@ -58,17 +69,19 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     () =>
       Boolean(
         user?.twitter ||
-          user?.linkedAccounts?.some((account) => account.type === "twitter_oauth")
+          user?.linkedAccounts?.some(
+            (account) => account.type === "twitter_oauth",
+          ),
       ),
-    [user]
+    [user],
   );
   const hasLinkedFarcaster = useMemo(
     () =>
       Boolean(
         user?.farcaster ||
-          user?.linkedAccounts?.some((account) => account.type === "farcaster")
+          user?.linkedAccounts?.some((account) => account.type === "farcaster"),
       ),
-    [user]
+    [user],
   );
   const hasLinkedSupportedSocial = hasLinkedFarcaster || hasLinkedTwitter;
   const hasEmbeddedPrivyWallet = useMemo(
@@ -76,12 +89,12 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       wallets.some(
         (wallet) =>
           wallet.walletClientType === "privy" &&
-          typeof wallet.address === "string"
+          typeof wallet.address === "string",
       ),
-    [wallets]
+    [wallets],
   );
   const needsSocialOnboarding = Boolean(
-    ready && authenticated && user?.id && !hasLinkedSupportedSocial
+    ready && authenticated && user?.id && !hasLinkedSupportedSocial,
   );
   const isAuthed = ready && authenticated && !needsSocialOnboarding;
 
@@ -154,12 +167,12 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   }, [ready, authenticated, needsSocialOnboarding, isPublicRoute, router]);
 
   useEffect(() => {
-    if (!isAuthed) return;
+    if (!isAuthed || isDinnerRoute) return;
     router.prefetch("/profile");
     router.prefetch("/activity");
     router.prefetch("/table");
     router.prefetch("/faq");
-  }, [isAuthed, router]);
+  }, [isAuthed, isDinnerRoute, router]);
 
   useEffect(() => {
     if (!ready || !authenticated || !user?.id) {
@@ -269,8 +282,14 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       ) : null}
       {children}
       {!hideInstallQrOnRoute ? <InstallQrCard /> : null}
-      {isAuthed && !hideAssistantLauncherOnRoute ? <InlineTabAssistant /> : null}
-      {isAuthed && !hideFooterOnRoute ? <div className="md:hidden"><FooterNav /></div> : null}
+      {isAuthed && !hideAssistantLauncherOnRoute ? (
+        <InlineTabAssistant />
+      ) : null}
+      {isAuthed && !hideFooterOnRoute ? (
+        <div className="md:hidden">
+          <FooterNav />
+        </div>
+      ) : null}
     </div>
   );
 }

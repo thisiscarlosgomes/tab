@@ -2,6 +2,7 @@
 import { useRef, useState } from "react";
 import {
   Expense,
+  memberName,
   Obligation,
   RoomView,
   outsideReportSchema,
@@ -52,8 +53,7 @@ function OutsideObligation({
   const retries = useRef(new Map<string, string>());
   const reports = obligation.outsideReports ?? [];
   const pending = reports.find((r) => r.status === "pending");
-  const name = (id: string) =>
-    room.members.find((m) => m.userId === id)?.name ?? "Member";
+  const name = (id: string) => memberName(room, id);
   const creditor = me?.id === obligation.creditorId;
   const canReport =
     me?.id === obligation.debtorId || me?.id === expense.creatorId;

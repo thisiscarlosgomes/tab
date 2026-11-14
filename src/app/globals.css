@@ -339,29 +339,29 @@ input[type="number"] {
 
 /* Dinner documents and body-level portals only; legacy dark pages retain their tokens. */
 html.dinner-document {
-  --background: #faf9f6;
-  --foreground: #18211d;
-  --card: #ffffff;
-  --popover: #ffffff;
-  --popover-foreground: #18211d;
-  --primary: #2f704d;
-  --primary-foreground: #ffffff;
-  --secondary: #faf9f6;
-  --secondary-foreground: #18211d;
-  --action: #2f704d;
-  --action-foreground: #ffffff;
-  --muted: #e5e7e1;
-  --muted-foreground: #59665e;
-  --input: #e5e7e1;
-  --border: #e5e7e1;
-  --ring: #2f704d;
-  color-scheme: light;
+  --background: #0b0b0b;
+  --foreground: #f1f1f1;
+  --card: #1b1b1b;
+  --popover: #1b1b1b;
+  --popover-foreground: #f1f1f1;
+  --primary: #f1f1f1;
+  --primary-foreground: #0b0b0b;
+  --secondary: #0b0b0b;
+  --secondary-foreground: #f1f1f1;
+  --action: #f1f1f1;
+  --action-foreground: #0b0b0b;
+  --muted: #2b2b2b;
+  --muted-foreground: #a0a0a0;
+  --input: #2b2b2b;
+  --border: #2b2b2b;
+  --ring: #f1f1f1;
+  color-scheme: dark;
 }
 html.dinner-document,
 html.dinner-document body {
-  background: #faf9f6;
-  color: #18211d;
-  color-scheme: light;
+  background: #0b0b0b;
+  color: #f1f1f1;
+  color-scheme: dark;
 }
 html.dinner-document body {
   font-size: 16px;
@@ -369,9 +369,9 @@ html.dinner-document body {
 }
 html.dinner-document [role="dialog"],
 html.dinner-document [role="alertdialog"] {
-  background: #ffffff;
-  color: #18211d;
-  border-color: #e5e7e1;
+  background: #1b1b1b;
+  color: #f1f1f1;
+  border-color: #2b2b2b;
   border-radius: 24px;
   box-shadow: 0 20px 70px rgb(24 33 29 / 12%);
 }
