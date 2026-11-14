@@ -5,16 +5,24 @@ import { randomUUID } from "node:crypto";
 
 export class MongoRoomStore implements RoomStore {
   private rooms: Collection<Room>;
-  private ready: Promise<unknown>;
+  private readiness?: Promise<unknown>;
   constructor(db: Db) {
     this.rooms = db.collection<Room>("dinner-rooms");
-    this.ready = this.rooms.createIndexes([
-      { key: { id: 1 }, unique: true },
-      { key: { ownerId: 1, creationId: 1 }, unique: true },
-      { key: { "members.userId": 1 } },
-      { key: { "invitations.tokenHash": 1 } },
-      { key: { "invitations.targetSubject": 1 } },
-    ]);
+  }
+  private get ready() {
+    return (this.readiness ??= this.rooms
+      .createIndexes([
+        { key: { id: 1 }, unique: true },
+        { key: { ownerId: 1, creationId: 1 }, unique: true },
+        { key: { "members.userId": 1 } },
+        { key: { "removals.userId": 1 } },
+        { key: { "invitations.tokenHash": 1 } },
+        { key: { "invitations.targetSubject": 1 } },
+      ])
+      .catch((error) => {
+        this.readiness = undefined;
+        throw error;
+      }));
   }
   async insert(room: Room): Promise<Room> {
     await this.ready;
@@ -59,10 +67,16 @@ export class MongoRoomStore implements RoomStore {
           ? {
               $or: [
                 { "members.userId": userId },
+                { "removals.userId": userId },
                 { "invitations.targetSubject": subject },
               ],
             }
-          : { "members.userId": userId },
+          : {
+              $or: [
+                { "members.userId": userId },
+                { "removals.userId": userId },
+              ],
+            },
         { projection: { _id: 0 } },
       )
       .sort({ createdAt: -1 })
@@ -82,6 +96,7 @@ export type VerifiedProfile = {
   name: string;
   twitterSubject: string | null;
 };
+const userIndexes = new WeakMap<Db, Promise<unknown>>();
 export async function actorForProfile(
   db: Db,
   profile: VerifiedProfile,
@@ -92,7 +107,17 @@ export async function actorForProfile(
     name: string;
     twitterSubject: string | null;
   }>("dinner-users");
-  await users.createIndex({ privyId: 1 }, { unique: true });
+  let indexes = userIndexes.get(db);
+  if (!indexes) {
+    indexes = users
+      .createIndex({ privyId: 1 }, { unique: true })
+      .catch((error) => {
+        userIndexes.delete(db);
+        throw error;
+      });
+    userIndexes.set(db, indexes);
+  }
+  await indexes;
   try {
     await users.updateOne(
       { privyId: profile.privyId },

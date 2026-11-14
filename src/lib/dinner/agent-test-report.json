@@ -1,0 +1,429 @@
+{
+  "recordedAt": "2026-11-11T11:35:22.071586+00:00",
+  "model": "GPT-4o mini",
+  "environment": "Isolated test rooms with synthetic Alice/Bob accounts",
+  "runs": [
+    {
+      "title": "Agent, task and burst regressions",
+      "passed": 72,
+      "total": 72,
+      "cases": [
+        {
+          "name": "mention parser recognizes tags, not ordinary tab, handles, emails or URL fragments",
+          "passed": true
+        },
+        {
+          "name": "ordinary conversation neither calls a model nor accepts a forced bot-response request",
+          "passed": true
+        },
+        {
+          "name": "addressed replies persist through DinnerService as a distinct bot, never a member impersonation",
+          "passed": true
+        },
+        {
+          "name": "bot retry and refresh/restart produce exactly one reply",
+          "passed": true
+        },
+        {
+          "name": "parallel response requests share one leased run and one persisted reply",
+          "passed": true
+        },
+        {
+          "name": "another member cannot invoke a bot as the original requester or forge bot message fields",
+          "passed": true
+        },
+        {
+          "name": "non-members and unauthenticated users cannot read agent room notes, proposals or request replies",
+          "passed": true
+        },
+        {
+          "name": "personal conversations are durable, owner-scoped and retry-safe across concurrent devices",
+          "passed": true
+        },
+        {
+          "name": "personal agent session body/query cannot select another user or financial actor",
+          "passed": true
+        },
+        {
+          "name": "room agent never receives personal memory or gains cross-room tool access",
+          "passed": true
+        },
+        {
+          "name": "personal memory is explicit, editable and removable without retaining the old preference text",
+          "passed": true
+        },
+        {
+          "name": "shared agreements preserve versions and reject stale edits without overwriting",
+          "passed": true
+        },
+        {
+          "name": "typed expense preparation creates only a proposal until its human owner saves an editable draft",
+          "passed": true
+        },
+        {
+          "name": "personal expense proposals stay private until human save, not leaked into room proposal feeds",
+          "passed": true
+        },
+        {
+          "name": "preparation cannot include nonmembers, fractional shares, bad totals or guessed receipt IDs",
+          "passed": true
+        },
+        {
+          "name": "a room model cannot prepare another room even when the requester belongs to both",
+          "passed": true
+        },
+        {
+          "name": "model failure leaves member messages saved and retryable without false bot success",
+          "passed": true
+        },
+        {
+          "name": "wallet projects obligations and pending reports, never borrowed or reported money as available cash",
+          "passed": true
+        },
+        {
+          "name": "private reminders are durable, owner-only, replay-safe and dismissible without push or financial effects",
+          "passed": true
+        },
+        {
+          "name": "reminders reject past times, foreign rooms and body-supplied reminder ownership",
+          "passed": true
+        },
+        {
+          "name": "skills are versioned and loaded only from the allowlist, never legacy delegated payment skills",
+          "passed": true
+        },
+        {
+          "name": "without a model key the real runtime gives a verified readable summary without proposals or financial writes",
+          "passed": true
+        },
+        {
+          "name": "addressed room replies stream deltas and persist the reply before the done line",
+          "passed": true
+        },
+        {
+          "name": "personal replies stream too, and JSON clients keep the existing response shape",
+          "passed": true
+        },
+        {
+          "name": "a stream that fails mid-reply reports an error, saves no bot reply and stays retryable",
+          "passed": true
+        },
+        {
+          "name": "member summary and nudge drafts are read-only and never post or settle anything",
+          "passed": true
+        },
+        {
+          "name": "member summary formats 50 cents as $0.50, not $50",
+          "passed": true
+        },
+        {
+          "name": "a proposal can link a receipt already shared in the room, never a guessed one",
+          "passed": true
+        },
+        {
+          "name": "receipt extraction populates a review proposal, asks for missing participants and never passes pixels to Tab",
+          "passed": true
+        },
+        {
+          "name": "unreadable receipt asks for USD total; guessed identities and cross-room attachments still fail",
+          "passed": true
+        },
+        {
+          "name": "assistant correction is draft only and projections track the human-accepted version",
+          "passed": true
+        },
+        {
+          "name": "receipt payer follow-up keeps the original attachment, cached fields and authenticated speaker",
+          "passed": true
+        },
+        {
+          "name": "current room facts express creditor direction and cents as formatted dollars",
+          "passed": true
+        },
+        {
+          "name": "model preparation accepts unknown fields without fabricating correction IDs",
+          "passed": true
+        },
+        {
+          "name": "room history retrieves omitted plans with source bounds and pagination",
+          "passed": true
+        },
+        {
+          "name": "room history rechecks membership",
+          "passed": true
+        },
+        {
+          "name": "personal agent has no room history capability",
+          "passed": true
+        },
+        {
+          "name": "clear personal chat is authenticated, owner-scoped, and preserves preferences and rooms",
+          "passed": true
+        },
+        {
+          "name": "an in-flight reply cannot restore cleared personal history",
+          "passed": true
+        },
+        {
+          "name": "receipt amount without currency is preserved (separate tag: true)",
+          "passed": true
+        },
+        {
+          "name": "receipt amount without currency is preserved (separate tag: false)",
+          "passed": true
+        },
+        {
+          "name": "two unfinished receipts require explicit selection and never mix payer or amounts",
+          "passed": true
+        },
+        {
+          "name": "smart assistance offers once, accepts yes, and follows participant clarification without mentions",
+          "passed": true
+        },
+        {
+          "name": "awareness respects mentions mode, source identity, stale decisions and direct plain Tab requests",
+          "passed": true
+        },
+        {
+          "name": "I paid for both updates only the payer of two collecting receipts",
+          "passed": true
+        },
+        {
+          "name": "smart offers expire and unrelated yes cannot accept an older offer",
+          "passed": true
+        },
+        {
+          "name": "Smart assistance defaults on for new and legacy rooms, preserving explicit opt-out",
+          "passed": true
+        },
+        {
+          "name": "a plain greeting and explicit reply address Tab without starting a bill",
+          "passed": true
+        },
+        {
+          "name": "new manual bills and confirmation are not captured by unrelated receipt drafts",
+          "passed": true
+        },
+        {
+          "name": "generic bill talk does not reopen receipt drafts outside their conversation",
+          "passed": true
+        },
+        {
+          "name": "old explicit reply supplies bounded provenance to routing and generation and records the decision trace",
+          "passed": true
+        },
+        {
+          "name": "manual bill slots survive restart and more than 25 messages, with one proposal after interrupted delivery",
+          "passed": true
+        },
+        {
+          "name": "durable work executes without a client, retries safely and refuses forged or removed-member jobs",
+          "passed": true
+        },
+        {
+          "name": "action-first creation rejects invented fields and reuses its route after a retry",
+          "passed": true
+        },
+        {
+          "name": "an adjacent answer selects its question's bill despite other unfinished manual bills",
+          "passed": true
+        },
+        {
+          "name": "smart-assistance creation context cannot override a new read-only question",
+          "passed": true
+        },
+        {
+          "name": "semantic payer evidence survives restart, stays separate from participants, and cannot be overwritten by tool guesses",
+          "passed": true
+        },
+        {
+          "name": "saved question order binds a tagged terse answer after restart without model guessing",
+          "passed": true
+        },
+        {
+          "name": "explicit old question binds its own bill across interleaved tasks and does not replace the answer text",
+          "passed": true
+        },
+        {
+          "name": "a burst creates one corrected proposal, ignores other members, and retries after restart deduplicate",
+          "passed": true
+        },
+        {
+          "name": "correction arriving after proposal preparation hides stale output and rebuilds before publication",
+          "passed": true
+        },
+        {
+          "name": "unrelated addressed questions remain separate and preserve 25-message context",
+          "passed": true
+        },
+        {
+          "name": "durable queue handles an untagged burst in mentions-only mode without duplicate replies",
+          "passed": true
+        },
+        {
+          "name": "a correction during receipt extraction is included, OCR is cached, and no old reply is published",
+          "passed": true
+        },
+        {
+          "name": "concurrent workers cannot publish twice; a crashed runner can recover its prepared draft",
+          "passed": true
+        },
+        {
+          "name": "the atomic reply write rejects a correction arriving after the last async check",
+          "passed": true
+        },
+        {
+          "name": "a late cancellation withdraws unpublished work without creating a bill",
+          "passed": true
+        },
+        {
+          "name": "the model cannot group another author, a foreign reply target, or invented message IDs",
+          "passed": true
+        },
+        {
+          "name": "the current assistant question wins over older unfinished receipt requests",
+          "passed": true
+        },
+        {
+          "name": "historical mentions without scheduled work cannot capture an ordinary new request",
+          "passed": true
+        },
+        {
+          "name": "a caret reference preserves the referenced manual bill evidence with burst coordination enabled",
+          "passed": true
+        },
+        {
+          "name": "a caret pointing to an untagged answer continues its question's task even if routing says create",
+          "passed": true
+        }
+      ]
+    },
+    {
+      "title": "Final task and reference checks",
+      "passed": 12,
+      "total": 12,
+      "cases": [
+        {
+          "name": "manual bill slots survive restart and more than 25 messages, with one proposal after interrupted delivery",
+          "passed": true
+        },
+        {
+          "name": "durable work executes without a client, retries safely and refuses forged or removed-member jobs",
+          "passed": true
+        },
+        {
+          "name": "action-first creation rejects invented fields and reuses its route after a retry",
+          "passed": true
+        },
+        {
+          "name": "an adjacent answer selects its question's bill despite other unfinished manual bills",
+          "passed": true
+        },
+        {
+          "name": "smart-assistance creation context cannot override a new read-only question",
+          "passed": true
+        },
+        {
+          "name": "semantic payer evidence survives restart, stays separate from participants, and cannot be overwritten by tool guesses",
+          "passed": true
+        },
+        {
+          "name": "saved question order binds a tagged terse answer after restart without model guessing",
+          "passed": true
+        },
+        {
+          "name": "explicit old question binds its own bill across interleaved tasks and does not replace the answer text",
+          "passed": true
+        },
+        {
+          "name": "reply provenance is bounded, chronological and never follows missing or future references",
+          "passed": true
+        },
+        {
+          "name": "tagged references find untagged attachments and participant messages within the room snapshot",
+          "passed": true
+        },
+        {
+          "name": "references never select future images or silently skip intervening human messages",
+          "passed": true
+        },
+        {
+          "name": "replying to a bot question recovers the original bill behind a caret reference",
+          "passed": true
+        }
+      ]
+    }
+  ],
+  "browser": [
+    {
+      "category": "Older replies",
+      "question": "How much is this one?",
+      "replyTo": "Dinner is awaiting confirmation. What would you like to know?",
+      "reply": "The current bill for **Dinner** is **$60.00** and is awaiting confirmation. If you need more details or to proceed with anything specific, let me know!",
+      "passed": true,
+      "expected": "Identify the quoted bill and its current amount; leave all bills unchanged."
+    },
+    {
+      "category": "Older replies",
+      "question": "And how much is this one?",
+      "replyTo": "Taxi is awaiting confirmation. What would you like to know?",
+      "reply": "The current bill for **Taxi** is **$20.00** and is awaiting confirmation. If you need any more information or want to proceed, just let me know!",
+      "passed": true,
+      "expected": "Identify the quoted bill and its current amount; leave all bills unchanged."
+    },
+    {
+      "category": "Bill lookups",
+      "question": "hey tab how many split bills are pending",
+      "replyTo": null,
+      "reply": "This room has **11 bills awaiting payment** ($5.50 outstanding) and **1 awaiting confirmation**.",
+      "passed": true,
+      "expected": "Answer from current bill records; identify the requested draft or return verified counts."
+    },
+    {
+      "category": "Bill lookups",
+      "question": "@Tab how many bills are still unpaid in this room?",
+      "replyTo": null,
+      "reply": "This room has **11 bills awaiting payment** ($5.50 outstanding) and **1 awaiting confirmation**.",
+      "passed": true,
+      "expected": "Answer from current bill records; identify the requested draft or return verified counts."
+    },
+    {
+      "category": "Bill lookups",
+      "question": "@Tab how many bills are pending",
+      "replyTo": null,
+      "reply": "This room has **0 bills awaiting payment** ($0.00 outstanding) and **1 awaiting confirmation**.",
+      "passed": true,
+      "expected": "Answer from current bill records; identify the requested draft or return verified counts."
+    },
+    {
+      "category": "Bill lookups",
+      "question": "which onen is awaiting confirmation",
+      "replyTo": null,
+      "reply": "The bill awaiting confirmation is:\n\n- **Description:** Needs review\n- **Total:** $2.00\n- **Status:** Awaiting confirmation\n\nLet me know if you need anything else!",
+      "passed": true,
+      "expected": "Answer from current bill records; identify the requested draft or return verified counts."
+    },
+    {
+      "category": "Bill lookups",
+      "question": "which one",
+      "replyTo": null,
+      "reply": "The pending bill awaiting confirmation is:\n\n- **Description:** Needs review\n- **Total:** $2.00\n- **Status:** Awaiting confirmation\n\nIf you have further questions or need to take action, let me know!",
+      "passed": true,
+      "expected": "Answer from current bill records; identify the requested draft or return verified counts."
+    },
+    {
+      "category": "Bill lookups",
+      "question": "list awaiting confirmation",
+      "replyTo": null,
+      "reply": "The bill awaiting confirmation is:\n\n- **Description:** Needs review\n- **Total:** $2.00\n- **Status:** Awaiting confirmation\n\nLet me know if you need any action on this!",
+      "passed": true,
+      "expected": "Answer from current bill records; identify the requested draft or return verified counts."
+    }
+  ],
+  "checks": [
+    "TypeScript passed",
+    "Lint passed",
+    "No bill mutations in lookup journeys",
+    "25-message room context preserved"
+  ]
+}

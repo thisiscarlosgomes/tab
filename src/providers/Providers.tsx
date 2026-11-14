@@ -6,11 +6,10 @@ import { usePathname } from "next/navigation";
 import { PrivyProvider } from "@privy-io/react-auth";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { FrameSplashProvider } from "./FrameSplashProvider";
-import { WalletProvider } from "./WalletProvider";
-import { SendDrawerProvider } from "./SendDrawerProvider";
-import { ScanDrawerProvider } from "./ScanDrawerProvider";
-import { GlobalSendDrawer } from "@/components/app/sendDrawer";
-import { QRCodeScannerDrawerWrapper } from "@/components/app/QRCodeScannerDrawerWrapper";
+import dynamic from "next/dynamic";
+const LegacyProviders = dynamic(() =>
+  import("./LegacyProviders").then((m) => m.LegacyProviders),
+);
 import { Toaster } from "sonner";
 import { SkeletonTheme } from "react-loading-skeleton";
 import { base } from "viem/chains";
@@ -40,44 +39,36 @@ function Providers({ children }: React.PropsWithChildren) {
   const content = (
     <FrameSplashProvider>
       <SkeletonTheme
-        baseColor={dinnerMode ? "#E5E7E1" : "#19191E"}
-        highlightColor={dinnerMode ? "#FFFFFF" : "#0D0D13"}
+        baseColor={dinnerMode ? "#262626" : "#19191E"}
+        highlightColor={dinnerMode ? "#333333" : "#0D0D13"}
       >
         <QueryClientProvider client={client}>
-          <WalletProvider>
-            <ScanDrawerProvider>
-              <SendDrawerProvider>
-                <Toaster
-                  theme={dinnerMode ? "light" : undefined}
-                  richColors
-                  expand={false}
-                  position="top-center"
-                  offset={{ top: "20px" }}
-                  mobileOffset={{
-                    top: "calc(env(safe-area-inset-top) + 72px)",
-                  }}
-                  toastOptions={{
-                    classNames: {
-                      toast:
-                        "w-fit max-w-[calc(100vw-32px)] rounded-full px-4 py-3",
-                      content: "px-0",
-                      title: "text-sm",
-                      description: "text-sm",
-                    },
-                  }}
-                />
-                <>
-                  {children}
-                  {!dinnerMode && (
-                    <>
-                      <GlobalSendDrawer />
-                      <QRCodeScannerDrawerWrapper />
-                    </>
-                  )}
-                </>
-              </SendDrawerProvider>
-            </ScanDrawerProvider>
-          </WalletProvider>
+          <>
+            <Toaster
+              theme={dinnerMode ? "dark" : undefined}
+              richColors
+              expand={false}
+              position="top-center"
+              offset={{ top: "20px" }}
+              mobileOffset={{
+                top: "calc(env(safe-area-inset-top) + 72px)",
+              }}
+              toastOptions={{
+                classNames: {
+                  toast:
+                    "w-fit max-w-[calc(100vw-32px)] rounded-full px-4 py-3",
+                  content: "px-0",
+                  title: "text-sm",
+                  description: "text-sm",
+                },
+              }}
+            />
+            {dinnerMode ? (
+              children
+            ) : (
+              <LegacyProviders>{children}</LegacyProviders>
+            )}
+          </>
         </QueryClientProvider>
       </SkeletonTheme>
     </FrameSplashProvider>
@@ -97,8 +88,8 @@ function Providers({ children }: React.PropsWithChildren) {
           },
         },
         appearance: {
-          accentColor: dinnerMode ? "#2F704D" : "#fff",
-          theme: dinnerMode ? "light" : "#19191E",
+          accentColor: dinnerMode ? "#F1F1F1" : "#fff",
+          theme: dinnerMode ? "#1B1B1B" : "#19191E",
           landingHeader: "Welcome to tab",
         },
         fundingMethodConfig: {

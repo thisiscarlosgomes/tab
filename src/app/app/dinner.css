@@ -1,23 +1,21 @@
 .dinner-app {
-  --canvas: #faf9f6;
-  --surface: #fff;
-  --ink: #18211d;
-  --accent: #2f704d;
-  --rule: #e5e7e1;
-  --muted: #646d65;
+  --canvas: #0b0b0b;
+  --surface: #1b1b1b;
+  --ink: #f1f1f1;
+  --accent: #f1f1f1;
+  --rule: #2b2b2b;
+  --muted: #a0a0a0;
   background: var(--canvas);
   color: var(--ink);
   min-height: 100dvh;
   position: relative;
   font:
-    400 16px/1.5 ui-rounded,
-    "SF Pro Rounded",
-    system-ui,
+    400 16px/1.5 system-ui,
     -apple-system,
     sans-serif;
   letter-spacing: -0.015em;
   user-select: text;
-  color-scheme: light;
+  color-scheme: dark;
   padding-bottom: 20px;
 }
 .dinner-app * {
@@ -44,7 +42,7 @@
   padding: 10px 22px;
   border: 1px solid transparent;
   background: var(--accent);
-  color: white;
+  color: #0b0b0b;
   font-weight: 600;
   cursor: pointer;
 }
@@ -59,7 +57,7 @@
   padding: 8px 16px;
 }
 .dinner-app button.dinner-small {
-  min-height: 36px;
+  min-height: 44px;
   padding: 5px 12px;
   font-size: 13px;
 }
@@ -121,7 +119,7 @@
 }
 .dinner-nav a[aria-current="page"] {
   background: var(--ink);
-  color: white;
+  color: #0b0b0b;
 }
 .dinner-main {
   max-width: 1120px;
@@ -130,10 +128,10 @@
   min-height: 60vh;
 }
 .dinner-app h1 {
-  font-size: clamp(30px, 4vw, 44px);
+  font-size: 28px;
   line-height: 1.1;
-  letter-spacing: -0.045em;
-  font-weight: 650;
+  letter-spacing: -0.03em;
+  font-weight: 500;
   margin: 10px 0 16px;
 }
 .dinner-app h2 {
@@ -187,13 +185,13 @@
   align-content: start;
 }
 .dinner-card {
-  border: 1px solid var(--rule);
-  border-radius: 24px;
+  border: 1px solid transparent;
+  border-radius: 28px;
   background: var(--surface);
   padding: 26px;
 }
 .dinner-card.soft {
-  background: #f1f2ea;
+  background: #1b1b1b;
 }
 .dinner-card > :last-child {
   margin-bottom: 0;
@@ -202,7 +200,7 @@
   font-size: 48px;
   font-weight: 550;
   line-height: 1.15;
-  letter-spacing: -0.045em;
+  letter-spacing: -0.03em;
   font-variant-numeric: tabular-nums;
   margin: 12px 0 !important;
 }
@@ -238,7 +236,7 @@
   width: 42px;
   height: 42px;
   border-radius: 16px;
-  background: #eaede5;
+  background: #292929;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -252,7 +250,7 @@
 }
 .dinner-badge {
   background: var(--accent);
-  color: white;
+  color: #0b0b0b;
   border-radius: 50%;
   font-size: 12px;
   min-width: 23px;
@@ -303,9 +301,9 @@
   flex-wrap: wrap;
 }
 .dinner-error {
-  color: #922d2d;
-  border: 1px solid #e7c4c4;
-  background: #fff7f7;
+  color: #ffb4b4;
+  border: 1px solid #583333;
+  background: #251818;
   border-radius: 14px;
   padding: 14px;
   margin-bottom: 16px;
@@ -371,7 +369,7 @@
 }
 .dinner-tabs button[aria-selected="true"] {
   background: var(--ink);
-  color: white;
+  color: #0b0b0b;
 }
 .dinner-chat {
   display: flex;
@@ -431,12 +429,12 @@
   background: transparent;
   color: var(--muted);
   font-size: 12px;
-  min-height: 32px;
+  min-height: 44px;
   padding: 2px 9px;
   border: 1px solid var(--rule);
 }
 .dinner-message-actions button[aria-pressed="true"] {
-  background: #eaf0e8;
+  background: #303b33;
   border-color: #9db49e;
   color: var(--ink);
 }
@@ -501,7 +499,7 @@
 .dinner-linkbox {
   font-size: 13px;
   overflow-wrap: anywhere;
-  background: #f5f6f1;
+  background: #252525;
   padding: 12px;
   border-radius: 12px;
 }
@@ -639,8 +637,20 @@
 }
 .dinner-agent-proposal {
   border: 1px solid var(--rule);
-  margin-top: 16px;
+  margin: 8px 0;
+  width: 100%;
+  max-width: 440px;
+  padding: 18px;
+  border-radius: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
 }
+.dinner-agent-proposal > .dinner-chip { align-self: flex-start; }
+.dinner-agent-proposal > h3 { margin: 0; font-size: 16px; line-height: 1.4; }
+.dinner-agent-proposal > .dinner-note { margin: 0; font-size: 13px; }
+.dinner-agent-proposal > .dinner-pair { padding: 8px 0 0; font-size: 14px; }
+.dinner-agent-proposal > .dinner-actions { margin: 0; gap: 12px; font-size: 13px; }
 .dinner-agent-proposal > .dinner-note {
   overflow-wrap: anywhere;
 }
@@ -652,4 +662,822 @@
   .dinner-nav {
     grid-template-columns: repeat(4, 1fr);
   }
+}
+
+.dinner-app summary {
+  min-height: 44px;
+  padding: 10px 0;
+  cursor: pointer;
+}
+.dinner-app .dinner-outside,
+.dinner-app .dinner-outside-review {
+  overflow-wrap: anywhere;
+  min-width: 0;
+}
+@media (prefers-reduced-motion: reduce) {
+  .dinner-app *,
+  .dinner-app *::before,
+  .dinner-app *::after {
+    animation: none !important;
+    transition: none !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* Persistent app navigation and restrained surfaces, inspired by the supplied reference. */
+.dinner-app {
+  max-width: 1440px;
+  margin: 0 auto;
+  padding: 0 48px;
+  display: grid;
+  grid-template-columns: 248px minmax(0, 1fr);
+  gap: 64px;
+}
+.dinner-sidebar {
+  position: sticky;
+  top: 0;
+  height: 100dvh;
+  padding: 34px 0 24px;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+.dinner-wordmark {
+  font-size: 42px;
+  font-weight: 750;
+  letter-spacing: -0.07em;
+  padding: 0 14px;
+  width: fit-content;
+}
+.dinner-nav {
+  flex-direction: column;
+  border: 0;
+  margin: 40px 0 0;
+  padding: 0;
+  gap: 6px;
+}
+.dinner-nav a {
+  display: flex;
+  align-items: center;
+  gap: 17px;
+  padding: 15px 18px;
+  border-radius: 16px;
+  color: #d6d6d6;
+  font-weight: 450;
+}
+.dinner-nav a:hover,
+.dinner-profile-link:hover {
+  background: #161616;
+}
+.dinner-nav a[aria-current="page"],
+.dinner-profile-link[aria-current="page"] {
+  background: #1b1b1b;
+  color: #f1f1f1;
+}
+.dinner-profile-link {
+  margin-top: auto;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  border-radius: 16px;
+  padding: 12px;
+  min-height: 64px;
+}
+.dinner-profile-avatar {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  background: #38332e;
+  color: #e7dacd;
+  flex-shrink: 0;
+  font-size: 15px;
+}
+.dinner-workspace {
+  min-width: 0;
+}
+.dinner-main {
+  margin: 0;
+  max-width: none;
+  padding: 38px 0 48px;
+  min-height: calc(100dvh - 78px);
+}
+.dinner-main:focus {
+  outline: none;
+}
+.dinner-footer {
+  margin: 0;
+  border: 0;
+  padding: 18px 0 24px;
+  display: flex;
+  justify-content: space-between;
+  font-size: 12px;
+}
+.dinner-footer span {
+  margin: 0;
+}
+.dinner-heading h1 {
+  margin: 0 0 10px;
+}
+.dinner-eyebrow {
+  text-transform: none;
+  letter-spacing: 0;
+  font-size: 13px;
+  font-weight: 400;
+}
+.dinner-grid {
+  grid-template-columns: minmax(0, 1.5fr) minmax(0, 1fr);
+  gap: 20px;
+}
+.dinner-grid > *,
+.dinner-card {
+  min-width: 0;
+}
+.dinner-app h2 {
+  font-size: 19px;
+  font-weight: 500;
+}
+.dinner-app h3 {
+  font-weight: 500;
+}
+.dinner-success {
+  color: #a1d5b0;
+}
+.dinner-tabs button[aria-selected="true"] {
+  background: #2b2b2b;
+  color: #f1f1f1;
+}
+.dinner-app input,
+.dinner-app textarea,
+.dinner-app select {
+  background: #141414;
+  border-radius: 16px;
+}
+.dinner-app input::placeholder,
+.dinner-app textarea::placeholder {
+  color: #838383;
+}
+.dinner-search {
+  margin-bottom: 28px;
+}
+.dinner-search input {
+  background: transparent;
+  border-radius: 999px;
+  padding: 15px 20px;
+}
+.dinner-empty {
+  text-align: center;
+  padding: 64px 20px;
+  color: var(--muted);
+}
+.dinner-empty svg {
+  margin: 0 auto 20px;
+}
+.dinner-settings {
+  max-width: 760px;
+}
+.dinner-settings h1 {
+  margin: 0 0 42px;
+}
+.dinner-settings-group {
+  background: var(--surface);
+  border-radius: 28px;
+  margin-bottom: 20px;
+  padding: 0 24px;
+}
+.dinner-setting-row {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  padding: 23px 2px;
+  min-height: 76px;
+}
+.dinner-setting-row + .dinner-setting-row {
+  border-top: 1px solid var(--rule);
+}
+.dinner-setting-row > svg {
+  flex-shrink: 0;
+}
+.dinner-setting-row small {
+  display: block;
+  color: var(--muted);
+  font-size: 14px;
+  margin-top: 3px;
+}
+.dinner-setting-value {
+  margin-left: auto;
+  color: var(--muted);
+  font-size: 14px;
+}
+.dinner-settings .dinner-signout {
+  width: 100%;
+  background: var(--surface);
+  color: var(--ink);
+  border-radius: 28px;
+  min-height: 72px;
+  font-weight: 400;
+}
+.dinner-mobile-header {
+  display: none;
+}
+.dinner-skip {
+  position: fixed;
+  top: 8px;
+  left: 8px;
+  transform: translateY(-160%);
+  z-index: 100;
+  padding: 12px;
+  background: var(--surface);
+  border-radius: 12px;
+}
+.dinner-skip:focus {
+  transform: translateY(0);
+}
+.dinner-app .dinner-menu-backdrop {
+  display: none;
+}
+@media (max-width: 1100px) {
+  .dinner-app {
+    padding: 0 28px;
+    grid-template-columns: 200px minmax(0, 1fr);
+    gap: 32px;
+  }
+  .dinner-grid,
+  .dinner-grid.equal {
+    grid-template-columns: 1fr;
+  }
+}
+@media (max-width: 720px) {
+  .dinner-app {
+    display: block;
+    padding: 0 20px;
+  }
+  .dinner-mobile-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    min-height: 80px;
+  }
+  .dinner-mobile-header .dinner-wordmark {
+    padding: 0;
+    font-size: 36px;
+  }
+  .dinner-sidebar {
+    display: none;
+    position: fixed;
+    top: 80px;
+    left: 12px;
+    bottom: 12px;
+    height: auto;
+    width: min(300px, calc(100vw - 24px));
+    z-index: 70;
+    background: #141414;
+    border: 1px solid var(--rule);
+    padding: 20px 12px;
+    border-radius: 24px;
+  }
+  .dinner-sidebar.is-open {
+    display: flex;
+  }
+  .dinner-sidebar > .dinner-wordmark {
+    display: none;
+  }
+  .dinner-nav {
+    position: static;
+    margin: 0;
+    background: transparent;
+    border: 0;
+    padding: 0;
+    justify-content: flex-start;
+    gap: 6px;
+  }
+  .dinner-nav a {
+    padding: 15px 18px;
+  }
+  .dinner-app .dinner-menu-backdrop {
+    display: block;
+    position: fixed;
+    inset: 80px 0 0;
+    z-index: 60;
+    border-radius: 0;
+    background: rgb(0 0 0 / 55%);
+    width: 100%;
+  }
+  .dinner-main {
+    padding: 20px 0 32px;
+    min-height: calc(100dvh - 160px);
+  }
+  .dinner-footer {
+    display: block;
+    padding: 16px 0;
+  }
+  .dinner-card {
+    border-radius: 24px;
+  }
+  .dinner-settings h1 {
+    margin-bottom: 28px;
+  }
+  .dinner-settings-group {
+    padding: 0 18px;
+    border-radius: 24px;
+  }
+  .dinner-setting-row {
+    gap: 12px;
+    flex-wrap: wrap;
+  }
+  .dinner-setting-value {
+    font-size: 12px;
+  }
+}
+
+.dinner-settings-detail {
+  padding: 0 2px 20px;
+}
+.dinner-settings summary {
+  list-style: none;
+}
+.dinner-settings summary::-webkit-details-marker {
+  display: none;
+}
+.dinner-settings details[open] summary > svg:last-child {
+  transform: rotate(90deg);
+}
+
+/* Chat occupies the viewport. Only the transcript scrolls; the composer stays at its foot. */
+.dinner-full-page .dinner-main {
+  height: 100dvh;
+  min-height: 0;
+  padding: 28px 0 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.dinner-full-page .dinner-footer {
+  display: none;
+}
+.dinner-route-content,
+.dinner-room-page {
+  min-width: 0;
+}
+.dinner-full-page .dinner-route-content,
+.dinner-room-page {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+.dinner-room-page > .dinner-back {
+  flex-shrink: 0;
+  width: fit-content;
+  margin-bottom: 14px;
+}
+.dinner-room-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 24px;
+  padding: 0 0 22px;
+  flex-shrink: 0;
+}
+.dinner-room-title {
+  min-width: 0;
+  flex: 1;
+}
+.dinner-room-title h1 {
+  font-size: 24px;
+  margin: 0 0 6px;
+}
+.dinner-room-title p {
+  margin: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.dinner-room-header .dinner-tabs {
+  margin: 0;
+  gap: 6px;
+  flex-wrap: nowrap;
+}
+.dinner-room-header .dinner-tabs button {
+  font-size: 14px;
+  font-weight: 450;
+  padding: 10px 16px;
+}
+.dinner-room-panel {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding-bottom: 24px;
+}
+.dinner-room-panel.is-chat {
+  display: flex;
+  padding: 0;
+  overflow: hidden;
+}
+.dinner-chat {
+  flex: 1;
+  width: 100%;
+  min-height: 0;
+  max-height: none;
+  background: transparent;
+  border: 0;
+  border-radius: 0;
+  padding: 0;
+}
+.dinner-messages {
+  min-height: 0;
+  padding: 20px 8px 24px 0;
+}
+.dinner-composer {
+  flex-shrink: 0;
+  padding: 16px 0 max(16px, env(safe-area-inset-bottom));
+  background: var(--canvas);
+  gap: 10px;
+}
+.dinner-composer textarea {
+  background: var(--surface);
+  border: 1px solid var(--rule);
+  border-radius: 22px;
+  min-height: 76px;
+  max-height: 25dvh;
+  resize: vertical;
+}
+.dinner-composer .dinner-actions > button:last-child {
+  margin-left: auto;
+}
+.dinner-composer .dinner-composer-notice {
+  margin: 0;
+  font-size: 12px;
+}
+.dinner-personal-page {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+}
+.dinner-personal-page > .dinner-muted {
+  font-size: 13px;
+  max-width: 680px;
+}
+.dinner-personal-preferences {
+  flex-shrink: 0;
+}
+.dinner-personal-preferences > .dinner-card {
+  max-height: 35dvh;
+  overflow: auto;
+}
+.dinner-personal-layout,
+.dinner-personal-chat,
+.dinner-personal-thread {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+}
+.dinner-personal-thread .dinner-agent-thread {
+  flex: 1;
+  min-height: 0;
+  max-height: none;
+  padding: 24px 0;
+}
+.dinner-personal-composer {
+  flex-shrink: 0;
+  padding: 12px 0;
+  border-top: 1px solid var(--rule);
+  grid-template-columns: 1fr auto;
+  align-items: end;
+}
+.dinner-personal-composer textarea {
+  background: var(--surface);
+  min-height: 76px;
+  max-height: 25dvh;
+}
+@media (max-width: 720px) {
+  .dinner-mobile-header {
+    position: sticky;
+    top: 0;
+    z-index: 75;
+    background: var(--canvas);
+  }
+  .dinner-full-page .dinner-main {
+    height: calc(100dvh - 80px);
+    padding: 8px 0 0;
+  }
+  .dinner-room-header {
+    flex-wrap: wrap;
+    gap: 12px;
+    padding-bottom: 10px;
+  }
+  .dinner-room-title {
+    flex-basis: 100%;
+  }
+  .dinner-room-title h1 {
+    font-size: 22px;
+  }
+  .dinner-room-header .dinner-tabs {
+    margin-left: auto;
+    max-width: 100%;
+  }
+  .dinner-room-header .dinner-tabs button {
+    padding: 8px 13px;
+    font-size: 13px;
+  }
+  .dinner-composer .dinner-actions {
+    gap: 8px;
+  }
+  .dinner-composer .dinner-actions button {
+    padding: 8px 12px;
+    font-size: 13px;
+  }
+  .dinner-composer .dinner-actions label {
+    font-size: 12px;
+  }
+}
+
+.dinner-app input.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.dinner-profile-avatar img { width: 100%; height: 100%; object-fit: cover; border-radius: inherit; }
+.dinner-profile-link { width: fit-content; }
+.dinner-page-skeleton { width: 100%; padding: 24px 0; }
+.dinner-skeleton { background: #242424; border-radius: 8px; height: 16px; }
+.dinner-skeleton-heading { width: 36%; max-width: 300px; height: 32px; margin-bottom: 14px; }
+.dinner-skeleton-subtitle { width: 52%; max-width: 440px; margin-bottom: 36px; }
+.dinner-skeleton-row { display: flex; gap: 18px; padding: 24px 0; }
+.dinner-skeleton-avatar { width: 48px; height: 48px; border-radius: 50%; flex-shrink: 0; }
+.dinner-skeleton-lines { flex: 1; display: grid; gap: 12px; max-width: 700px; }
+.dinner-skeleton-lines > :first-child { width: 45%; }
+.dinner-skeleton-lines > :last-child { width: 80%; }
+.dinner-skeleton-composer { height: 64px; margin-top: 48px; }
+.dinner-typing { display: inline-flex; gap: 5px; padding: 14px 0; }
+.dinner-typing i { width: 7px; height: 7px; border-radius: 50%; background: #aaa; animation: dinner-typing 1.2s ease-in-out infinite; }
+.dinner-typing i:nth-child(2) { animation-delay: .15s; }
+.dinner-typing i:nth-child(3) { animation-delay: .3s; }
+@keyframes dinner-typing { 0%, 70%, 100% { opacity: .35; transform: translateY(0); } 35% { opacity: 1; transform: translateY(-3px); } }
+@media (prefers-reduced-motion: reduce) { .dinner-typing i { animation: none; } }
+.dinner-message-actions button { padding: 4px 0; border: 0; background: transparent; color: #888; font-size: 12px; }
+
+/* One readable content column; page headings and navigation retain their width. */
+.dinner-grid,
+.dinner-grid.equal {
+  grid-template-columns: minmax(0, 1fr);
+}
+.dinner-route-content > .dinner-grid,
+.dinner-route-content > .dinner-card,
+.dinner-route-content > .dinner-search,
+.dinner-route-content > .dinner-page-skeleton,
+.dinner-room-panel,
+.dinner-personal-layout,
+.dinner-settings > :not(h1):not(.dinner-back),
+.dinner-room-page > .dinner-page-skeleton,
+.dinner-personal-page > .dinner-page-skeleton {
+  width: 100%;
+  max-width: 800px;
+  margin-inline: 0;
+  box-sizing: border-box;
+}
+.dinner-settings {
+  max-width: none;
+}
+
+/* Shared chat presentation: clear authorship, calm bubbles, compact composer. */
+.chat-message { width: 100%; gap: 10px; margin-block: 6px; }
+.chat-message > .dinner-avatar { width: 28px; height: 28px; font-size: 12px; flex: 0 0 28px; }
+.chat-message > .dinner-message-body { flex: 0 1 auto; max-width: 85%; padding: 12px 16px; border-radius: 18px; background: #202020; }
+.chat-message.is-own { justify-content: flex-end; }
+.chat-message.is-own > .dinner-avatar { display: none; }
+.chat-message.is-own > .dinner-message-body { background: #303030; border-bottom-right-radius: 5px; }
+.chat-message.is-incoming > .dinner-message-body { border-bottom-left-radius: 5px; }
+.chat-message .dinner-message-body > p { margin: 4px 0; line-height: 1.55; }
+.chat-message .dinner-message-meta { gap: 8px; font-size: 11px; margin-bottom: 6px; flex-wrap: wrap; }
+.chat-message .dinner-message-meta strong, .chat-message .dinner-message-body > strong { font-size: 12px; font-weight: 500; color: #b9b9b9; }
+.chat-message .dinner-message-actions { margin-top: 6px; }
+.dinner-agent-thread { display: flex; flex-direction: column; gap: 12px; overflow: auto; }
+.dinner-messages { scroll-behavior: auto; padding-right: 4px; gap: 12px; }
+.dinner-composer, .dinner-personal-composer { border: 1px solid #363636; border-radius: 24px; background: #1d1d1d; padding: 12px; margin: 10px 0 max(16px, env(safe-area-inset-bottom)); }
+.dinner-composer textarea, .dinner-personal-composer textarea { border: 0; border-radius: 12px; background: transparent; min-height: 44px; max-height: 160px; resize: none; padding: 8px; }
+.dinner-composer .dinner-actions { margin: 0; align-items: center; }
+.dinner-composer .dinner-actions > button:last-child, .dinner-personal-composer > button { border-radius: 50%; width: 36px; height: 36px; min-height: 36px; padding: 8px; display: grid; place-items: center; }
+.dinner-composer .dinner-actions > label { display: grid; place-items: center; min-width: 36px; min-height: 36px; border-radius: 50%; }
+.dinner-composer .dinner-actions > label:focus-within { outline: 2px solid #aaa; }
+@media (prefers-reduced-motion: reduce) { .dinner-messages, .dinner-agent-thread { scroll-behavior: auto; } }
+.dinner-full-page { height: 100dvh; min-height: 0; overflow: hidden; }
+.dinner-full-page .dinner-workspace { min-height: 0; overflow: hidden; }
+/* Only transcripts scroll; focus and viewport changes must not scroll their ancestors. */
+.dinner-full-page,
+.dinner-full-page .dinner-workspace,
+.dinner-full-page .dinner-main,
+.dinner-full-page .dinner-route-content,
+.dinner-full-page .dinner-room-page,
+.dinner-full-page .dinner-room-panel.is-chat,
+.dinner-full-page .dinner-chat {
+  overflow: clip;
+}
+
+/* Headings and content share one left-aligned reading column. */
+.dinner-route-content { width: 100%; max-width: 800px; margin-inline: 0; }
+
+/* Teammate-style chat: compact bubbles, quiet controls, one bottom composer. */
+.chat-message { align-items: center; gap: 6px; }
+.chat-message > .dinner-message-body,
+.chat-message.is-own > .dinner-message-body,
+.chat-message.is-incoming > .dinner-message-body {
+  min-width: 0; max-width: calc(100% - 48px); border-radius: 22px;
+  padding: 10px 16px; overflow-wrap: anywhere;
+}
+.chat-message.is-own > .dinner-message-body { background: #ecece7; color: #202020; }
+.chat-message.is-own .dinner-note { color: #595959; }
+.chat-message.is-own .dinner-reply { color: #595959; border-color: #aaa; }
+.chat-message .dinner-message-body > p { margin: 0; }
+.chat-message .dinner-message-meta { margin-bottom: 4px; }
+.chat-message .dinner-message-meta time { display: none; }
+.chat-message > .dinner-message-actions { flex: 0 0 36px; margin: 0; opacity: 0; pointer-events: none; }
+.chat-message.is-own > .dinner-message-actions { order: -1; }
+.chat-message:hover > .dinner-message-actions,
+.chat-message:focus-within > .dinner-message-actions { opacity: 1; pointer-events: auto; }
+.chat-message > .dinner-message-actions > button {
+  display: grid; place-items: center; width: 36px; height: 36px;
+  padding: 0; border: 0; border-radius: 50%; background: transparent; color: #aaa;
+}
+.chat-message > .dinner-message-actions > button:hover { background: #303030; color: #fff; }
+.chat-message > .dinner-message-actions > button:focus-visible { outline: 2px solid #ddd; outline-offset: 2px; }
+.dinner-composer, .dinner-personal-composer { padding: 6px 8px; border-radius: 28px; align-items: end; }
+.dinner-composer { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 4px; }
+.dinner-composer > .dinner-actions:not(:last-child) { grid-column: 1 / -1; padding: 6px 8px; }
+.dinner-composer > label, .dinner-personal-composer > label { min-width: 0; }
+.dinner-composer textarea, .dinner-personal-composer textarea { field-sizing: content; min-height: 40px; padding: 9px 8px; line-height: 22px; }
+.dinner-composer > .dinner-actions:last-child { padding-bottom: 2px; gap: 2px; }
+.dinner-personal-composer > button { margin-bottom: 2px; }
+@media (hover: none), (pointer: coarse) {
+  .chat-message > .dinner-message-actions { opacity: 1; pointer-events: auto; flex-basis: 44px; }
+  .chat-message > .dinner-message-actions > button { width: 44px; height: 44px; }
+  .chat-message > .dinner-message-body { max-width: calc(100% - 50px); }
+}
+.dinner-composer:focus-within, .dinner-personal-composer:focus-within { border-color: #777; }
+.dinner-composer textarea:focus, .dinner-personal-composer textarea:focus { outline: none; box-shadow: none; }
+
+.dinner-personal-heading { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+.dinner-personal-heading h1 { margin: 0; }
+.dinner-personal-heading > button { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; }
+
+.chat-message:has(> .chat-message-status) { flex-wrap: wrap; row-gap: 4px; }
+.chat-message > .chat-message-status { flex-basis: 100%; text-align: right; padding-right: 12px; color: #999; font-size: 11px; line-height: 16px; }
+
+.chat-markdown { min-width: 0; white-space: normal; line-height: 1.55; }
+.chat-markdown > * { margin-block: 10px; }
+.chat-markdown > :first-child { margin-top: 0; }
+.chat-markdown > :last-child { margin-bottom: 0; }
+.chat-message .chat-markdown p { margin-block: 8px; white-space: pre-wrap; }
+.chat-message .chat-markdown strong { font-size: inherit; font-weight: 650; color: inherit; }
+.chat-markdown ul { list-style: disc; padding-left: 24px; }
+.chat-markdown ol { list-style: decimal; padding-left: 24px; }
+.chat-markdown li { padding-left: 2px; margin-block: 4px; }
+.chat-markdown li > p { margin-block: 0; }
+.chat-markdown a { color: inherit; text-decoration: underline; text-underline-offset: 3px; }
+.chat-markdown blockquote { border-left: 2px solid currentColor; padding-left: 12px; opacity: .8; }
+.chat-markdown pre { max-width: 100%; overflow-x: auto; padding: 12px; border-radius: 10px; background: #151515; color: #eee; }
+.chat-markdown :not(pre) > code { padding: 2px 4px; border-radius: 4px; background: #8882; font-size: .9em; }
+.chat-markdown table { display: block; max-width: 100%; overflow-x: auto; border-collapse: collapse; }
+.chat-markdown th, .chat-markdown td { padding: 6px 10px; border: 1px solid #8885; }
+.chat-markdown h1, .chat-markdown h2, .chat-markdown h3 { font-size: 1.1em; font-weight: 650; line-height: 1.4; }
+
+.chat-bill-review { border-top: 1px solid #444; padding-top: 18px; margin-top: 18px; }
+.chat-bill-review fieldset { border: 0; padding: 0; margin: 16px 0; min-width: 0; }
+.chat-bill-review .chat-bill-person { display: flex; align-items: center; gap: 8px; }
+.chat-bill-review .chat-bill-person input { width: 18px; height: 18px; }
+.chat-bill-review .chat-bill-share { max-width: 120px; text-align: right; }
+.chat-bill-review h3 { margin: 0; }
+
+.chat-bill-modal-overlay { position: fixed; inset: 0; z-index: 80; background: #000a; }
+.chat-bill-modal { display: block; box-sizing: border-box; margin: 0; min-height: 0; position: fixed; z-index: 81; top: 50%; left: 50%; transform: translate(-50%, -50%); width: min(560px, calc(100vw - 32px)); max-height: calc(100dvh - 48px); overflow-y: auto; padding: 24px; border: 1px solid #383838; border-radius: 24px; background: #191919; color: #eee; box-shadow: 0 24px 80px #0008; }
+.chat-bill-modal .chat-bill-review { margin: 0; padding: 0; border: 0; }
+
+.dinner-app.dinner-landing { box-sizing: border-box; display: flex; flex-direction: column; gap: 0; width: 100%; max-width: none; min-height: 100dvh; padding: 0 clamp(24px, 5vw, 80px); }
+.dinner-landing-header { padding-top: 32px; }
+.dinner-landing-main { flex: 1; width: 100%; max-width: 800px; margin: 0 auto; display: flex; align-items: center; padding: 48px 0 80px; }
+.dinner-landing-main .dinner-route-content { width: 100%; }
+.dinner-landing-main .dinner-welcome { padding: 0; }
+.dinner-landing-footer { display: flex; justify-content: space-between; align-items: center; gap: 24px; padding: 24px 0; color: var(--muted); font-size: 14px; }
+.dinner-landing-footer a:hover { color: var(--ink); }
+
+.dinner-app .plan-choice {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 44px;
+  margin-right: 18px;
+}
+.dinner-app .plan-choice input {
+  width: 18px;
+  height: 18px;
+  margin: 0;
+  flex-shrink: 0;
+  accent-color: var(--ink);
+}
+.dinner-app .plan-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+.dinner-app [id^="plan-"] {
+  scroll-margin-top: 24px;
+  overflow-wrap: anywhere;
+}
+.dinner-app [id^="plan-"] fieldset {
+  min-width: 0;
+}
+.dinner-app [id^="plan-"] summary {
+  cursor: pointer;
+  min-height: 44px;
+}
+
+.plan-conversation-summary {
+  padding-bottom: 20px;
+  border-bottom: 1px solid var(--rule);
+  margin-bottom: 16px;
+}
+.plan-conversation-summary .plan-actions {
+  justify-content: space-between;
+  align-items: center;
+}
+.plan-conversation-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 240px), 1fr));
+  gap: 12px;
+}
+.plan-conversation-card {
+  padding: 16px;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.plan-conversation-card p {
+  margin: 8px 0;
+}
+.plan-conversation-event {
+  border-left: 3px solid var(--accent);
+  padding: 12px 16px;
+  margin: 14px 0;
+  background: var(--canvas);
+  border-radius: 0 12px 12px 0;
+  overflow-wrap: anywhere;
+}
+.plan-conversation-event p {
+  margin: 4px 0;
+}
+
+/* Plan cards and the composer must not compete with a fixed-height chat shell. */
+.dinner-chat {
+  max-height: none;
+  min-width: 0;
+}
+.dinner-chat > * {
+  flex-shrink: 0;
+}
+.dinner-chat .dinner-messages {
+  flex: 1 1 0;
+  min-height: 0;
+  max-height: none;
+}
+.plan-conversation-cards {
+  display: flex;
+  overflow-x: auto;
+  padding-bottom: 8px;
+}
+.plan-conversation-card {
+  flex: 0 0 min(85%, 290px);
+}
+
+/* Keep hidden upload controls from inheriting the full-width input styling. */
+.dinner-app input.sr-only {
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  border: 0;
+}
+
+.plan-proposal-context { margin-top: 14px; scroll-margin-top: 24px; }
+.plan-proposal-facts { display: grid; grid-template-columns: minmax(70px, 100px) minmax(0, 1fr); gap: 8px 12px; font-size: 14px; }
+.plan-proposal-facts dt { color: var(--dinner-muted, #657069); }
+.plan-proposal-facts dd { margin: 0; overflow-wrap: anywhere; }
+.plan-proposal-context summary { cursor: pointer; padding: 10px 0; }
+.plan-conversation-locked { flex: 1 0 min(100%, 320px); min-width: 0; font-size: 14px; }
+.plan-conversation-locked p { margin: 8px 0; }
+
+/* Plan context stays bounded inside the shared viewport chat. */
+.dinner-chat .plan-conversation-summary {
+  max-height: 22dvh;
+  overflow: auto;
+  padding-bottom: 8px;
+  margin-bottom: 8px;
 }

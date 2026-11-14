@@ -1,4 +1,13 @@
 "use client";
+import { PlanProposalCards } from "./PlanProposalCards";
+import { planProposalSchema, proposalSourceId, type PlanProposal } from "@/lib/dinner/agent/plan-proposals";
+import { ConversationPlans, ConversationPlanEvent, usePlanConversation } from "./PlanConversation";
+import { answersTabQuestion, repliesToTab, directlyAddressesTab } from "@/lib/dinner/agent/awareness-schema";
+import { chatTimeline } from "./chat-timeline";
+import { MessageText } from "./MessageText";
+import { ChatMessage } from "./ChatMessage";
+import { Paperclip, ArrowUp, Reply } from "lucide-react";
+import { sendOnEnter } from "./chat-keyboard";
 
 import {
   useCallback,
@@ -18,6 +27,14 @@ import { messageSchema } from "@/lib/dinner/client-schema";
 import { RoomView, Message, messageInput } from "@/lib/dinner/model";
 import { useDinner } from "./DinnerShell";
 import { PrivateImage } from "./PrivateImage";
+import { LiveReply, SuggestedPrompts, useTabReply } from "./TabReply";
+
+const ROOM_PROMPTS = [
+  "@Tab who owes whom?",
+  "@Tab what's still pending?",
+  "@Tab split this receipt equally",
+  "@Tab draft a friendly nudge for ",
+];
 
 type Pending = {
   input: z.infer<typeof messageInput>;
@@ -32,7 +49,11 @@ export function Chat({
   refresh: () => Promise<void>;
 }) {
   const { api, me } = useDinner();
-  const [botBusy, setBotBusy] = useState(false);
+  const planConversation = usePlanConversation(room.id);
+  const [planProposals, setPlanProposals] = useState<PlanProposal[]>([]);
+  const tabReply = useTabReply(`/rooms/${room.id}/bot`);
+  const [botRequests, setBotRequests] = useState(0);
+  const botBusy = botRequests > 0;
   const [botError, setBotError] = useState("");
   const [proposals, setProposals] = useState<Proposal[]>([]);
   const [text, setText] = useState("");
@@ -46,6 +67,9 @@ export function Chat({
     file: File;
     id: string;
   } | null>(null);
+  const hasSavedReply = messages.some(
+    (message) => message.kind === "tab" && message.runId === tabReply.messageId,
+  );
   const scroll = useRef<HTMLDivElement>(null);
   const bottom = useRef<HTMLDivElement>(null);
   const lastRead = useRef(0);
@@ -70,8 +94,10 @@ export function Chat({
     });
   }, [api, room.id, messages]);
   useEffect(() => {
-    if (nearBottom.current)
-      bottom.current?.scrollIntoView({ block: "nearest" });
+    if (nearBottom.current) {
+      if (scroll.current)
+        scroll.current.scrollTop = scroll.current.scrollHeight;
+    }
     readVisible();
   }, [messages.length, pending.length, readVisible]);
   useEffect(() => {
@@ -115,7 +141,14 @@ export function Chat({
       window.removeEventListener("online", catchUp);
     };
   }, [api, room.id, messages]);
+  useEffect(() => {
+    if (nearBottom.current) {
+      if (scroll.current)
+        scroll.current.scrollTop = scroll.current.scrollHeight;
+    }
+  }, [tabReply.live, botBusy]);
   async function loadProposals() {
+    try { setPlanProposals(await api(`/rooms/${room.id}/plan-proposals`, {}, z.array(planProposalSchema))); } catch { /* Keep chat available. */ }
     try {
       setProposals(
         await api(`/rooms/${room.id}/proposals`, {}, z.array(proposalSchema)),
@@ -132,19 +165,11 @@ export function Chat({
     return () => clearInterval(timer);
   }, [api, room.id]);
   async function askTab(message: Message) {
-    setBotBusy(true);
+    setBotRequests(n => n + 1);
     setBotError("");
     try {
-      const result = await api(
-        `/rooms/${room.id}/bot`,
-        {
-          method: "POST",
-          body: JSON.stringify({ messageId: message.id }),
-          signal: AbortSignal.timeout(55_000),
-        },
-        z.object({ status: z.string(), text: z.string() }),
-      );
-      if (result.status !== "complete") setBotError(result.text);
+      const result = await tabReply.ask(message.id);
+      if (!["complete", "coalesced"].includes(result.status)) setBotError(result.text);
       await refresh();
       await loadProposals();
     } catch (e) {
@@ -154,7 +179,7 @@ export function Chat({
           : "Tab could not reply. Your chat message is saved.",
       );
     } finally {
-      setBotBusy(false);
+      setBotRequests(n => Math.max(0, n - 1));
     }
   }
   async function send(input: z.infer<typeof messageInput>) {
@@ -176,8 +201,16 @@ export function Chat({
       setPending((previous) =>
         previous.filter((p) => p.input.clientId !== input.clientId),
       );
-      await refresh();
-      if (mentionsTab(message.text)) void askTab(message);
+      // Saving the message is sufficient to start the agent; a background
+      // snapshot must not add another network round trip before the reply.
+      void refresh();
+      if (mentionsTab(message.text) || directlyAddressesTab(message.text) || (repliesToTab(messages, message.replyTo) || answersTabQuestion(messages, message))) void askTab(message);
+      else {
+        // Silent classification must not show a typing bubble or block member chat.
+        void api(`/rooms/${room.id}/awareness`, { method: "POST", body: JSON.stringify({ messageId: message.id }) }, z.object({ action: z.enum(["silent", "offered", "respond"]) }))
+          .then(async result => { if (result.action === "respond") await askTab(message); else if (result.action === "offered") await refresh(); })
+          .catch(() => { /* Optional assistance must not mark a saved message as failed. */ });
+      }
     } catch (e) {
       setPending((previous) =>
         previous.map((p) =>
@@ -231,32 +264,22 @@ export function Chat({
       setUploading(false);
     }
   }
-  async function react(message: Message, emoji: string) {
-    try {
-      await api(
-        `/rooms/${room.id}/messages/${message.id}/reaction`,
-        {
-          method: "PUT",
-          body: JSON.stringify({
-            emoji,
-            active: !message.reactions.some(
-              (r) => r.userId === me?.id && r.emoji === emoji,
-            ),
-          }),
-        },
-        messageSchema,
-      );
-      await refresh();
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "Could not react");
-    }
-  }
+  const proposalMessage = (proposal: PlanProposal) => {
+    const source = proposalSourceId(proposal);
+    return (
+      messages.find((m) => m.kind === "tab" && m.runId === source)?.id ??
+      messages.find((m) => m.id === source)?.id
+    );
+  };
+  const timeline = [
+    ...chatTimeline(messages, proposals),
+    ...planProposals.filter(p => !proposalMessage(p)).map(proposal => ({kind: "plan-proposal" as const, id: proposal.id, createdAt: proposal.createdAt, proposal})),
+    ...planConversation.feed.events.map(event => ({kind: "plan-event" as const, id: event.id, createdAt: event.at, event})),
+  ].sort((a,b) => a.createdAt.localeCompare(b.createdAt));
   return (
-    <section className="dinner-card dinner-chat">
-      <div className="dinner-heading" style={{ marginBottom: 12 }}>
-        <h2>Conversation</h2>
-        <span className="dinner-note">Only room members</span>
-      </div>
+    <section className="dinner-chat">
+      <ConversationPlans room={room} feed={planConversation.feed} userId={me?.id ?? ""} />
+      {planConversation.error && <p role="status">{planConversation.error}<button onClick={() => void planConversation.refresh()}>Retry plan updates</button></p>}
       <div
         className="dinner-messages"
         ref={scroll}
@@ -270,35 +293,28 @@ export function Chat({
           readVisible();
         }}
       >
-        {!messages.length && (
-          <div>
-            <h3>The plan starts here.</h3>
-            <p className="dinner-note">
-              Pick a place. Share a receipt. Keep everyone in the loop.
-            </p>
-          </div>
-        )}
-        {messages.map((message, index) => (
+        {planConversation.feed.nextCursor && <button disabled={planConversation.loading} onClick={() => { nearBottom.current = false; void planConversation.older(); }}>Load earlier plan updates</button>}
+        {timeline.map((entry) => {
+          if (entry.kind === "plan-event") return <ConversationPlanEvent key={entry.id} event={entry.event} room={room} />;
+          if (entry.kind === "plan-proposal") return <PlanProposalCards key={entry.id} proposals={[entry.proposal]} allProposals={planProposals} members={room.members} />;
+          if (entry.kind === "proposal") return <AgentCards key={`proposal:${entry.id}`} room={room} proposals={[entry.proposal]} refresh={async () => { await refresh(); await loadProposals(); }} />;
+          const { message, index } = entry;
+          return (
           <div key={message.id}>
             {message.seq > initialUnread.current &&
               message.authorId !== me?.id &&
               (!index || messages[index - 1].seq <= initialUnread.current) && (
                 <p className="dinner-unread">New messages</p>
               )}
-            <article className="dinner-message">
-              <span className="dinner-avatar" aria-hidden="true">
-                {message.kind === "tab"
-                  ? "T"
-                  : (
-                      room.members.find((m) => m.userId === message.authorId)
-                        ?.name ?? "?"
-                    ).slice(0, 1)}
-              </span>
+            <ChatMessage
+              own={message.kind !== "tab" && message.authorId === me?.id}
+              fresh={(message.kind !== "tab" || message.runId !== tabReply.messageId) && Date.now() - Date.parse(message.createdAt) < 15000}
+            >
               <div className="dinner-message-body">
-                <div className="dinner-message-meta">
+                <div className={`dinner-message-meta${message.authorId === me?.id ? " sr-only" : ""}`}>
                   <strong>
                     {message.kind === "tab"
-                      ? "Tab · room assistant"
+                      ? "Tab"
                       : (room.members.find((m) => m.userId === message.authorId)
                           ?.name ?? "Member")}
                   </strong>
@@ -308,27 +324,23 @@ export function Chat({
                       minute: "2-digit",
                     })}
                   </time>
-                  {message.authorId === me?.id && <span>Sent</span>}
+                  {message.authorId === me?.id && (
+                    <span className="sr-only">Sent</span>
+                  )}
                 </div>
-                {message.replyTo && (
+                {message.replyTo && message.kind !== "tab" && (
                   <div className="dinner-reply">
                     Replying to:{" "}
                     {messages.find((m) => m.id === message.replyTo)?.text ||
                       "an image"}
                   </div>
                 )}
-                {message.kind === "tab" && (
-                  <p className="dinner-note">
-                    Requested by{" "}
-                    {room.members.find((m) => m.userId === message.requestedBy)
-                      ?.name ?? "a member"}{" "}
-                    · read / prepare only
-                  </p>
-                )}
-                <p>{message.text}</p>
+                <MessageText text={message.text} plain={message.kind === "tab"} roomId={room.id} />
+                <PlanProposalCards proposals={planProposals.filter(p => proposalMessage(p) === message.id)} allProposals={planProposals} members={room.members} />
                 {message.kind !== "tab" &&
                   message.authorId === me?.id &&
-                  mentionsTab(message.text) &&
+                  !botBusy &&
+                  (mentionsTab(message.text) || directlyAddressesTab(message.text) || (repliesToTab(messages, message.replyTo) || answersTabQuestion(messages, message)) || room.assistance?.authorized.includes(message.id)) &&
                   !messages.some(
                     (m) => m.kind === "tab" && m.runId === message.id,
                   ) && (
@@ -343,27 +355,16 @@ export function Chat({
                 {message.attachmentIds.map((id) => (
                   <PrivateImage key={id} id={id} roomId={room.id} />
                 ))}
-                <div className="dinner-message-actions">
-                  <button onClick={() => setReply(message)}>Reply</button>
-                  {["👍", "❤️", "🎉"].map((emoji) => (
-                    <button
-                      key={emoji}
-                      aria-label={`React ${emoji}`}
-                      aria-pressed={message.reactions.some(
-                        (r) => r.emoji === emoji && r.userId === me?.id,
-                      )}
-                      onClick={() => void react(message, emoji)}
-                    >
-                      {emoji}{" "}
-                      {message.reactions.filter((r) => r.emoji === emoji)
-                        .length || ""}
-                    </button>
-                  ))}
-                </div>
               </div>
-            </article>
+              <div className="dinner-message-actions">
+                <button type="button" aria-label="Reply" title="Reply" onClick={() => {
+                  setReply(message);
+                  document.getElementById("room-message-input")?.focus();
+                }}><Reply size={18} aria-hidden="true" /></button>
+              </div>
+            </ChatMessage>
           </div>
-        ))}
+        ); })}
         {pending
           .filter(
             (p) =>
@@ -372,12 +373,9 @@ export function Chat({
               ),
           )
           .map((p) => (
-            <article className="dinner-message" key={p.input.clientId}>
+            <ChatMessage own fresh key={p.input.clientId} status={p.state === "sending" ? undefined : "Send not confirmed"}>
               <div className="dinner-message-body">
-                <p>{p.input.text || "Image message"}</p>
-                <span className="dinner-note">
-                  {p.state === "sending" ? "Sending…" : "Not sent"}
-                </span>
+                <MessageText text={p.input.text || "Image message"} />
                 {p.state === "failed" && (
                   <div className="dinner-actions">
                     <p className="dinner-note">{p.error}</p>
@@ -390,8 +388,19 @@ export function Chat({
                   </div>
                 )}
               </div>
-            </article>
+            </ChatMessage>
           ))}
+        {((!hasSavedReply && (tabReply.live !== null || botBusy)) ||
+          pending.some(
+            (p) => p.state === "sending" && (mentionsTab(p.input.text) || directlyAddressesTab(p.input.text) || repliesToTab(messages, p.input.replyTo)),
+          )) && <LiveReply label="Tab" text={hasSavedReply ? "" : (tabReply.live ?? "")} />}
+        {messages.length === 0 && (
+          <SuggestedPrompts
+            prompts={ROOM_PROMPTS}
+            disabled={botBusy}
+            onPick={(prompt) => setText(prompt)}
+          />
+        )}
         <div ref={bottom} />
       </div>
       {error && (
@@ -414,25 +423,6 @@ export function Chat({
           without resending it.
         </p>
       )}
-      <p className="dinner-note">
-        Tab is here when you mention @Tab. Recent text and shared notes are
-        processed for addressed requests only. No payment or receipt
-        confirmation can be executed by the model.
-      </p>
-      <button
-        type="button"
-        className="dinner-quiet"
-        onClick={() => setText((value) => `@Tab ${value}`)}
-      >
-        Mention @Tab
-      </button>
-      <AgentCards
-        proposals={proposals}
-        refresh={async () => {
-          await refresh();
-          await loadProposals();
-        }}
-      />
       <form className="dinner-composer" onSubmit={submit}>
         {reply && (
           <div className="dinner-actions">
@@ -467,15 +457,25 @@ export function Chat({
         <label>
           <span className="sr-only">Message the room</span>
           <textarea
+            id="room-message-input"
+            rows={1}
+            onKeyDown={sendOnEnter}
             value={text}
             onChange={(e) => setText(e.target.value)}
-            placeholder="What’s the plan?"
+            placeholder="Message the room… @Tab for help"
             maxLength={2000}
           />
         </label>
         <div className="dinner-actions">
-          <label className="dinner-inline-link" style={{ cursor: "pointer" }}>
-            {uploading ? "Uploading…" : "+ Image or receipt"}
+          <label
+            className="dinner-inline-link"
+            title="Private image or receipt · up to 2 MB"
+            style={{ cursor: "pointer" }}
+          >
+            <Paperclip size={22} aria-hidden="true" />
+            <span className="sr-only">
+              {uploading ? "Uploading…" : "Attach image or receipt"}
+            </span>
             <input
               className="sr-only"
               type="file"
@@ -488,12 +488,12 @@ export function Chat({
               }}
             />
           </label>
-          <span className="dinner-note dinner-grow">Private · up to 2 MB</span>
           <button
             disabled={uploading || (!text.trim() && !attachments.length)}
             type="submit"
           >
-            Send
+            <ArrowUp size={20} aria-hidden="true" />
+            <span className="sr-only">Send</span>
           </button>
         </div>
       </form>

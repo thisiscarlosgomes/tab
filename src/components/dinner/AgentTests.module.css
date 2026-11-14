@@ -1,0 +1,43 @@
+.page { width: 100%; max-width: 800px; margin: 0 auto; padding: 28px 20px 64px; }
+.back { display: inline-block; font-size: 13px; opacity: .65; margin-bottom: 32px; }
+.eyebrow { font-size: 11px; letter-spacing: .12em; opacity: .55; margin: 0 0 8px; }
+.page h1 { font-size: 30px; font-weight: 600; letter-spacing: -.035em; margin: 0; }
+.intro { font-size: 15px; opacity: .65; margin: 10px 0 24px; }
+.summary { display: flex; align-items: center; gap: 12px; padding: 18px; border: 1px solid #22a06b44; background: #22a06b0c; border-radius: 14px; }
+.summary > svg, .cases svg, .footer svg { color: #26a979; flex-shrink: 0; }
+.summary strong { font-size: 14px; font-weight: 600; }
+.summary p { font-size: 12px; opacity: .6; margin: 4px 0 0; }
+.note { font-size: 12px; line-height: 1.6; opacity: .6; margin: 12px 0 24px; }
+.controls { display: flex; justify-content: space-between; align-items: center; gap: 16px; flex-wrap: wrap; margin: 28px 0 18px; }
+.tabs { display: flex; gap: 4px; }
+.tabs button { padding: 8px 11px; font-size: 13px; border-radius: 8px; opacity: .6; }
+.tabs button[aria-pressed=true] { background: #8882; opacity: 1; }
+.tabs span { opacity: .5; margin-left: 5px; }
+.search { display: flex; align-items: center; gap: 7px; border: 1px solid #8884; padding: 8px 10px; border-radius: 8px; }
+.search input { background: transparent; font-size: 13px; width: 140px; outline: none; }
+.search:focus-within { outline: 2px solid #888; outline-offset: 2px; }
+.list { display: grid; gap: 12px; }
+.card { border: 1px solid #8883; border-radius: 14px; overflow: hidden; }
+.card summary { display: flex; align-items: center; gap: 12px; list-style: none; padding: 18px 20px; cursor: pointer; }
+.card summary::-webkit-details-marker { display: none; }
+.card summary > div { flex: 1; min-width: 0; }
+.card h2 { font-size: 14px; line-height: 1.5; font-weight: 500; margin: 2px 0 0; }
+.category { font-size: 11px; opacity: .55; }
+.pass { font-size: 11px; color: #249968; background: #24996812; border-radius: 20px; padding: 4px 9px; white-space: nowrap; }
+.body { padding: 0 20px 20px; }
+.context { font-size: 12px; line-height: 1.6; opacity: .65; margin: 0 0 16px; }
+.body blockquote { border-left: 2px solid #8886; font-size: 13px; line-height: 1.6; padding: 6px 12px; margin: 12px 0 20px; opacity: .7; }
+.body blockquote span, .user > span, .agent > span { display: block; font-size: 11px; opacity: .6; margin-bottom: 5px; }
+.user { margin: 16px 0 16px auto; width: fit-content; max-width: 90%; padding: 12px 16px; border-radius: 14px; background: #8882; }
+.agent { padding: 12px 0; }
+.user p, .agent p { font-size: 14px; line-height: 1.7; white-space: pre-wrap; overflow-wrap: anywhere; margin: 0; }
+.expected { border-top: 1px solid #8883; padding-top: 16px; margin-top: 18px; font-size: 12px; }
+.expected strong { font-weight: 500; }
+.expected p { opacity: .65; line-height: 1.6; margin: 5px 0 0; }
+.runHeading { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 18px 20px; }
+.cases { list-style: none; padding: 0 20px 16px; margin: 0; }
+.cases li { display: flex; gap: 10px; align-items: flex-start; border-top: 1px solid #8882; padding: 12px 0; font-size: 12px; line-height: 1.6; }
+.cases svg { margin-top: 2px; }
+.footer { display: flex; flex-wrap: wrap; gap: 12px 20px; margin-top: 28px; opacity: .65; }
+.footer span { display: flex; gap: 6px; align-items: center; font-size: 11px; }
+@media (max-width: 480px) { .page { padding: 20px 14px 40px; } .search { width: 100%; } .search input { width: 100%; } .card summary { padding: 16px 14px; } .body { padding: 0 14px 16px; } }
