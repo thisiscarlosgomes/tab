@@ -31,3 +31,18 @@ test("an adjacent answer belongs to the requester's fresh question only", async 
   assert.equal(answersTabQuestion([question], { ...answer, createdAt: "2026-11-10T00:16:00Z" }), false);
   assert.equal(answersTabQuestion([question, { ...question, id: "other", seq: 3, kind: "member" }], { ...answer, seq: 4 }), false);
 });
+
+test("casual follow-ups stay with the same requester after a statement", async () => {
+  const { answersTabQuestion } = await import("../../src/lib/dinner/agent/awareness-schema");
+  const previous = { id: "reply", seq: 2, kind: "tab", requestedBy: "a", expectsReply: false, text: "Glad you had a fantastic weekend!", createdAt: "2026-11-16T00:00:00Z" };
+  const source = { seq: 3, authorId: "a", text: "how are things", createdAt: "2026-11-16T00:00:05Z" };
+  assert.equal(answersTabQuestion([previous], source), true);
+  for (const text of ["how are you?", "and you?", "what's up", "thanks!"])
+    assert.equal(answersTabQuestion([previous], {...source, text}), true, text);
+  for (const text of ["yes", "go ahead", "pay everyone", "@Bob how are things", "how are things with Bob"])
+    assert.equal(answersTabQuestion([previous], {...source, text}), false, text);
+  assert.equal(answersTabQuestion([previous], {...source, authorId: "b"}), false);
+  assert.equal(answersTabQuestion([previous], {...source, replyTo: "other"}), false);
+  assert.equal(answersTabQuestion([previous], {...source, createdAt: "2026-11-16T00:16:00Z"}), false);
+  assert.equal(answersTabQuestion([previous, {...previous, id: "member", kind: "member", seq: 3}], {...source, seq: 4}), false);
+});

@@ -57,14 +57,19 @@ export function repliesToTab(messages: { id: string; kind?: string }[], replyTo?
   return !!replyTo && messages.some(message => message.id === replyTo && message.kind === "tab");
 }
 
-/** Persisted question + same speaker + adjacent turn; no model consent inference. */
+/** Narrow social continuity never grants consent to a pending action. */
+export function isCasualFollowup(text: string) {
+  return /^(?:how (?:are|is) (?:you|things|it going)|how['’]s (?:it going|things)|what['’]s up|(?:and|what about) you|thanks|thank you)[?!. ]*$/i.test(text.trim());
+}
+
+/** Same speaker and adjacent turn; questions or narrow social continuation only. */
 export function answersTabQuestion(
   messages: { id: string; seq: number; kind?: string; requestedBy?: string; expectsReply?: boolean; text: string; createdAt: string }[],
   source: { seq: number; authorId: string; replyTo?: string | null; text: string; createdAt: string },
 ) {
   if (source.replyTo || /@(?!(?:tab)\b)[\w]+/i.test(source.text)) return false;
   const previous = messages.filter(m => m.seq < source.seq).at(-1);
-  if (!previous || previous.kind !== "tab" || previous.requestedBy !== source.authorId || !(previous.expectsReply ?? previous.text.includes("?"))) return false;
+  if (!previous || previous.kind !== "tab" || previous.requestedBy !== source.authorId || !((previous.expectsReply ?? previous.text.includes("?")) || isCasualFollowup(source.text))) return false;
   const age = Date.parse(source.createdAt) - Date.parse(previous.createdAt);
   return age >= 0 && age < 15 * 60_000;
 }
