@@ -312,7 +312,7 @@ export function Chat({
             >
               <div className="dinner-message-body">
                 <div className={`dinner-message-meta${message.authorId === me?.id ? " sr-only" : ""}`}>
-                  <strong>
+                  <strong className={message.kind === "tab" ? "sr-only" : undefined}>
                     {message.kind === "tab"
                       ? "Tab"
                       : (room.members.find((m) => m.userId === message.authorId)

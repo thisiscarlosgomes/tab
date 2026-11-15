@@ -979,7 +979,8 @@ export class DinnerAgentService {
         await active();
         const room = await this.dinner.memberRoom(scope.roomId, actor);
         const source = room.messages.find((m) => m.id === sourceId)!;
-        planActionReply = await handlePlanChatAction(
+        planActionReply = await personalActionReply(this.dinner, actor, source.text, sourceId, active, () => this.roomProposals(actor, scope.roomId), scope.roomId);
+        planActionReply ??= await handlePlanChatAction(
           new PlanService(this.db, this.dinner),
           actor,
           room,

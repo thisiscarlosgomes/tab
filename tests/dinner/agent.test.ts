@@ -2049,3 +2049,23 @@ test("dashboard summaries preserve badges and wallet data while omitting large c
   assert.ok(bytes(full) / bytes(summary) > 10);
   console.log(`Room query payload: full=${bytes(full)}B summary=${bytes(summary)}B financial=${bytes(financial)}B`);
 });
+
+test("room creators can confirm and cancel their named bills in chat, but cannot change another creator's bill or another room", async () => {
+  const r = await joined();
+  const {roomId, ...fields} = expense(r.id);
+  const draft = await dinner.draft(roomId, alice, {...fields, clientId:randomUUID()});
+  const service = agent(async () => "No matching bill in this room.");
+  const ask = async (text: string, actor = alice, target = r.id) => {
+    const source = await dinner.send(target, actor, {clientId:randomUUID(),text});
+    return (await service.respond(actor,{kind:"room",roomId:target},source.id)).text;
+  };
+  assert.match(await ask("@Tab confirm Noodles", bob), /creator/);
+  assert.equal((await dinner.memberRoom(r.id,alice)).expenses[0].status,"draft");
+  assert.match(await ask("@Tab confirm Noodles"), /Confirmed Noodles/);
+  assert.equal((await dinner.memberRoom(r.id,alice)).expenses[0].status,"confirmed");
+  const other = await room();
+  assert.doesNotMatch(await ask(`@Tab cancel ${draft.id}`, alice, other.id), /Cancelled Noodles/);
+  assert.equal((await dinner.memberRoom(r.id,alice)).expenses[0].status,"confirmed");
+  assert.match(await ask("@Tab could you cancel Noodles?"), /Cancelled Noodles/);
+  assert.equal((await dinner.memberRoom(r.id,alice)).expenses[0].status,"cancelled");
+});
