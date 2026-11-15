@@ -1,3 +1,5 @@
+import { canDeleteSplit } from "./model";
+import { answersTabQuestion, repliesToTab, defaultAssistance, directlyAddressesTab } from "./agent/awareness-schema";
 import { TAB_BOT_ID, mentionsTab } from "./agent/model";
 import { createHash, randomBytes, randomUUID } from "node:crypto";
 import {
@@ -10,6 +12,7 @@ import {
   Expense,
   DinnerError,
   fail,
+  usd,
   requireMember,
   roomView,
   invitationStatus,
@@ -19,6 +22,9 @@ import {
   expenseInput,
   validateShares,
   retryId,
+  correctionInput,
+  validateCorrectionShares,
+  Obligation,
 } from "./model";
 
 export interface RoomStore {
@@ -35,6 +41,18 @@ function same(a: unknown, b: unknown): boolean {
   return JSON.stringify(a) === JSON.stringify(b);
 }
 export class DinnerService {
+  private actionMessage(room: Room, actor: Actor, key: string, text: string) {
+    const runId = `action:${key}`;
+    if (room.messages.some(m => m.kind === "tab" && m.runId === runId)) return;
+    if (room.messages.length >= 1000) fail(422, "This room has reached its message limit. History is preserved.");
+    room.messages.push({ id: randomUUID(), clientId: runId, kind: "tab", authorId: TAB_BOT_ID,
+      requestedBy: actor.id, runId, text, expectsReply: false, replyTo: null, attachmentIds: [],
+      createdAt: this.now(), seq: (room.messages.at(-1)?.seq ?? 0) + 1, reactions: [] });
+  }
+  private memberName(room: Room, id: string) {
+    return room.members.find(m => m.userId === id)?.name ?? room.removals?.find(m => m.userId === id)?.name ?? "Member";
+  }
+
   constructor(
     private store: RoomStore,
     private now: () => string = () => new Date().toISOString(),
@@ -42,6 +60,7 @@ export class DinnerService {
   async memberRoom(id: string, actor: Actor): Promise<Room> {
     const room = (await this.store.get(id)) ?? fail(404, "Room not found");
     requireMember(room, actor);
+    room.assistance ??= defaultAssistance();
     return room;
   }
   async change<T>(
@@ -67,6 +86,7 @@ export class DinnerService {
         revision: 0,
         name: input.name,
         purpose: input.purpose,
+        assistance: defaultAssistance(),
         ownerId: actor.id,
         createdAt: this.now(),
         members: [
@@ -121,6 +141,54 @@ export class DinnerService {
           })),
       ),
     };
+  }
+  async removeMember(
+    id: string,
+    actor: Actor,
+    userId: string,
+    clientId: string,
+  ) {
+    retryId.parse(clientId);
+    return this.change(id, actor, (room) => {
+      if (room.ownerId !== actor.id)
+        fail(403, "Only the room owner can remove a member");
+      const previous = room.removals?.find(
+        (r) => r.clientId === clientId && r.removedBy === actor.id,
+      );
+      if (previous) {
+        if (previous.userId !== userId) fail(409, "Removal retry changed");
+        return previous;
+      }
+      if (userId === room.ownerId)
+        fail(409, "The room owner cannot be removed or transferred here");
+      const member =
+        room.members.find((m) => m.userId === userId) ??
+        fail(404, "Accepted member not found");
+      if ((room.removals?.length ?? 0) >= 100)
+        fail(422, "Membership history limit reached");
+      const event = {
+        id: randomUUID(),
+        clientId,
+        userId,
+        name: member.name,
+        joinedAt: member.joinedAt,
+        removedAt: this.now(),
+        removedBy: actor.id,
+      };
+      room.removals = [...(room.removals ?? []), event];
+      room.members = room.members.filter((m) => m.userId !== userId);
+      return event;
+    });
+  }
+  // Used only for personal money projections, never as authorization to read a room.
+  async financialRooms(actor: Actor) {
+    return (await this.store.list(actor.id, null))
+      .filter(
+        (r) =>
+          r.members.some((m) => m.userId === actor.id) ||
+          r.removals?.some((m) => m.userId === actor.id),
+      )
+      .map(roomView);
   }
   async invite(id: string, actor: Actor, raw: unknown) {
     const input = inviteInput.parse(raw);
@@ -228,6 +296,13 @@ export class DinnerService {
         fail(409, "This invitation is no longer pending");
       if (
         decision === "accepted" &&
+        room.removals?.some(
+          (m) => m.userId === actor.id && invite.createdAt <= m.removedAt,
+        )
+      )
+        fail(409, "Ask the room owner for a new invitation after removal");
+      if (
+        decision === "accepted" &&
         !room.members.some((m) => m.userId === actor.id)
       ) {
         if (room.members.length >= 50)
@@ -307,13 +382,20 @@ export class DinnerService {
       return message;
     });
   }
-  async botReply(id: string, requester: Actor, sourceId: string, text: string) {
+  async setAssistance(id: string, actor: Actor, mode: "mentions" | "smart") {
+    return this.change(id, actor, (room) => {
+      if (room.ownerId !== actor.id) fail(403, "Only the room owner can change Smart assistance");
+      room.assistance = { mode, checkedSeq: room.messages.at(-1)?.seq ?? 0, offeredTopics: room.assistance?.offeredTopics ?? [], authorized: [], ...(room.assistance?.offer ? { offer: { ...room.assistance.offer, status: "expired" as const } } : {}) };
+      return roomView(room);
+    });
+  }
+  async botReply(id: string, requester: Actor, sourceId: string, text: string, expectsReply = text.includes("?"), publication?: { revision: string; validate: (room: Room) => void }) {
     return this.change(id, requester, (room) => {
       const source = room.messages.find(
         (m) =>
           m.id === sourceId && m.authorId === requester.id && m.kind !== "tab",
       );
-      if (!source || !mentionsTab(source.text))
+      if (!source || !(mentionsTab(source.text) || directlyAddressesTab(source.text) || (repliesToTab(room.messages, source.replyTo) || answersTabQuestion(room.messages, source)) || (room.assistance?.mode === "smart" && room.assistance.authorized.includes(source.id))))
         fail(
           403,
           "Only an addressed, persisted member message can request Tab",
@@ -322,6 +404,7 @@ export class DinnerService {
         (m) => m.kind === "tab" && m.runId === sourceId,
       );
       if (previous) return previous;
+      publication?.validate(room);
       if (room.messages.length >= 1000)
         fail(
           422,
@@ -333,7 +416,9 @@ export class DinnerService {
         clientId: sourceId,
         kind: "tab",
         requestedBy: requester.id,
+        expectsReply,
         runId: sourceId,
+        ...(publication ? { agentRevision: publication.revision } : {}),
         text,
         replyTo: sourceId,
         attachmentIds: [],
@@ -374,7 +459,7 @@ export class DinnerService {
       return { readSeq: member.readSeq };
     });
   }
-  async draft(id: string, actor: Actor, raw: unknown, expenseId?: string) {
+  async draft(id: string, actor: Actor, raw: unknown, expenseId?: string, expectedVersion?: number, sourcePlanId?: string) {
     const input = expenseInput.parse(raw);
     return this.change(id, actor, (room) => {
       validateShares(input, room);
@@ -386,6 +471,8 @@ export class DinnerService {
           fail(403, "Only the author can edit this draft");
         if (expense.status !== "draft")
           fail(409, "Confirmed expenses cannot be edited");
+        if (expectedVersion !== undefined && expense.version !== expectedVersion)
+          fail(409, "The draft changed. Reload the latest bill before saving.");
         Object.assign(expense, {
           version: expense.version + 1,
           description: input.description,
@@ -395,12 +482,28 @@ export class DinnerService {
         });
         if (input.attachmentId) expense.attachmentId = input.attachmentId;
         else delete expense.attachmentId;
+        this.actionMessage(room, actor, `bill-edited:${expense.id}:${expense.version}`, `${this.memberName(room, actor.id)} edited “${expense.description}” · ${usd(expense.totalCents)}.`);
         return expense;
+      }
+      if (sourcePlanId) {
+        const linked = room.expenses.find(
+          (e) => e.sourcePlanId === sourcePlanId,
+        );
+        if (
+          linked &&
+          (linked.creatorId !== actor.id || linked.clientId !== input.clientId)
+        )
+          fail(
+            409,
+            "This outing already has an expense. Open Money to review it.",
+          );
       }
       const existing = room.expenses.find(
         (e) => e.clientId === input.clientId && e.creatorId === actor.id,
       );
       if (existing) {
+        if (sourcePlanId && existing.sourcePlanId !== sourcePlanId)
+          fail(409, "Retry ID belongs to another expense");
         if (
           !same(
             {
@@ -429,6 +532,7 @@ export class DinnerService {
         fail(422, "This beta room has reached its expense limit");
       const expense: Expense = {
         ...input,
+        ...(sourcePlanId ? { sourcePlanId } : {}),
         id: randomUUID(),
         creatorId: actor.id,
         status: "draft",
@@ -438,6 +542,37 @@ export class DinnerService {
       };
       room.expenses.push(expense);
       return expense;
+    });
+  }
+  async deleteSplit(id: string, actor: Actor, expenseId: string, requestId: string, expectedVersion: number) {
+    retryId.parse(requestId);
+    return this.change(id, actor, room => {
+      const expense = room.expenses.find(e => e.id === expenseId) ?? fail(404, "Bill not found");
+      if (expense.creatorId !== actor.id) fail(403, "Only the bill creator can delete this split");
+      if (expense.status === "cancelled" && expense.deletedAt) return expense;
+      if (expense.version !== expectedVersion) fail(409, "The bill changed. Reload it before deleting.");
+      if (!canDeleteSplit(expense)) fail(409, "Only unpaid confirmed splits can be deleted. Resolve any pending payment report first; splits with recorded payments cannot be deleted.");
+      // Keep the original record for audit. Cancelled records contribute no obligations.
+      const deleted: Expense = { ...expense, status: "cancelled", deletedAt: this.now(),
+        cancelledAt: this.now(), cancelledBy: actor.id, cancellationId: requestId, version: expense.version + 1 };
+      room.expenses = room.expenses.map(e => e.id === expenseId ? deleted : e);
+      this.actionMessage(room, actor, `bill-deleted:${expense.id}`, `${this.memberName(room, actor.id)} deleted “${expense.description}”.`);
+      return deleted;
+    });
+  }
+  async cancelDraft(id: string, actor: Actor, expenseId: string, requestId: string, expectedVersion: number) {
+    retryId.parse(requestId);
+    return this.change(id, actor, (room) => {
+      const expense = room.expenses.find((e) => e.id === expenseId) ?? fail(404, "Bill not found");
+      if (expense.creatorId !== actor.id) fail(403, "Only the author can cancel this draft");
+      if (expense.status === "cancelled") return expense;
+      if (expense.status !== "draft") fail(409, "Confirmed bills cannot be cancelled. Propose a correction instead.");
+      if (expense.version !== expectedVersion) fail(409, "The draft changed. Reload the bill before cancelling.");
+      const cancelled: Expense = { ...expense, status: "cancelled", version: expense.version + 1,
+        cancelledAt: this.now(), cancelledBy: actor.id, cancellationId: requestId };
+      room.expenses = room.expenses.map((e) => e.id === expenseId ? cancelled : e);
+      this.actionMessage(room, actor, `bill-cancelled:${expense.id}`, `${this.memberName(room, actor.id)} cancelled “${expense.description}”.`);
+      return cancelled;
     });
   }
   async confirm(
@@ -459,6 +594,7 @@ export class DinnerService {
           fail(409, "Expense is already confirmed");
         return expense;
       }
+      if (expense.status === "cancelled") fail(409, "This bill was cancelled");
       if (expense.version !== expectedVersion)
         fail(
           409,
@@ -485,7 +621,207 @@ export class DinnerService {
       room.expenses = room.expenses.map((e) =>
         e.id === expenseId ? confirmed : e,
       );
+      this.actionMessage(room, actor, `bill-confirmed:${expense.id}`, `${this.memberName(room, actor.id)} confirmed “${expense.description}” · ${usd(expense.totalCents)}.`);
       return confirmed;
+    });
+  }
+  async proposeCorrection(
+    id: string,
+    actor: Actor,
+    expenseId: string,
+    raw: unknown,
+  ) {
+    const input = correctionInput.parse(raw);
+    return this.change(id, actor, (room) => {
+      const expense = room.expenses.find((e) => e.id === expenseId);
+      if (!expense || expense.status !== "confirmed")
+        return fail(404, "Confirmed expense not found");
+      const { clientId, expectedVersion, ...fields } = input;
+      const previous = expense.corrections?.find(
+        (c) => c.clientId === clientId && c.proposedBy === actor.id,
+      );
+      if (previous) {
+        if (
+          !same(previous.fields, fields) ||
+          previous.expectedVersion !== expectedVersion
+        )
+          fail(409, "Correction retry changed");
+        return previous;
+      }
+      if (expense.version !== expectedVersion)
+        fail(409, "Expense changed. Review its current version");
+      validateCorrectionShares({ ...fields, clientId }, room, expense);
+      if ((expense.corrections?.length ?? 0) >= 50)
+        fail(422, "Correction history limit reached");
+      const correction = {
+        id: randomUUID(),
+        clientId,
+        expectedVersion,
+        fields,
+        proposedBy: actor.id,
+        createdAt: this.now(),
+        status: "proposed" as const,
+        flags: [],
+      };
+      expense.corrections = [...(expense.corrections ?? []), correction];
+      return correction;
+    });
+  }
+  async disputeCorrection(
+    id: string,
+    actor: Actor,
+    expenseId: string,
+    correctionId: string,
+    reason: string,
+  ) {
+    return this.change(id, actor, (room) => {
+      const expense = room.expenses.find((e) => e.id === expenseId);
+      if (!expense || expense.status !== "confirmed")
+        return fail(404, "Expense not found");
+      const correction =
+        expense.corrections?.find((c) => c.id === correctionId) ??
+        fail(404, "Correction not found");
+      if (
+        ![
+          expense.payerId,
+          correction.fields.payerId,
+          ...expense.shares.map((s) => s.userId),
+          ...correction.fields.shares.map((s) => s.userId),
+        ].includes(actor.id)
+      )
+        fail(403, "Only an affected participant can dispute this correction");
+      if (correction.status === "applied")
+        fail(409, "Already applied. Flag the current share instead");
+      correction.status = "disputed";
+      correction.flags = [
+        ...correction.flags.filter((f) => f.userId !== actor.id),
+        { userId: actor.id, reason },
+      ];
+      return correction;
+    });
+  }
+  async confirmCorrection(
+    id: string,
+    actor: Actor,
+    expenseId: string,
+    correctionId: string,
+    clientId: string,
+  ) {
+    retryId.parse(clientId);
+    return this.change(id, actor, (room) => {
+      const expense = room.expenses.find((e) => e.id === expenseId);
+      if (!expense || expense.status !== "confirmed")
+        return fail(404, "Expense not found");
+      if (![expense.creatorId, room.ownerId].includes(actor.id))
+        fail(
+          403,
+          "Only the expense author or room owner can accept a correction",
+        );
+      const correction =
+        expense.corrections?.find((c) => c.id === correctionId) ??
+        fail(404, "Correction not found");
+      if (correction.status === "applied") {
+        if (
+          correction.confirmationId === clientId &&
+          correction.appliedBy === actor.id
+        )
+          return expense;
+        fail(409, "Correction already applied");
+      }
+      if (correction.status === "disputed")
+        fail(
+          409,
+          "Disputed correction cannot be applied. Prepare a new proposal after clarification",
+        );
+      if (correction.expectedVersion !== expense.version)
+        fail(
+          409,
+          "Expense changed. Prepare a correction against its current version",
+        );
+      validateCorrectionShares(
+        { ...correction.fields, clientId },
+        room,
+        expense,
+      );
+      if (
+        expense.obligations.some((o) =>
+          o.outsideReports?.some((r) => r.status === "pending"),
+        )
+      )
+        fail(
+          409,
+          "Resolve or cancel pending outside reports before accepting a correction",
+        );
+      const at = this.now();
+      const history = expense.history ?? [];
+      // Deduplicate settled obligations across snapshots. Credits stay real even if a share is reduced;
+      // a negative remainder becomes an obligation back to the person who overpaid, never a refund payment.
+      const paid = new Map<string, Obligation>();
+      for (const o of [
+        ...history.flatMap((h) => h.obligations),
+        ...expense.obligations,
+      ])
+        if (o.status === "confirmed_outside") paid.set(o.id, o);
+      const net = new Map<string, { a: string; b: string; cents: number }>();
+      const add = (from: string, to: string, cents: number) => {
+        const [a, b] = [from, to].sort();
+        const key = `${a}:${b}`;
+        const row = net.get(key) ?? { a, b, cents: 0 };
+        row.cents += from === a ? cents : -cents;
+        net.set(key, row);
+      };
+      for (const share of correction.fields.shares)
+        if (share.userId !== correction.fields.payerId)
+          add(share.userId, correction.fields.payerId, share.cents);
+      for (const o of paid.values()) add(o.debtorId, o.creditorId, -o.cents);
+      const next: Obligation[] = [...net.values()]
+        .filter((n) => n.cents !== 0)
+        .map((n) => ({
+          id: randomUUID(),
+          expenseId,
+          debtorId: n.cents > 0 ? n.a : n.b,
+          creditorId: n.cents > 0 ? n.b : n.a,
+          cents: Math.abs(n.cents),
+          currency: "USD",
+          status: "outstanding",
+        }));
+      if (next.some((o) => o.cents > 100_000_000))
+        fail(
+          422,
+          "Adjustment exceeds the beta amount limit; history is preserved",
+        );
+      expense.history = [
+        ...history,
+        {
+          description: expense.description,
+          payerId: expense.payerId,
+          totalCents: expense.totalCents,
+          shares: expense.shares,
+          ...(expense.attachmentId
+            ? { attachmentId: expense.attachmentId }
+            : {}),
+          version: expense.version,
+          confirmedAt: expense.confirmedAt,
+          confirmationId: expense.confirmationId,
+          flags: expense.flags,
+          obligations: expense.obligations,
+          reversedAt: at,
+          reversedBy: actor.id,
+          correctionId,
+        },
+      ];
+      delete expense.attachmentId;
+      Object.assign(expense, correction.fields, {
+        version: expense.version + 1,
+        obligations: next,
+        confirmedAt: at,
+        confirmationId: clientId,
+      });
+      correction.status = "applied";
+      correction.appliedAt = at;
+      correction.appliedBy = actor.id;
+      correction.confirmationId = clientId;
+      return expense;
     });
   }
   async reportOutside(
@@ -534,6 +870,7 @@ export class DinnerService {
         status: "pending",
       };
       obligation.outsideReports = [...reports, report];
+      this.actionMessage(room, actor, `payment-reported:${report.id}`, `${this.memberName(room, actor.id)} reported an outside payment of ${usd(report.cents)} from ${this.memberName(room, obligation.debtorId)} to ${this.memberName(room, obligation.creditorId)} for “${expense.description}”. Awaiting recipient confirmation.`);
       return report;
     });
   }
@@ -606,6 +943,9 @@ export class DinnerService {
             : o,
         );
       }
+      this.actionMessage(room, actor, `payment-resolved:${report.id}`, decision === "confirmed"
+        ? `${this.memberName(room, actor.id)} confirmed receiving ${usd(report.cents)} from ${this.memberName(room, obligation.debtorId)} for “${expense.description}”. This share is settled outside Tab.`
+        : `${this.memberName(room, actor.id)} ${decision} the ${usd(report.cents)} payment report for “${expense.description}”.`);
       // Flags are independent, durable dispute records. Never clear them here.
       return resolved;
     });

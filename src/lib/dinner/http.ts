@@ -1,3 +1,5 @@
+import { PlanService } from "./plans/service";
+import { calendarFile } from "./plans/time";
 import { DinnerAgentService } from "./agent/service";
 import { z, ZodError } from "zod";
 import {
@@ -5,6 +7,7 @@ import {
   DinnerError,
   entityId,
   expenseInput,
+  correctionInput,
   fail,
   messageInput,
   roomView,
@@ -19,12 +22,86 @@ export type DinnerDependencies = {
   service: DinnerService;
   attachments: Attachments;
   agent?: DinnerAgentService;
+  plans?: PlanService;
+  enqueueAgent?: (actor: Actor, roomId: string, message: import("./model").Message) => Promise<void>;
   friends?: (request: Request) => Promise<unknown>;
 };
 function json(value: unknown, status = 200) {
   return Response.json(value, {
     status,
     headers: { "Cache-Control": "private, no-store", Vary: "Authorization" },
+  });
+}
+type Reply = { status: string; text: string };
+/**
+ * Streams addressed agent replies as NDJSON when the client asks for it. The member message is
+ * already persisted; the reply is persisted by the service before the final `done` line. Errors
+ * raised before any text keep their normal JSON status so authorization failures stay visible.
+ */
+function agentReply(
+  request: Request,
+  run: (onDelta?: (text: string) => void) => Promise<Reply>,
+): Promise<Response> {
+  if (!request.headers.get("accept")?.includes("application/x-ndjson"))
+    return run().then((reply) => json(reply));
+  const encoder = new TextEncoder();
+  return new Promise<Response>((resolve, reject) => {
+    let controller: ReadableStreamDefaultController<Uint8Array> | undefined;
+    const queue: Uint8Array[] = [];
+    let opened = false;
+    let finished = false;
+    const write = (value: unknown) => {
+      const line = encoder.encode(JSON.stringify(value) + "\n");
+      if (controller) controller.enqueue(line);
+      else queue.push(line);
+    };
+    const finish = () => {
+      finished = true;
+      controller?.close();
+    };
+    const open = () => {
+      if (opened) return;
+      opened = true;
+      resolve(
+        new Response(
+          new ReadableStream<Uint8Array>({
+            start(c) {
+              controller = c;
+              for (const line of queue.splice(0)) c.enqueue(line);
+              if (finished) c.close();
+            },
+          }),
+          {
+            headers: {
+              "Content-Type": "application/x-ndjson; charset=utf-8",
+              "Cache-Control": "private, no-store",
+              Vary: "Authorization",
+            },
+          },
+        ),
+      );
+    };
+    run((text) => {
+      write({ type: "delta", text });
+      open();
+    }).then(
+      (reply) => {
+        if (!opened) return resolve(json(reply));
+        write({ type: "done", ...reply });
+        finish();
+      },
+      (error: unknown) => {
+        if (!opened) return reject(error);
+        write({
+          type: "error",
+          error:
+            error instanceof DinnerError
+              ? error.message
+              : "Tab could not finish this reply. Your message is saved; retry it.",
+        });
+        finish();
+      },
+    );
   });
 }
 async function body(request: Request): Promise<unknown> {
@@ -82,6 +159,13 @@ export async function handleDinner(
       deps.friends
     )
       return json(await deps.friends(request));
+    if (
+      deps.plans &&
+      path.length === 1 &&
+      path[0] === "plans" &&
+      method === "GET"
+    )
+      return json(await deps.plans.attention(actor));
     if (deps.agent) {
       const agent = deps.agent;
       if (path.length === 1 && path[0] === "wallet" && method === "GET")
@@ -89,6 +173,8 @@ export async function handleDinner(
       if (path[0] === "agent") {
         if (path.length === 2 && path[1] === "session" && method === "GET")
           return json(await agent.session(actor));
+        if (path.length === 2 && path[1] === "session" && method === "DELETE")
+          return json(await agent.clearPersonalChat(actor));
         if (path.length === 2 && path[1] === "messages" && method === "POST")
           return json(
             await agent.personalSend(actor, await body(request)),
@@ -99,8 +185,13 @@ export async function handleDinner(
             .object({ messageId: entityId })
             .strict()
             .parse(await body(request));
-          return json(
-            await agent.respond(actor, { kind: "personal" }, input.messageId),
+          return await agentReply(request, (onDelta) =>
+            agent.respond(
+              actor,
+              { kind: "personal" },
+              input.messageId,
+              onDelta,
+            ),
           );
         }
         if (path.length === 2 && path[1] === "memory") {
@@ -125,6 +216,25 @@ export async function handleDinner(
         }
         if (path.length === 3 && path[1] === "reminders" && method === "DELETE")
           return json(await agent.dismiss(actor, entityId.parse(path[2])));
+        if (
+          path[1] === "plan-proposals" &&
+          path.length === 3 &&
+          method === "GET"
+        )
+          return json(await agent.planProposal(actor, entityId.parse(path[2])));
+        if (
+          path[1] === "plan-proposals" &&
+          path.length === 4 &&
+          path[3] === "apply" &&
+          method === "POST"
+        )
+          return json(
+            await agent.applyPlanProposal(
+              actor,
+              entityId.parse(path[2]),
+              await body(request),
+            ),
+          );
         if (
           path.length === 4 &&
           path[1] === "proposals" &&
@@ -183,18 +293,90 @@ export async function handleDinner(
       );
     }
     await deps.service.memberRoom(roomId, actor);
+    if (
+      deps.plans &&
+      path.length === 3 &&
+      path[2] === "plan-feed" &&
+      method === "GET"
+    ) {
+      const cursor = z
+        .string()
+        .max(500)
+        .optional()
+        .parse(new URL(request.url).searchParams.get("before") ?? undefined);
+      return json(await deps.plans.conversation(actor, roomId, cursor));
+    }
+    if (deps.plans && path[2] === "plans") {
+      const plans = deps.plans;
+      if (path.length === 3 && method === "GET")
+        return json(
+          await plans.list(
+            actor,
+            roomId,
+            entityId
+              .optional()
+              .parse(
+                new URL(request.url).searchParams.get("before") ?? undefined,
+              ),
+          ),
+        );
+      if (path.length === 3 && method === "POST")
+        return json(
+          await plans.create(actor, roomId, await body(request)),
+          201,
+        );
+      if (path[3]) {
+        const planId = entityId.parse(path[3]);
+        if (path.length === 4 && method === "GET")
+          return json(await plans.get(actor, roomId, planId));
+        if (path.length === 5 && path[4] === "expense" && method === "POST") {
+          const input = expenseInput.parse(await body(request));
+          await deps.attachments.assertInRoom(
+            roomId,
+            actor,
+            input.attachmentId ? [input.attachmentId] : [],
+          );
+          return json(
+            await plans.expenseDraft(actor, roomId, planId, input),
+            201,
+          );
+        }
+        if (path.length === 5 && path[4] === "commands" && method === "POST")
+          return json(
+            await plans.command(actor, roomId, planId, await body(request)),
+          );
+        if (path.length === 5 && path[4] === "calendar" && method === "GET")
+          return json({
+            filename: `tab-plan-${planId}.ics`,
+            content: calendarFile(await plans.get(actor, roomId, planId)),
+          });
+      }
+    }
     if (deps.agent && path.length === 3) {
       const scope = {
         kind: "room",
         roomId,
       } satisfies import("./agent/capabilities").AgentScope;
+      if (path[2] === "assistance" && method === "PATCH") {
+        const input = z.object({ mode: z.enum(["mentions", "smart"]) }).strict().parse(await body(request));
+        return json(await deps.service.setAssistance(roomId, actor, input.mode));
+      }
+      if (path[2] === "awareness" && method === "POST") {
+        const input = z.object({ messageId: entityId }).strict().parse(await body(request));
+        return json(await deps.agent.assessRoomMessage(actor, roomId, input.messageId));
+      }
       if (path[2] === "bot" && method === "POST") {
         const input = z
           .object({ messageId: entityId })
           .strict()
           .parse(await body(request));
-        return json(await deps.agent.respond(actor, scope, input.messageId));
+        const agent = deps.agent;
+        return await agentReply(request, (onDelta) =>
+          agent.respond(actor, scope, input.messageId, onDelta),
+        );
       }
+      if (path[2] === "plan-proposals" && path.length === 3 && method === "GET")
+        return json(await deps.agent.roomPlanProposals(actor, roomId));
       if (path[2] === "proposals" && method === "GET")
         return json(await deps.agent.roomProposals(actor, roomId));
       if (path[2] === "agreements" || path[2] === "memory") {
@@ -212,6 +394,72 @@ export async function handleDinner(
       }
     }
 
+    if (path[2] === "members" && path.length === 4 && method === "DELETE") {
+      const input = z
+        .object({ clientId: retryId })
+        .strict()
+        .parse(await body(request));
+      return json(
+        await deps.service.removeMember(
+          roomId,
+          actor,
+          entityId.parse(path[3]),
+          input.clientId,
+        ),
+      );
+    }
+    if (
+      path[2] === "expenses" &&
+      path[4] === "corrections" &&
+      method === "POST"
+    ) {
+      const expenseId = entityId.parse(path[3]);
+      if (path.length === 5) {
+        const input = correctionInput.parse(await body(request));
+        await deps.attachments.assertInRoom(
+          roomId,
+          actor,
+          input.attachmentId ? [input.attachmentId] : [],
+        );
+        return json(
+          await deps.service.proposeCorrection(roomId, actor, expenseId, input),
+          201,
+        );
+      }
+      if (path.length === 7) {
+        const correctionId = entityId.parse(path[5]);
+        if (path[6] === "confirm") {
+          const input = z
+            .object({ clientId: retryId })
+            .strict()
+            .parse(await body(request));
+          return json(
+            await deps.service.confirmCorrection(
+              roomId,
+              actor,
+              expenseId,
+              correctionId,
+              input.clientId,
+            ),
+          );
+        }
+        if (path[6] === "flag") {
+          const input = z
+            .object({ reason: z.string().trim().min(1).max(400) })
+            .strict()
+            .parse(await body(request));
+          return json(
+            await deps.service.disputeCorrection(
+              roomId,
+              actor,
+              expenseId,
+              correctionId,
+              input.reason,
+            ),
+          );
+        }
+      }
+    }
     if (path[2] === "invites" && path.length === 3 && method === "POST")
       return json(
         await deps.service.invite(roomId, actor, await body(request)),
@@ -250,7 +498,9 @@ export async function handleDinner(
       if (method === "POST") {
         const input = messageInput.parse(await body(request));
         await deps.attachments.assertInRoom(roomId, actor, input.attachmentIds);
-        return json(await deps.service.send(roomId, actor, input), 201);
+        const message = await deps.service.send(roomId, actor, input);
+        if (deps.enqueueAgent) await deps.enqueueAgent(actor, roomId, message);
+        return json(message, 201);
       }
     }
     if (
@@ -285,7 +535,10 @@ export async function handleDinner(
       (path[2] === "expenses" && method === "POST" && path.length === 3) ||
       (path[2] === "expenses" && method === "PATCH" && path.length === 4)
     ) {
-      const input = expenseInput.parse(await body(request));
+      const raw = await body(request);
+      const { expectedVersion, ...input } = method === "PATCH"
+        ? expenseInput.extend({ expectedVersion: z.number().int().min(1) }).parse(raw)
+        : { ...expenseInput.parse(raw), expectedVersion: undefined };
       await deps.attachments.assertInRoom(
         roomId,
         actor,
@@ -297,6 +550,7 @@ export async function handleDinner(
           actor,
           input,
           path[3] ? entityId.parse(path[3]) : undefined,
+          expectedVersion,
         ),
         201,
       );
@@ -304,7 +558,7 @@ export async function handleDinner(
     if (
       path[2] === "expenses" &&
       path[3] &&
-      path[4] === "confirm" &&
+      ["confirm", "cancel", "delete"].includes(path[4]) &&
       path.length === 5 &&
       method === "POST"
     ) {
@@ -313,7 +567,7 @@ export async function handleDinner(
         .strict()
         .parse(await body(request));
       return json(
-        await deps.service.confirm(
+        await (path[4] === "delete" ? deps.service.deleteSplit.bind(deps.service) : path[4] === "cancel" ? deps.service.cancelDraft.bind(deps.service) : deps.service.confirm.bind(deps.service))(
           roomId,
           actor,
           entityId.parse(path[3]),
@@ -401,6 +655,8 @@ export async function handleDinner(
         { error: error.issues.map((i) => i.message).join("; ") },
         400,
       );
+    if (error instanceof Error && ["TimeoutError", "AbortError"].includes(error.name))
+      return json({ error: "Tab couldn't reach the AI service in time. Your message is saved. Try replying again." }, 503);
     console.error("dinner_request_failed", {
       path: path[0],
       error: error instanceof Error ? error.name : "unknown",

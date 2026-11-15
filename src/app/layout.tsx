@@ -123,7 +123,7 @@ export async function generateViewport(): Promise<Viewport> {
     initialScale: 1,
     width: "device-width",
     viewportFit: "cover",
-    themeColor: dinner ? "#FAF9F6" : "#0A0A14",
+    themeColor: dinner ? "#0B0B0B" : "#0A0A14",
   };
 }
 
@@ -163,7 +163,7 @@ export default async function RootLayout({
   ];
 
   return (
-    <html lang="en" className={dinner ? "light dinner-document" : "dark"}>
+    <html lang="en" className={dinner ? "dark dinner-document" : "dark"}>
       <head>
         <link rel="preconnect" href="https://fonts.googleapis.com" />
         <link rel="preconnect" href="https://fonts.gstatic.com" />

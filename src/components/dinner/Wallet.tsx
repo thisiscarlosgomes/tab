@@ -1,4 +1,5 @@
 "use client";
+import { PageSkeleton } from "./PageSkeleton";
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { z } from "zod";
@@ -12,6 +13,7 @@ export const walletSchema = z.object({
   balances: z.array(
     z.object({
       roomId: z.string(),
+      hasRoomAccess: z.boolean().optional(),
       name: z.string(),
       owe: z.number().int(),
       owed: z.number().int(),
@@ -21,6 +23,7 @@ export const walletSchema = z.object({
     z.object({
       roomId: z.string(),
       reportId: z.string(),
+      hasRoomAccess: z.boolean().optional(),
       cents: z.number().int(),
       needsConfirmation: z.boolean(),
       recipient: z.string(),
@@ -59,11 +62,7 @@ export function Wallet() {
   }, [api, me]);
   return (
     <>
-      <p className="dinner-eyebrow">Your money, clearly</p>
       <h1>Wallet</h1>
-      <p className="dinner-muted">
-        Manage your shared tab without confusing a promise with cash.
-      </p>
       {error && (
         <p className="dinner-error" role="alert">
           {error}
@@ -104,45 +103,70 @@ export function Wallet() {
                 Outstanding obligations only. Pending outside reports are
                 already included, not additional money.
               </p>
-              {value.balances.map((room) => (
-                <Link
-                  className="dinner-room-row"
-                  href={`/app/rooms/${room.roomId}?view=money`}
-                  key={room.roomId}
-                >
-                  <div>
-                    <h3>{room.name}</h3>
-                    <p className="dinner-note">
-                      You owe {usd(room.owe)} · Owed to you {usd(room.owed)}
-                    </p>
+              {value.balances.map((room) =>
+                room.hasRoomAccess === false ? (
+                  <div className="dinner-room-row" key={room.roomId}>
+                    <div>
+                      <h3>{room.name} · former room</h3>
+                      <p>
+                        You owe {usd(room.owe)} · Owed to you {usd(room.owed)}
+                      </p>
+                      <p className="dinner-note">
+                        Room access ended. These obligations remain; contact the
+                        room owner to coordinate corrections or outside reports.
+                      </p>
+                    </div>
                   </div>
-                  <span>Review ↗</span>
-                </Link>
-              ))}
+                ) : (
+                  <Link
+                    className="dinner-room-row"
+                    href={`/app/rooms/${room.roomId}?view=money`}
+                    key={room.roomId}
+                  >
+                    <div>
+                      <h3>{room.name}</h3>
+                      <p className="dinner-note">
+                        You owe {usd(room.owe)} · Owed to you {usd(room.owed)}
+                      </p>
+                    </div>
+                    <span>Review ↗</span>
+                  </Link>
+                ),
+              )}
             </section>
           </div>
           <aside className="dinner-card">
             <h2>Outside reports</h2>
             {value.pending.length ? (
-              value.pending.map((p) => (
-                <Link
-                  className="dinner-event"
-                  href={`/app/rooms/${p.roomId}?view=money`}
-                  key={p.reportId}
-                >
-                  <div>
-                    <h3>
-                      {p.needsConfirmation
-                        ? "Review receipt outside Tab"
-                        : "Awaiting recipient confirmation"}
-                    </h3>
-                    <p className="dinner-note">
-                      Reported paid outside Tab · {usd(p.cents)}. Still
-                      outstanding until {p.recipient} confirms.
+              value.pending.map((p) =>
+                p.hasRoomAccess === false ? (
+                  <div className="dinner-event" key={p.reportId}>
+                    <p>
+                      Reported paid outside Tab · {usd(p.cents)} · awaiting{" "}
+                      {p.recipient}. Room access ended; contact the room owner
+                      to coordinate review.
                     </p>
                   </div>
-                </Link>
-              ))
+                ) : (
+                  <Link
+                    className="dinner-event"
+                    href={`/app/rooms/${p.roomId}?view=money`}
+                    key={p.reportId}
+                  >
+                    <div>
+                      <h3>
+                        {p.needsConfirmation
+                          ? "Review receipt outside Tab"
+                          : "Awaiting recipient confirmation"}
+                      </h3>
+                      <p className="dinner-note">
+                        Reported paid outside Tab · {usd(p.cents)}. Still
+                        outstanding until {p.recipient} confirms.
+                      </p>
+                    </div>
+                  </Link>
+                ),
+              )
             ) : (
               <p className="dinner-note">
                 No unconfirmed outside reports. Record one in a room’s Money
@@ -159,7 +183,7 @@ export function Wallet() {
           </aside>
         </div>
       ) : (
-        <p role="status">Loading your money home…</p>
+        <PageSkeleton />
       )}
     </>
   );

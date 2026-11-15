@@ -1,9 +1,12 @@
-import { RoomView, usd } from "./model";
+import { RoomView, usd, memberName } from "./model";
 export function outsideActivity(room: RoomView) {
   return room.expenses.flatMap((expense) =>
     expense.status !== "confirmed"
       ? []
-      : expense.obligations.flatMap((obligation) =>
+      : [
+          ...(expense.history ?? []).flatMap((h) => h.obligations),
+          ...expense.obligations,
+        ].flatMap((obligation) =>
           (obligation.outsideReports ?? []).flatMap((report) => {
             const base = {
               roomId: room.id,
@@ -61,12 +64,32 @@ export function pendingOutside(rooms: RoomView[], userId: string) {
                     reportId: report.id,
                     cents: obligation.cents,
                     needsConfirmation: obligation.creditorId === userId,
-                    recipient:
-                      room.members.find(
-                        (m) => m.userId === obligation.creditorId,
-                      )?.name ?? "the recipient",
+                    recipient: memberName(room, obligation.creditorId),
                   })),
           ),
     ),
   );
+}
+
+export function coordinationActivity(room: RoomView) {
+  return [
+    ...(room.removals ?? []).map((m) => ({
+      id: m.id,
+      roomId: room.id,
+      title: `${m.name} removed from room`,
+      detail: "Financial history and obligations preserved",
+      at: m.removedAt,
+    })),
+    ...room.expenses.flatMap((e) =>
+      e.status !== "confirmed"
+        ? []
+        : (e.corrections ?? []).map((c) => ({
+            id: c.id,
+            roomId: room.id,
+            title: `Expense correction ${c.status} · ${c.fields.description}`,
+            detail: `${usd(c.fields.totalCents)} · ${c.status === "applied" ? "Version recorded; no payment" : "Balances unchanged"}`,
+            at: c.appliedAt ?? c.createdAt,
+          })),
+    ),
+  ];
 }

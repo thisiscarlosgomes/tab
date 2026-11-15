@@ -2,7 +2,7 @@ import "./dom";
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-test("document theme and body-level dialogs are light on dinner routes and classes restore on legacy navigation", async () => {
+test("document theme and body-level dialogs are dark on dinner routes and classes restore on legacy navigation", async () => {
   const { applyDocumentTheme, isDinnerPath } = await import(
     "../../src/lib/dinner/theme"
   );
@@ -20,16 +20,16 @@ test("document theme and body-level dialogs are light on dinner routes and class
   try {
     document.documentElement.className = "dark";
     applyDocumentTheme(document, isDinnerPath("/app/rooms/test"));
-    assert.equal(document.documentElement.classList.contains("dark"), false);
+    assert.equal(document.documentElement.classList.contains("dark"), true);
     assert.equal(
       window.getComputedStyle(document.body).backgroundColor,
-      "rgb(250, 249, 246)",
+      "rgb(11, 11, 11)",
     );
     assert.equal(
       window.getComputedStyle(portal).backgroundColor,
-      "rgb(255, 255, 255)",
+      "rgb(27, 27, 27)",
     );
-    assert.equal(meta.content, "#FAF9F6");
+    assert.equal(meta.content, "#0B0B0B");
     applyDocumentTheme(document, isDinnerPath("/wallet"));
     assert.equal(document.documentElement.classList.contains("dark"), true);
     assert.equal(

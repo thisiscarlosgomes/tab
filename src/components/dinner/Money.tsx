@@ -1,8 +1,14 @@
 "use client";
-import { useState, type FormEvent } from "react";
+import { canDeleteSplit } from "@/lib/dinner/model";
+import { useEffect, useState, type FormEvent } from "react";
 import { z } from "zod";
+import Link from "next/link";
+import { planSchema, type PlanView } from "@/lib/dinner/plans/model";
 import {
   Expense,
+  Correction,
+  correctionSchema,
+  memberName,
   RoomView,
   obligations,
   parseUsd,
@@ -13,22 +19,92 @@ import {
 import { expenseSchema } from "@/lib/dinner/client-schema";
 import { useDinner } from "./DinnerShell";
 import { OutsidePayments } from "./OutsidePayments";
+import { Corrections } from "./Corrections";
 import { PrivateImage } from "./PrivateImage";
+
+export function OutingMoney({
+  room,
+  refresh,
+  planId,
+}: {
+  room: RoomView;
+  refresh: () => Promise<void>;
+  planId: string;
+}) {
+  const { api } = useDinner();
+  const [plan, setPlan] = useState<PlanView | null>(null);
+  const [error, setError] = useState("");
+  const [attempt, setAttempt] = useState(0);
+  useEffect(() => {
+    let active = true;
+    setPlan(null);
+    setError("");
+    void api(`/rooms/${room.id}/plans/${planId}`, {}, planSchema)
+      .then((p) => {
+        if (!active) return;
+        if (p.state !== "completed")
+          setError("Complete this outing before preparing its expense.");
+        else setPlan(p);
+      })
+      .catch((e) => {
+        if (active)
+          setError(e instanceof Error ? e.message : "Could not load outing");
+      });
+    return () => {
+      active = false;
+    };
+  }, [api, room.id, planId, attempt]);
+  const linked = room.expenses.find((e) => e.sourcePlanId === planId);
+  return (
+    <>
+      <Link href={`/app/rooms/${room.id}?view=plan&plan=${planId}`}>
+        ← Back to outing
+      </Link>
+      {error ? (
+        <p role="alert">
+          {error}{" "}
+          <button onClick={() => setAttempt((n) => n + 1)}>Retry</button>
+        </p>
+      ) : !plan ? (
+        <p role="status">Opening outing expense…</p>
+      ) : (
+        <>
+          {linked && (
+            <p role="status">
+              This outing already has an expense below. Review it in Money.
+            </p>
+          )}
+          <Money
+            key={`${plan.id}-${linked?.id ?? "new"}`}
+            room={room}
+            refresh={refresh}
+            source={linked ? undefined : plan}
+          />
+        </>
+      )}
+    </>
+  );
+}
 
 export function Money({
   room,
   refresh,
+  source,
 }: {
   room: RoomView;
   refresh: () => Promise<void>;
+  source?: PlanView;
 }) {
   const { api, me } = useDinner();
-  const [showForm, setShowForm] = useState(false);
+  const [showForm, setShowForm] = useState(!!source);
+  const [fromOuting, setFromOuting] = useState(!!source);
   const [editing, setEditing] = useState<Expense | null>(null);
-  const [description, setDescription] = useState("");
+  const [description, setDescription] = useState(source?.title ?? "");
   const [total, setTotal] = useState("");
-  const [payer, setPayer] = useState(me?.id ?? "");
-  const [selected, setSelected] = useState<string[]>([]);
+  const [payer, setPayer] = useState(source ? "" : (me?.id ?? ""));
+  const [selected, setSelected] = useState<string[]>(
+    source?.confirmedIds ?? [],
+  );
   const [shares, setShares] = useState<Record<string, string>>({});
   const [receipt, setReceipt] = useState("");
   const [clientId, setClientId] = useState(() => crypto.randomUUID());
@@ -36,8 +112,7 @@ export function Money({
   const [flagging, setFlagging] = useState<string | null>(null);
   const [flagReason, setFlagReason] = useState("");
   const [busy, setBusy] = useState(false);
-  const name = (id: string) =>
-    room.members.find((m) => m.userId === id)?.name ?? "Member";
+  const name = (id: string) => memberName(room, id);
   function even(amount: string, ids: string[]) {
     const cents = parseUsd(amount);
     if (cents !== null)
@@ -50,30 +125,33 @@ export function Money({
         ),
       );
   }
-  function start(expense?: Expense) {
+  function start(expense?: Expense, correction?: Correction) {
+    const fields = correction?.fields ?? expense;
+    setFromOuting(false);
     setEditing(expense ?? null);
-    setDescription(expense?.description ?? "");
-    setTotal(expense ? (expense.totalCents / 100).toFixed(2) : "");
-    setPayer(expense?.payerId ?? me?.id ?? "");
-    const ids = expense?.shares.map((s) => s.userId) ?? [];
+    setDescription(fields?.description ?? "");
+    setTotal(fields ? (fields.totalCents / 100).toFixed(2) : "");
+    setPayer(fields?.payerId ?? me?.id ?? "");
+    const ids = fields?.shares.map((s) => s.userId) ?? [];
     setSelected(ids);
     setShares(
       Object.fromEntries(
-        expense?.shares.map((s) => [s.userId, (s.cents / 100).toFixed(2)]) ??
-          [],
+        fields?.shares.map((s) => [s.userId, (s.cents / 100).toFixed(2)]) ?? [],
       ),
     );
-    setReceipt(expense?.attachmentId ?? "");
-    setClientId(expense?.clientId ?? crypto.randomUUID());
+    setReceipt(fields?.attachmentId ?? "");
+    setClientId(
+      expense?.status === "draft" ? expense.clientId : crypto.randomUUID(),
+    );
     setError("");
     setShowForm(true);
   }
   async function save(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const totalCents = parseUsd(total);
-    if (!totalCents || !selected.length) {
+    if (!totalCents || !selected.length || !payer) {
       setError(
-        "Enter a USD amount and select at least one accepted participant.",
+        "Enter the actual USD amount, choose who paid and select at least one accepted participant.",
       );
       return;
     }
@@ -94,11 +172,16 @@ export function Money({
     setError("");
     try {
       await api(
-        `/rooms/${room.id}/expenses${editing ? `/${editing.id}` : ""}`,
+        fromOuting && source
+          ? `/rooms/${room.id}/plans/${source.id}/expense`
+          : `/rooms/${room.id}/expenses${editing ? `/${editing.id}${editing.status === "confirmed" ? "/corrections" : ""}` : ""}`,
         {
-          method: editing ? "PATCH" : "POST",
+          method: editing?.status === "draft" ? "PATCH" : "POST",
           body: JSON.stringify({
             clientId,
+            ...(editing
+              ? { expectedVersion: editing.version }
+              : {}),
             description,
             totalCents,
             payerId: payer,
@@ -106,15 +189,34 @@ export function Money({
             ...(receipt ? { attachmentId: receipt } : {}),
           }),
         },
-        expenseSchema,
+        z.union([expenseSchema, correctionSchema]),
       );
       setShowForm(false);
+      setFromOuting(false);
       await refresh();
     } catch (e) {
       setError(e instanceof Error ? e.message : "Could not save draft");
     } finally {
       setBusy(false);
     }
+  }
+  async function deleteSplit(expense: Expense) {
+    if (!window.confirm(`Delete “${expense.description}”? This removes its outstanding balances for everyone. No money moves.`)) return;
+    setBusy(true); setError("");
+    try {
+      await api(`/rooms/${room.id}/expenses/${expense.id}/delete`, { method: "POST", body: JSON.stringify({ clientId: expense.id, expectedVersion: expense.version }) }, expenseSchema);
+      await refresh();
+    } catch (e) { setError(e instanceof Error ? e.message : "Could not delete split"); }
+    finally { setBusy(false); }
+  }
+  async function cancelDraft(expense: Expense) {
+    if (!window.confirm("Cancel this draft bill? Its history stays visible. No money will move.")) return;
+    setBusy(true); setError("");
+    try {
+      await api(`/rooms/${room.id}/expenses/${expense.id}/cancel`, { method: "POST", body: JSON.stringify({ clientId: expense.id, expectedVersion: expense.version }) }, expenseSchema);
+      await refresh();
+    } catch (e) { setError(e instanceof Error ? e.message : "Could not cancel bill"); }
+    finally { setBusy(false); }
   }
   async function confirm(expense: Expense) {
     setBusy(true);
@@ -170,6 +272,18 @@ export function Money({
       cents: (previous?.cents ?? 0) + o.cents,
     });
   }
+  const formMembers = [
+    ...room.members,
+    ...(editing?.status === "confirmed"
+      ? (room.removals ?? []).filter(
+          (m, i, all) =>
+            !room.members.some((a) => a.userId === m.userId) &&
+            all.findIndex((a) => a.userId === m.userId) === i &&
+            (editing.payerId === m.userId ||
+              editing.shares.some((s) => s.userId === m.userId)),
+        )
+      : []),
+  ];
   const imageIds = [...new Set(room.messages.flatMap((m) => m.attachmentIds))];
   return (
     <div className="dinner-stack">
@@ -200,7 +314,22 @@ export function Money({
       )}
       {showForm && (
         <section className="dinner-card">
-          <h2>{editing ? "Edit expense draft" : "Add an expense"}</h2>
+          <h2>
+            {editing?.status === "confirmed"
+              ? "Correct this expense"
+              : editing
+              ? "Edit expense draft"
+              : fromOuting
+                ? "Expense from completed outing"
+                : "Add an expense"}
+          </h2>
+          {fromOuting && (
+            <p className="dinner-note">
+              Confirmed attendees are selected as a starting point. Check who
+              actually shared the cost, enter the actual bill and choose who
+              paid. The plan budget is only an estimate.
+            </p>
+          )}
           <form className="dinner-form" onSubmit={save}>
             <label>
               What was it for?
@@ -229,10 +358,13 @@ export function Money({
               <label>
                 Who paid?
                 <select
+                  aria-label="Who paid?"
+                  required
                   value={payer}
                   onChange={(e) => setPayer(e.target.value)}
                 >
-                  {room.members.map((m) => (
+                  <option value="" disabled>Choose who paid</option>
+                  {formMembers.map((m) => (
                     <option key={m.userId} value={m.userId}>
                       {m.name}
                     </option>
@@ -253,9 +385,10 @@ export function Money({
               </div>
               <p className="dinner-note">
                 Select accepted members only. Pending invitees are never added
-                automatically.
+                automatically. Corrections may retain or reduce a removed
+                member’s existing share; they cannot add debt to that person.
               </p>
-              {room.members.map((m) => (
+              {formMembers.map((m) => (
                 <div className="dinner-share" key={m.userId}>
                   <label>
                     <input
@@ -310,12 +443,17 @@ export function Money({
               </label>
             )}
             <p className="dinner-note">
-              Save first, then review before confirming. Drafts do not create
-              obligations. Recording a share never authorizes payment.
+              {editing?.status === "confirmed"
+                ? "Save the proposal, then review before accepting. Unconfirmed corrections do not change balances. No payment is authorized."
+                : "Save first, then review before confirming. Drafts do not create obligations. Recording a share never authorizes payment."}
             </p>
             <div className="dinner-actions">
               <button disabled={busy} type="submit">
-                {busy ? "Saving…" : "Save draft"}
+                {busy
+                  ? "Saving…"
+                  : editing?.status === "confirmed"
+                    ? "Save correction proposal"
+                    : "Save draft"}
               </button>
               <button
                 type="button"
@@ -350,6 +488,7 @@ export function Money({
         )}
       </section>
       {room.expenses
+        .filter(expense => !(expense.status === "cancelled" && expense.deletedAt))
         .slice()
         .reverse()
         .map((expense) => (
@@ -357,7 +496,7 @@ export function Money({
             <div className="dinner-heading">
               <div>
                 <span className="dinner-chip">
-                  {expense.status === "draft"
+                  {expense.status === "cancelled" ? "Cancelled bill" : expense.status === "draft"
                     ? "Unconfirmed draft"
                     : "Confirmed expense · obligation record"}
                 </span>
@@ -373,6 +512,13 @@ export function Money({
                 {usd(expense.totalCents)}
               </div>
             </div>
+            {expense.sourcePlanId && (
+              <Link
+                href={`/app/rooms/${room.id}?view=plan&plan=${expense.sourcePlanId}`}
+              >
+                From completed outing ↗
+              </Link>
+            )}
             {expense.attachmentId && (
               <PrivateImage roomId={room.id} id={expense.attachmentId} />
             )}
@@ -395,7 +541,7 @@ export function Money({
                 </span>
               </p>
             ))}
-            {expense.status === "draft" ? (
+            {expense.status === "cancelled" ? <p className="dinner-note">Cancelled. Kept in history; no debt or payment was created.</p> : expense.status === "draft" ? (
               expense.creatorId === me?.id ? (
                 <>
                   <p className="dinner-note" style={{ marginTop: 14 }}>
@@ -409,6 +555,7 @@ export function Money({
                     >
                       Confirm expense
                     </button>
+                    <button className="dinner-quiet" disabled={busy} onClick={() => void cancelDraft(expense)}>Cancel bill</button>
                     <button
                       className="dinner-quiet"
                       disabled={busy}
@@ -429,6 +576,9 @@ export function Money({
                   No in-app settlement in this beta. Outside receipt records
                   appear below.
                 </span>
+                {expense.creatorId === me?.id && canDeleteSplit(expense) && (
+                  <button className="dinner-quiet" disabled={busy} onClick={() => void deleteSplit(expense)}>Delete split</button>
+                )}
                 {expense.shares.some((s) => s.userId === me?.id) && (
                   <button
                     className="dinner-small dinner-quiet"
@@ -477,6 +627,23 @@ export function Money({
                   </button>
                 </div>
               </form>
+            )}
+            {expense.status === "confirmed" && (
+              <>
+                <button
+                  className="dinner-quiet"
+                  disabled={busy}
+                  onClick={() => start(expense)}
+                >
+                  Correct this expense
+                </button>
+                <Corrections
+                  expense={expense}
+                  room={room}
+                  refresh={refresh}
+                  edit={(c) => start(expense, c)}
+                />
+              </>
             )}
             {expense.status === "confirmed" && (
               <OutsidePayments

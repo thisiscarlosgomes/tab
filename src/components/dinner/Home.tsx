@@ -1,12 +1,19 @@
 "use client";
+import { PageSkeleton } from "./PageSkeleton";
 
 import { useCallback, useEffect, useState, type FormEvent } from "react";
 import Link from "next/link";
+import { Users } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { z } from "zod";
 import { listSchema, roomSchema } from "@/lib/dinner/client-schema";
-import { outsideActivity, pendingOutside } from "@/lib/dinner/projections";
+import {
+  outsideActivity,
+  pendingOutside,
+  coordinationActivity,
+} from "@/lib/dinner/projections";
 import { totals, usd } from "@/lib/dinner/model";
+import { PlanAttention } from "./Plans";
 import { PrivateReminders } from "./PrivateReminders";
 import { useDinner } from "./DinnerShell";
 
@@ -18,6 +25,7 @@ export function Home({
   const { api, me } = useDinner();
   const router = useRouter();
   const [data, setData] = useState<z.infer<typeof listSchema> | null>(null);
+  const [search, setSearch] = useState("");
   const [error, setError] = useState("");
   const [creating, setCreating] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -120,6 +128,7 @@ export function Home({
           at: m.joinedAt,
         })),
       ...outsideActivity(r),
+      ...coordinationActivity(r),
       ...r.expenses.map((e) => ({
         id: e.id,
         roomId: r.id,
@@ -129,14 +138,19 @@ export function Home({
       })),
     ])
     .sort((a, b) => b.at.localeCompare(a.at));
+  const visibleRooms = (data?.rooms ?? []).filter((r) =>
+    `${r.name} ${r.purpose}`
+      .toLowerCase()
+      .includes(search.trim().toLowerCase()),
+  );
   const roomList = (
     <section className="dinner-card">
       <div className="dinner-heading">
         <h2>Your rooms</h2>
-        <span className="dinner-note">{data?.rooms.length ?? 0} together</span>
+        <span className="dinner-note">{data?.rooms.length ?? 0} rooms</span>
       </div>
-      {data?.rooms.length ? (
-        data.rooms.map((r) => (
+      {visibleRooms.length ? (
+        visibleRooms.map((r) => (
           <Link
             className="dinner-room-row"
             href={`/app/rooms/${r.id}`}
@@ -166,15 +180,19 @@ export function Home({
           </Link>
         ))
       ) : (
-        <div>
-          <p>Every good plan starts with your people.</p>
+        <div className="dinner-empty">
+          <Users size={30} strokeWidth={1.5} aria-hidden="true" />
+          <p>{search ? "No rooms match your search" : "No rooms yet"}</p>
           <p className="dinner-note">
-            Make a room for your next dinner. Conversation and expenses stay
-            together for the next one.
+            {search
+              ? "Try another room name or plan."
+              : "Create a room for your next dinner, trip or shared plan."}
           </p>
-          <button onClick={() => setCreating(true)}>
-            Create your first room
-          </button>
+          {!search && (
+            <button className="dinner-quiet" onClick={() => setCreating(true)}>
+              Create your first room
+            </button>
+          )}
         </div>
       )}
     </section>
@@ -183,11 +201,6 @@ export function Home({
     <>
       <div className="dinner-heading">
         <div>
-          <p className="dinner-eyebrow">
-            {destination === "today"
-              ? `A little more together, ${me.name.split(" ")[0]}`
-              : "Your shared context"}
-          </p>
           <h1>
             {destination === "today"
               ? "Today"
@@ -195,13 +208,6 @@ export function Home({
                 ? "Rooms"
                 : "Activity"}
           </h1>
-          <p className="dinner-muted">
-            {destination === "today"
-              ? "Less chasing. More making plans."
-              : destination === "rooms"
-                ? "A place for this plan. And the next one."
-                : "What happened, all in one place."}
-          </p>
         </div>
         {destination !== "activity" && (
           <button onClick={() => setCreating(!creating)}>
@@ -209,6 +215,17 @@ export function Home({
           </button>
         )}
       </div>
+      {destination === "rooms" && (
+        <label className="dinner-search">
+          <span className="sr-only">Search rooms</span>
+          <input
+            type="search"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Search rooms"
+          />
+        </label>
+      )}
       {error && (
         <div role="alert" className="dinner-error">
           {error}
@@ -219,7 +236,7 @@ export function Home({
       )}
       {creating && (
         <section className="dinner-card" style={{ marginBottom: 24 }}>
-          <h2>A new reason to get together</h2>
+          <h2>New room</h2>
           <form className="dinner-form" onSubmit={create}>
             <label>
               Room name
@@ -251,7 +268,7 @@ export function Home({
           </form>
         </section>
       )}
-      {!data && !error && <p role="status">Finding your rooms…</p>}
+      {!data && !error && <PageSkeleton />}
       {data && destination === "today" && (
         <div className="dinner-grid">
           <div className="dinner-stack">
@@ -274,6 +291,7 @@ export function Home({
             {roomList}
           </div>
           <aside className="dinner-stack">
+            <PlanAttention />
             <PrivateReminders />
             <section className="dinner-card">
               <h2>Needs your attention</h2>
@@ -386,14 +404,6 @@ export function Home({
                     </p>
                   </>
                 )}
-            </section>
-            <section className="dinner-card">
-              <p className="dinner-eyebrow">A room for the whole plan</p>
-              <h2>Make it a regular thing.</h2>
-              <p className="dinner-note">
-                Your conversation, receipts and expenses stay here. Next Friday
-                is already one step easier.
-              </p>
             </section>
           </aside>
         </div>

@@ -1,5 +1,12 @@
+import { awarenessStateSchema } from "./agent/awareness-schema";
 import { z } from "zod";
-import { expenseInput, obligationSchema } from "./model";
+import {
+  expenseInput,
+  obligationSchema,
+  correctionSchema,
+  expenseHistorySchema,
+  removalSchema,
+} from "./model";
 
 export const meSchema = z.object({ id: z.string(), name: z.string() });
 const messageBase = z.object({
@@ -18,10 +25,12 @@ export const messageSchema = z.union([
   messageBase.extend({
     kind: z.literal("tab"),
     requestedBy: z.string(),
+    expectsReply: z.boolean().optional(),
     runId: z.string(),
   }),
 ]);
 const expenseBase = expenseInput.extend({
+  sourcePlanId: z.string().uuid().optional(),
   id: z.string(),
   creatorId: z.string(),
   createdAt: z.string(),
@@ -30,11 +39,14 @@ const expenseBase = expenseInput.extend({
 });
 export const expenseSchema = z.discriminatedUnion("status", [
   expenseBase.extend({ status: z.literal("draft") }),
+  expenseBase.extend({ status: z.literal("cancelled"), deletedAt: z.string().optional(), cancelledAt: z.string(), cancelledBy: z.string(), cancellationId: z.string() }).strip(),
   expenseBase.extend({
     status: z.literal("confirmed"),
     confirmedAt: z.string(),
     confirmationId: z.string(),
     obligations: z.array(obligationSchema),
+    history: z.array(expenseHistorySchema).optional(),
+    corrections: z.array(correctionSchema).optional(),
   }),
 ]);
 export const roomSchema = z.object({
@@ -43,6 +55,7 @@ export const roomSchema = z.object({
   name: z.string(),
   purpose: z.string(),
   ownerId: z.string(),
+  assistance: awarenessStateSchema.optional(),
   createdAt: z.string(),
   members: z.array(
     z.object({
@@ -53,6 +66,7 @@ export const roomSchema = z.object({
       readSeq: z.number(),
     }),
   ),
+  removals: z.array(removalSchema).optional(),
   messages: z.array(messageSchema),
   expenses: z.array(expenseSchema),
   invitations: z.array(

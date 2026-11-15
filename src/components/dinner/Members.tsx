@@ -1,4 +1,5 @@
 "use client";
+import { roomSchema } from "@/lib/dinner/client-schema";
 import { useState } from "react";
 import { z } from "zod";
 import { RoomView, invitationStatus } from "@/lib/dinner/model";
@@ -20,6 +21,10 @@ export function Members({
   refresh: () => Promise<void>;
 }) {
   const { api, me } = useDinner();
+  const [removing, setRemoving] = useState<{
+    userId: string;
+    clientId: string;
+  } | null>(null);
   const [link, setLink] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -27,6 +32,35 @@ export function Members({
     null,
   );
   const [copied, setCopied] = useState(false);
+  async function changeAssistance(mode: "mentions" | "smart") {
+    setBusy(true); setError("");
+    try {
+      await api(`/rooms/${room.id}/assistance`, { method: "PATCH", body: JSON.stringify({ mode }) }, roomSchema);
+      await refresh();
+    } catch (e) { setError(e instanceof Error ? e.message : "Could not update assistance"); }
+    finally { setBusy(false); }
+  }
+  async function remove() {
+    if (!removing) return;
+    setBusy(true);
+    setError("");
+    try {
+      await api(
+        `/rooms/${room.id}/members/${removing.userId}`,
+        {
+          method: "DELETE",
+          body: JSON.stringify({ clientId: removing.clientId }),
+        },
+        z.unknown(),
+      );
+      setRemoving(null);
+      await refresh();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Could not remove member");
+    } finally {
+      setBusy(false);
+    }
+  }
   async function invite(target?: { subject: string; username: string }) {
     setBusy(true);
     setError("");
@@ -90,6 +124,14 @@ export function Members({
   return (
     <div className="dinner-grid">
       <section className="dinner-card">
+        <label htmlFor="room-assistance">Tab assistance</label>
+        <select id="room-assistance" value={room.assistance?.mode ?? "smart"} disabled={busy || room.ownerId !== me?.id} onChange={e => void changeAssistance(e.target.value as "mentions" | "smart")}>
+          <option value="mentions">Mentions only</option>
+          <option value="smart">Smart assistance</option>
+        </select>
+        <p className="dinner-note">Smart assistance offers to prepare bills when the group agrees. You choose whether to proceed. Only the room owner can change this.</p>
+      </section>
+      <section className="dinner-card">
         <h2>Your people</h2>
         {room.members.map((m) => (
           <div className="dinner-room-row" key={m.userId}>
@@ -103,7 +145,56 @@ export function Members({
                 Accepted member{m.role === "owner" ? " · room owner" : ""}
               </p>
             </div>
+            {room.ownerId === me?.id && m.userId !== room.ownerId && (
+              <button
+                className="dinner-quiet"
+                disabled={busy}
+                onClick={() =>
+                  setRemoving({
+                    userId: m.userId,
+                    clientId: crypto.randomUUID(),
+                  })
+                }
+              >
+                Remove {m.name}
+              </button>
+            )}
           </div>
+        ))}
+        {removing && (
+          <div
+            className="dinner-outside-review"
+            role="group"
+            aria-label="Review member removal"
+          >
+            <h3>Remove from room?</h3>
+            <p>
+              They lose access to this room’s chat, images and Plan, including
+              earlier messages. Copies they already viewed cannot be recalled.
+              Their receipts, expense history, outside reports and obligations
+              stay recorded. Removal does not forgive debt or forfeit a refund
+              right. Their wallet keeps their totals; room ownership stays
+              unchanged.
+            </p>
+            <div className="dinner-actions">
+              <button disabled={busy} onClick={() => void remove()}>
+                Remove from room
+              </button>
+              <button
+                className="dinner-quiet"
+                disabled={busy}
+                onClick={() => setRemoving(null)}
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        )}
+        {(room.removals ?? []).map((m) => (
+          <p className="dinner-note" key={m.id}>
+            {m.name} · removed {new Date(m.removedAt).toLocaleDateString()} ·
+            financial history preserved
+          </p>
         ))}
         <p className="dinner-note">
           Room ownership is not spending authority. Nobody can move money here.

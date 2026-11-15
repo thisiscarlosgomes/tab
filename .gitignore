@@ -46,3 +46,10 @@ Brewfile.lock.json
 # IDE configs
 .idea/
 .vercel
+.env*
+
+# Isolated browser verification artifacts
+.test-artifacts/
+
+# Next generates this only for the isolated fixture
+tests/dinner/browser/next-env.d.ts

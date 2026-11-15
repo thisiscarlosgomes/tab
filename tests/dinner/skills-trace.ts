@@ -18,7 +18,7 @@ test("production dinner route includes every on-demand skill markdown asset", ()
     assert.ok(entry, `Missing deployed skill: ${name}`);
     assert.match(
       fs.readFileSync(path.resolve(path.dirname(trace), entry), "utf8"),
-      /version: "1.0"/,
+      /version: "1\.\d+"/,
     );
   }
 });

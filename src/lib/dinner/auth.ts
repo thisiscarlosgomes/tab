@@ -30,10 +30,12 @@ export async function verifyDinnerSession(
   try {
     const client = getPrivyServerClient();
     try {
+      // The room client sends an identity token containing the signed profile.
+      // SDK get verifies it locally using cached JWKS; no user API lookup.
+      raw = await client.users().get({ id_token: token });
+    } catch {
       const verified = await client.utils().auth().verifyAccessToken(token);
       raw = await client.users()._get(verified.user_id);
-    } catch {
-      raw = await client.users().get({ id_token: token });
     }
   } catch {
     throw new DinnerError(401, "Your session expired. Sign in again.");
