@@ -2069,3 +2069,56 @@ test("room creators can confirm and cancel their named bills in chat, but cannot
   assert.match(await ask("@Tab could you cancel Noodles?"), /Cancelled Noodles/);
   assert.equal((await dinner.memberRoom(r.id,alice)).expenses[0].status,"cancelled");
 });
+
+test("chat bill actions keep one durable audit reply, including retries and draft edits", async () => {
+  const r = await joined();
+  const { roomId, ...fields } = expense(r.id);
+  await dinner.draft(roomId, alice, { ...fields, clientId: randomUUID() });
+  const service = agent(async () => { throw new Error("Explicit bill commands should not call the model"); });
+  const ask = async (text: string) => {
+    const before = (await dinner.memberRoom(r.id, alice)).messages.length;
+    const source = await addressed(r.id, alice, text);
+    const result = await service.respond(alice, {kind:"room",roomId:r.id}, source.id);
+    const saved = await dinner.memberRoom(r.id, alice);
+    assert.equal(saved.messages.length, before + 2);
+    const replies = saved.messages.filter(m => m.kind === "tab" && m.runId === source.id);
+    assert.equal(replies.length, 1);
+    assert.equal(replies[0].text, result.text);
+    await service.respond(alice, {kind:"room",roomId:r.id}, source.id);
+    assert.equal((await dinner.memberRoom(r.id, alice)).messages.length, saved.messages.length);
+    return result.text;
+  };
+  assert.match(await ask('@Tab rename Noodles to "Dinner"'), /Updated Dinner/);
+  assert.match(await ask('@Tab change Dinner total to $25.01'), /Should I split/);
+  assert.equal((await dinner.memberRoom(r.id, alice)).expenses[0].totalCents, 2001);
+  assert.match(await ask('@Tab change Dinner total to $25.01 split equally'), /split equally/);
+  let bill = (await dinner.memberRoom(r.id, alice)).expenses[0];
+  assert.deepEqual(bill.shares.map(s => s.cents), [1251,1250]);
+  assert.match(await ask('@Tab change payer for Dinner to Bob'), /paid by Bob/);
+  bill = (await dinner.memberRoom(r.id, alice)).expenses[0];
+  assert.equal(bill.payerId, bob.id);
+  assert.match(await ask('@Tab confirm Dinner'), /Confirmed Dinner/);
+  assert.match(await ask('@Tab rename Dinner to "Lunch"'), /already confirmed/);
+  assert.equal((await dinner.memberRoom(r.id, alice)).expenses[0].description, "Dinner");
+  assert.match(await ask('@Tab cancel Dinner'), /Cancelled Dinner/);
+});
+
+test("private draft editing preserves permissions and does not change shares without an explicit split", async () => {
+  const r = await joined();
+  const {roomId,...fields} = expense(r.id);
+  await dinner.draft(roomId,alice,{...fields,clientId:randomUUID()});
+  const service = agent();
+  const ask = async (text:string, actor=alice) => {
+    const m=await service.personalSend(actor,{clientId:randomUUID(),text});
+    return (await service.respond(actor,{kind:"personal"},m.id)).text;
+  };
+  assert.match(await ask('rename Noodles to "Other"',bob),/creator/);
+  assert.match(await ask('change payer for Noodles to Unknown'),/current member/);
+  assert.match(await ask('change Noodles total to $30'),/Should I split/);
+  let bill=(await dinner.memberRoom(r.id,alice)).expenses[0];
+  assert.equal(bill.totalCents,2001);
+  assert.equal(bill.payerId,alice.id);
+  assert.match(await ask('change Noodles total to $30 split equally'),/Updated Noodles/);
+  bill=(await dinner.memberRoom(r.id,alice)).expenses[0];
+  assert.deepEqual(bill.shares.map(s=>s.cents),[1500,1500]);
+});

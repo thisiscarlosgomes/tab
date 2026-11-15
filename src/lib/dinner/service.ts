@@ -27,6 +27,8 @@ import {
   Obligation,
 } from "./model";
 
+export type BillChatReply = { sourceId: string; text: string };
+
 export interface RoomStore {
   insert(room: Room): Promise<Room>;
   get(id: string): Promise<Room | null>;
@@ -41,12 +43,14 @@ function same(a: unknown, b: unknown): boolean {
   return JSON.stringify(a) === JSON.stringify(b);
 }
 export class DinnerService {
-  private actionMessage(room: Room, actor: Actor, key: string, text: string) {
-    const runId = `action:${key}`;
+  private actionMessage(room: Room, actor: Actor, key: string, text: string, chat?: BillChatReply) {
+    if (chat && !room.messages.some(m => m.id === chat.sourceId && m.authorId === actor.id && m.kind !== "tab"))
+      fail(403, "A bill reply must belong to the requesting member message");
+    const runId = chat?.sourceId ?? `action:${key}`;
     if (room.messages.some(m => m.kind === "tab" && m.runId === runId)) return;
     if (room.messages.length >= 1000) fail(422, "This room has reached its message limit. History is preserved.");
     room.messages.push({ id: randomUUID(), clientId: runId, kind: "tab", authorId: TAB_BOT_ID,
-      requestedBy: actor.id, runId, text, expectsReply: false, replyTo: null, attachmentIds: [],
+      requestedBy: actor.id, runId, text: chat?.text ?? text, expectsReply: false, replyTo: chat?.sourceId ?? null, attachmentIds: [],
       createdAt: this.now(), seq: (room.messages.at(-1)?.seq ?? 0) + 1, reactions: [] });
   }
   private memberName(room: Room, id: string) {
@@ -459,7 +463,7 @@ export class DinnerService {
       return { readSeq: member.readSeq };
     });
   }
-  async draft(id: string, actor: Actor, raw: unknown, expenseId?: string, expectedVersion?: number, sourcePlanId?: string) {
+  async draft(id: string, actor: Actor, raw: unknown, expenseId?: string, expectedVersion?: number, sourcePlanId?: string, chat?: BillChatReply) {
     const input = expenseInput.parse(raw);
     return this.change(id, actor, (room) => {
       validateShares(input, room);
@@ -482,7 +486,7 @@ export class DinnerService {
         });
         if (input.attachmentId) expense.attachmentId = input.attachmentId;
         else delete expense.attachmentId;
-        this.actionMessage(room, actor, `bill-edited:${expense.id}:${expense.version}`, `${this.memberName(room, actor.id)} edited “${expense.description}” · ${usd(expense.totalCents)}.`);
+        this.actionMessage(room, actor, `bill-edited:${expense.id}:${expense.version}`, `${this.memberName(room, actor.id)} edited “${expense.description}” · ${usd(expense.totalCents)}.`, chat);
         return expense;
       }
       if (sourcePlanId) {
@@ -544,7 +548,7 @@ export class DinnerService {
       return expense;
     });
   }
-  async deleteSplit(id: string, actor: Actor, expenseId: string, requestId: string, expectedVersion: number) {
+  async deleteSplit(id: string, actor: Actor, expenseId: string, requestId: string, expectedVersion: number, chat?: BillChatReply) {
     retryId.parse(requestId);
     return this.change(id, actor, room => {
       const expense = room.expenses.find(e => e.id === expenseId) ?? fail(404, "Bill not found");
@@ -556,11 +560,11 @@ export class DinnerService {
       const deleted: Expense = { ...expense, status: "cancelled", deletedAt: this.now(),
         cancelledAt: this.now(), cancelledBy: actor.id, cancellationId: requestId, version: expense.version + 1 };
       room.expenses = room.expenses.map(e => e.id === expenseId ? deleted : e);
-      this.actionMessage(room, actor, `bill-deleted:${expense.id}`, `${this.memberName(room, actor.id)} deleted “${expense.description}”.`);
+      this.actionMessage(room, actor, `bill-deleted:${expense.id}`, `${this.memberName(room, actor.id)} deleted “${expense.description}”.`, chat);
       return deleted;
     });
   }
-  async cancelDraft(id: string, actor: Actor, expenseId: string, requestId: string, expectedVersion: number) {
+  async cancelDraft(id: string, actor: Actor, expenseId: string, requestId: string, expectedVersion: number, chat?: BillChatReply) {
     retryId.parse(requestId);
     return this.change(id, actor, (room) => {
       const expense = room.expenses.find((e) => e.id === expenseId) ?? fail(404, "Bill not found");
@@ -571,7 +575,7 @@ export class DinnerService {
       const cancelled: Expense = { ...expense, status: "cancelled", version: expense.version + 1,
         cancelledAt: this.now(), cancelledBy: actor.id, cancellationId: requestId };
       room.expenses = room.expenses.map((e) => e.id === expenseId ? cancelled : e);
-      this.actionMessage(room, actor, `bill-cancelled:${expense.id}`, `${this.memberName(room, actor.id)} cancelled “${expense.description}”.`);
+      this.actionMessage(room, actor, `bill-cancelled:${expense.id}`, `${this.memberName(room, actor.id)} cancelled “${expense.description}”.`, chat);
       return cancelled;
     });
   }
@@ -581,6 +585,7 @@ export class DinnerService {
     expenseId: string,
     requestId: string,
     expectedVersion: number,
+    chat?: BillChatReply,
   ) {
     retryId.parse(requestId);
     return this.change(id, actor, (room) => {
@@ -621,7 +626,7 @@ export class DinnerService {
       room.expenses = room.expenses.map((e) =>
         e.id === expenseId ? confirmed : e,
       );
-      this.actionMessage(room, actor, `bill-confirmed:${expense.id}`, `${this.memberName(room, actor.id)} confirmed “${expense.description}” · ${usd(expense.totalCents)}.`);
+      this.actionMessage(room, actor, `bill-confirmed:${expense.id}`, `${this.memberName(room, actor.id)} confirmed “${expense.description}” · ${usd(expense.totalCents)}.`, chat);
       return confirmed;
     });
   }
