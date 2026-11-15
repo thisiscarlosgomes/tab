@@ -52,7 +52,9 @@ export function DinnerShell({ children }: { children: ReactNode }) {
   const { ready, authenticated, login, logout, getAccessToken, user } = usePrivy();
   const { identityToken } = useIdentityToken();
   const pathname = usePathname();
-  const [me, setMe] = useState<z.infer<typeof meSchema> | null>(null);
+  const [identity, setIdentity] = useState<{ accountId: string; value: z.infer<typeof meSchema> } | null>(null);
+  const accountId = authenticated ? user?.id : undefined;
+  const me = accountId && identity?.accountId === accountId ? identity.value : null;
   const [error, setError] = useState("");
   const readOnce = useMemo(
     () => createSingleFlight(),
@@ -166,13 +168,12 @@ export function DinnerShell({ children }: { children: ReactNode }) {
     [identityToken, getAccessToken],
   );
   useEffect(() => {
-    setMe(null);
     setError("");
-    if (!authenticated) return;
+    if (!accountId) { setIdentity(null); return; }
     let active = true;
     void api("/me", {}, meSchema)
       .then((value) => {
-        if (active) setMe(value);
+        if (active) setIdentity({ accountId, value });
       })
       .catch((e: unknown) => {
         if (active)
@@ -183,7 +184,7 @@ export function DinnerShell({ children }: { children: ReactNode }) {
     return () => {
       active = false;
     };
-  }, [api, authenticated]);
+  }, [api, accountId]);
   const publicInvite = pathname.startsWith("/app/invite/");
   return (
     <DinnerFrame

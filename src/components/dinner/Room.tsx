@@ -3,7 +3,7 @@ import { PlanProposalReview } from "./PlanProposalCards";
 import { Plans } from "./Plans";
 import { PageSkeleton } from "./PageSkeleton";
 import { RoomPlan } from "./Coordination";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useState, useRef } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { roomSchema } from "@/lib/dinner/client-schema";
@@ -15,7 +15,8 @@ import { Members } from "./Members";
 
 export function Room({ id }: { id: string }) {
   const { api, me } = useDinner();
-  const [room, setRoom] = useState<RoomView | null>(null);
+  const [loadedRoom, setRoom] = useState<RoomView | null>(null);
+  const room = loadedRoom?.id === id ? loadedRoom : null;
   const router = useRouter();
   const search = useSearchParams();
   const requestedView = search.get("view") ?? "conversation";
@@ -27,15 +28,19 @@ export function Room({ id }: { id: string }) {
   const setView = (next: string) =>
     router.push(`/app/rooms/${id}?view=${next}`);
   const [error, setError] = useState("");
+  const refreshVersion = useRef(0);
 
   const refresh = useCallback(async () => {
+    const version = ++refreshVersion.current;
     try {
       const value = await api(`/rooms/${id}`, {}, roomSchema);
+      if (version !== refreshVersion.current) return;
       setRoom((current) =>
-        current && current.revision > value.revision ? current : value,
+        current?.id === value.id && current.revision >= value.revision ? current : value,
       );
       setError("");
     } catch (e) {
+      if (version !== refreshVersion.current) return;
       if (e instanceof DinnerError && [401, 403, 404].includes(e.status))
         setRoom(null);
       setError(e instanceof Error ? e.message : "Could not refresh room");
@@ -51,6 +56,7 @@ export function Room({ id }: { id: string }) {
     window.addEventListener("online", sync);
     document.addEventListener("visibilitychange", sync);
     return () => {
+      refreshVersion.current++;
       clearInterval(timer);
       window.removeEventListener("online", sync);
       document.removeEventListener("visibilitychange", sync);

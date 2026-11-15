@@ -59,29 +59,29 @@ export class MongoRoomStore implements RoomStore {
       { projection: { _id: 0 } },
     );
   }
-  async list(userId: string, subject: string | null) {
+  async list(userId: string, subject: string | null, mode?: "summary" | "financial") {
     await this.ready;
-    return this.rooms
-      .find(
-        subject
-          ? {
-              $or: [
-                { "members.userId": userId },
-                { "removals.userId": userId },
-                { "invitations.targetSubject": subject },
-              ],
-            }
-          : {
-              $or: [
-                { "members.userId": userId },
-                { "removals.userId": userId },
-              ],
-            },
-        { projection: { _id: 0 } },
-      )
-      .sort({ createdAt: -1 })
-      .limit(100)
-      .toArray();
+    const match = { $or: [
+      { "members.userId": userId },
+      { "removals.userId": userId },
+      ...(subject ? [{ "invitations.targetSubject": subject }] : []),
+    ] };
+    // Compute chat badges in Mongo; dashboards and money views never need history.
+    return this.rooms.aggregate<Room & { unread?: number; lastMessage?: string | null }>([
+      { $match: match }, { $sort: { createdAt: -1 } }, { $limit: 100 },
+      ...(mode === "summary" ? [{ $set: {
+        unread: { $let: {
+          vars: { member: { $arrayElemAt: [{ $filter: { input: "$members", as: "m", cond: { $eq: ["$$m.userId", userId] } } }, 0] } },
+          in: { $size: { $filter: { input: "$messages", as: "m", cond: { $and: [
+            { $gt: ["$$m.seq", { $ifNull: ["$$member.readSeq", 0] }] },
+            { $ne: ["$$m.authorId", userId] },
+          ] } } } },
+        } },
+        lastMessage: { $ifNull: [{ $arrayElemAt: ["$messages.text", -1] }, null] },
+      } }] : []),
+      ...(mode ? [{ $set: { messages: [] } }] : []),
+      { $project: { _id: 0 } },
+    ]).toArray();
   }
   async compareAndSwap(room: Room, revision: number) {
     await this.ready;

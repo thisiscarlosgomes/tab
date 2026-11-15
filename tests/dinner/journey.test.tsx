@@ -658,3 +658,34 @@ test("Confirm on a new bill card skips editing and posts a single group notice",
   assert.equal(saved.expenses[0].status, "confirmed");
   assert.equal(saved.messages.filter(m => m.text.includes("Alice confirmed “Quick dinner” · $1.20.")).length, 1);
 });
+
+test("Ask Tab keeps the user's message visible before its reply when an older poll arrives late", { timeout: 20000 }, async (t) => {
+  Object.defineProperty(document, "visibilityState", { value: "visible", configurable: true });
+  t.after(() => { Object.defineProperty(document, "visibilityState", { value: "hidden", configurable: true }); });
+  let releasePoll: (() => void) | undefined;
+  let signalPoll: () => void = () => {};
+  const pollStarted = new Promise<void>(resolve => { signalPoll = resolve; });
+  let sessionReads = 0;
+  const request = async <T,>(path: string, init: RequestInit, schema: z.ZodType<T>): Promise<T> => {
+    const result = await api(path, init, schema);
+    if (path === "/agent/session" && ++sessionReads === 2) {
+      signalPoll();
+      await new Promise<void>(resolve => { releasePoll = resolve; });
+    }
+    return result;
+  };
+  render(<DinnerContext.Provider value={{ api: request, me: { id: alice.id, name: alice.name }, image: async () => new Blob() }}><PersonalAgent /></DinnerContext.Provider>);
+  await screen.findByLabelText("Message Tab");
+  await act(async () => { await pollStarted; });
+  fireEvent.change(screen.getByLabelText("Message Tab"), { target: { value: "How are things?" } });
+  fireEvent.click(screen.getByRole("button", { name: "Ask Tab" }));
+  assert.ok(screen.getByText("How are things?"));
+  await screen.findByText("Here is your verified summary. Nothing has been paid.");
+  await act(async () => { releasePoll?.(); });
+  const log = screen.getByRole("log");
+  assert.ok(log.textContent!.indexOf("How are things?") < log.textContent!.indexOf("Here is your verified summary."));
+  assert.equal(within(log).getAllByText("How are things?").length, 1);
+  await agent.clearPersonalChat(alice);
+  await waitFor(() => assert.ok(!within(log).queryByText("How are things?")), { timeout: 7000 });
+  assert.ok(!within(log).queryByText("Here is your verified summary. Nothing has been paid."));
+});

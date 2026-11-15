@@ -1,3 +1,4 @@
+import { personalActionReply } from "./personal-actions";
 import { resolveSlot } from "../plans/time";
 import { isLocalRoomReply } from "./balance-reply";
 import { plainAssistantText } from "./plain-text";
@@ -149,27 +150,21 @@ export class DinnerAgentService {
   }
   async session(actor: Actor) {
     await this.ready;
-    const session = await this.db
-      .collection<Session>("dinner-agent-sessions")
-      .findOne({ userId: actor.id });
-    const proposals = await this.db
-      .collection<Proposal>("dinner-agent-proposals")
-      .find({ userId: actor.id }, { projection: { _id: 0 } })
-      .sort({ createdAt: -1 })
-      .limit(100)
-      .toArray();
+    const [session, proposals, planProposals] = await Promise.all([
+      this.db.collection<Session>("dinner-agent-sessions").findOne({ userId: actor.id }),
+      this.db.collection<Proposal>("dinner-agent-proposals")
+        .find({ userId: actor.id }, { projection: { _id: 0 } })
+        .sort({ createdAt: -1 }).limit(100).toArray(),
+      this.db.collection<PlanProposal>("dinner-agent-plan-proposals")
+        .find({ userId: actor.id }, { projection: { _id: 0 } })
+        .sort({ createdAt: -1 }).limit(50).toArray(),
+    ]);
     const rooms = new Map<string, Awaited<ReturnType<DinnerService["memberRoom"]>>>();
     for (const p of proposals.filter(p => p.publication)) {
       if (rooms.has(p.roomId)) continue;
       try { rooms.set(p.roomId, await this.dinner.memberRoom(p.roomId, actor)); }
       catch (error) { if (!(error instanceof DinnerError && [403, 404].includes(error.status))) throw error; }
     }
-    const planProposals = await this.db
-      .collection<PlanProposal>("dinner-agent-plan-proposals")
-      .find({ userId: actor.id }, { projection: { _id: 0 } })
-      .sort({ createdAt: -1 })
-      .limit(50)
-      .toArray();
     return { planProposals, messages: session?.messages ?? [], proposals: proposals.filter(p => !p.publication || rooms.get(p.roomId)?.messages.some(m => m.kind === "tab" && m.runId === p.publication!.sourceId && m.agentRevision === p.publication!.revision)) };
   }
   async clearPersonalChat(actor: Actor) {
@@ -1368,7 +1363,8 @@ export class DinnerAgentService {
           );
         },
       };
-      const generated = planActionReply ?? (billTask?.status === "cancelled" ? "Cancelled this draft." : await this.runner(context));
+      const personalReply = scope.kind === "personal" ? await personalActionReply(this.dinner, actor, request?.text ?? "", sourceId, active, async () => (await this.session(actor)).proposals) : null;
+      const generated = personalReply ?? planActionReply ?? (billTask?.status === "cancelled" ? "Cancelled this draft." : await this.runner(context));
       const text =
         plainAssistantText(preparedPlan ? planPreparationReply(preparedPlan) : generated).trim().slice(0, 2000) ||
         "I have no verified update. Open Money to review the recorded facts.";

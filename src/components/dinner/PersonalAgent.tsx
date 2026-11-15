@@ -103,6 +103,7 @@ export function PersonalAgent() {
     }
   }
   async function send(input: { clientId: string; text: string }) {
+    historyVersion.current += 1;
     setBusy(true);
     setPending(input);
     setText("");
@@ -114,6 +115,8 @@ export function PersonalAgent() {
         { method: "POST", body: JSON.stringify(input) },
         turnSchema,
       );
+      // Ignore polling snapshots captured before this send was acknowledged.
+      historyVersion.current += 1;
       setPending(null);
       setText("");
       setView((current) => ({
@@ -162,7 +165,7 @@ export function PersonalAgent() {
                   return (
                   <ChatMessage
                     own={m.role === "user"}
-                    fresh={m.replyTo !== tabReply.messageId && Date.now() - Date.parse(m.createdAt) < 15000}
+                    fresh={m.role === "assistant" && m.replyTo !== tabReply.messageId && Date.now() - Date.parse(m.createdAt) < 15000}
                     key={m.id}
                   >
                     <div className="dinner-message-body">
@@ -203,13 +206,13 @@ export function PersonalAgent() {
               )}
               {pending &&
                 !view.messages.some((m) => m.clientId === pending.clientId) && (
-                  <ChatMessage own fresh status={busy ? undefined : "Send not confirmed"}>
+                  <ChatMessage own status={busy ? undefined : "Send not confirmed"}>
                     <div className="dinner-message-body">
                       <MessageText text={pending.text} />
                     </div>
                   </ChatMessage>
                 )}
-              {!clearing.current && ((pending && busy) || (!hasSavedReply && (tabReply.live !== null || busy))) && (
+              {!clearing.current && ((pending && busy) || (!hasSavedReply && view.messages.some(m => m.id === tabReply.messageId) && (tabReply.live !== null || busy))) && (
                 <LiveReply label="Tab" text={pending ? "" : (tabReply.live ?? "")} />
               )}
               <div ref={bottom} />

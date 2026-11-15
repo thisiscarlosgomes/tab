@@ -464,6 +464,8 @@ test("personal expense proposals stay private until human save, not leaked into 
   assert.equal((await service.session(alice)).proposals.length, 1);
   assert.equal((await service.roomProposals(bob, r.id)).length, 0);
   assert.equal((await service.session(bob)).proposals.length, 0);
+  const pending = await service.personalSend(alice, { clientId: randomUUID(), text: "show pending bills" });
+  assert.match((await service.respond(alice, { kind: "personal" }, pending.id)).text, /Noodles.*awaiting your review; not saved as a bill yet/);
 });
 test("preparation cannot include nonmembers, fractional shares, bad totals or guessed receipt IDs", async () => {
   const r = await joined();
@@ -1975,4 +1977,75 @@ test("greetings and exact ledger questions reply even when every model classifie
   const saved = await dinner.memberRoom(r.id, alice);
   assert.equal(saved.messages.filter(m => m.kind === "tab").length, 2);
   assert.equal(saved.expenses.length, 0);
+});
+
+test("Ask Tab lists rooms and pending bills, cancels owned drafts and unpaid splits without a model call", async () => {
+  const r = await joined();
+  const { roomId, ...fields } = expense(r.id);
+  const draft = await dinner.draft(roomId, alice, { ...fields, clientId: randomUUID() });
+  let calls = 0;
+  const service = agent(async () => { calls++; return "Model fallback"; });
+  const ask = async (text: string, actor = alice) => {
+    const message = await service.personalSend(actor, { clientId: randomUUID(), text });
+    return (await service.respond(actor, { kind: "personal" }, message.id)).text;
+  };
+  assert.match(await ask("List my rooms"), /Friday Dinner/);
+  assert.match(await ask("What's still pending?"), /Noodles.*awaiting confirmation/);
+  assert.match(await ask("cancel Noodles", bob), /creator/);
+  assert.equal((await dinner.memberRoom(r.id, alice)).expenses[0].status, "draft");
+  assert.match(await ask("cancel Noodles"), /Cancelled Noodles/);
+  assert.match(await ask("cancel Noodles"), /already cancelled/);
+  assert.equal((await dinner.memberRoom(r.id, alice)).expenses[0].status, "cancelled");
+  const second = await dinner.draft(r.id, alice, { ...fields, description: "Taxi", clientId: randomUUID() });
+  await dinner.confirm(r.id, alice, second.id, randomUUID(), second.version);
+  assert.match(await ask("show pending bills"), /Taxi.*awaiting payment/);
+  assert.match(await ask("cancel Taxi"), /Cancelled Taxi/);
+  assert.equal((await dinner.memberRoom(r.id, alice)).expenses[1].status, "cancelled");
+  assert.equal(calls, 0);
+  assert.ok(draft.id);
+});
+
+test("Ask Tab cancellation refuses ambiguous bills and payment reports and never lists another user's rooms", async () => {
+  const r = await joined();
+  const { roomId, ...fields } = expense(r.id);
+  const service = agent();
+  const ask = async (text: string, actor = alice) => {
+    const m = await service.personalSend(actor, { clientId: randomUUID(), text });
+    return (await service.respond(actor, { kind: "personal" }, m.id)).text;
+  };
+  const first = await dinner.draft(roomId, alice, { ...fields, clientId: randomUUID() });
+  await dinner.draft(roomId, alice, { ...fields, clientId: randomUUID() });
+  assert.match(await ask("cancel Noodles"), /More than one/);
+  const confirmed = await dinner.confirm(r.id, alice, first.id, randomUUID(), first.version);
+  assert.equal(confirmed.status, "confirmed");
+  if (confirmed.status !== "confirmed") return;
+  await dinner.reportOutside(r.id, bob, confirmed.obligations[0].id, randomUUID());
+  assert.match(await ask(`cancel ${first.id}`), /pending payment report/);
+  assert.equal((await dinner.memberRoom(r.id, alice)).expenses[0].status, "confirmed");
+  assert.doesNotMatch(await ask("list rooms", carol), /Friday Dinner/);
+  await dinner.removeMember(r.id, alice, bob.id, randomUUID());
+  assert.doesNotMatch(await ask("list bills", bob), /Noodles/);
+});
+
+test("dashboard summaries preserve badges and wallet data while omitting large chat histories", async () => {
+  const r = await joined();
+  const messages = Array.from({ length: 1000 }, (_, i) => ({
+    id: randomUUID(), clientId: randomUUID(), kind: "user", authorId: i % 2 ? alice.id : bob.id,
+    text: `${i} ${"chat history ".repeat(100)}`, seq: i + 1, createdAt: new Date().toISOString(),
+    replyTo: null, attachmentIds: [], reactions: [],
+  }));
+  await db.collection("dinner-rooms").updateOne({ id: r.id }, { $set: { messages, "members.0.readSeq": 100 } });
+  const store = new MongoRoomStore(db);
+  const full = await store.list(alice.id, null);
+  const summary = await store.list(alice.id, null, "summary");
+  const financial = await store.list(alice.id, null, "financial");
+  const listing = await dinner.list(alice);
+  assert.equal(summary[0].messages.length, 0);
+  assert.equal(financial[0].messages.length, 0);
+  assert.equal(listing.rooms[0].unread, 450);
+  assert.equal(listing.rooms[0].lastMessage, messages[999].text);
+  assert.deepEqual(walletProjection(full.map(roomView), alice.id), walletProjection(financial.map(roomView), alice.id));
+  const bytes = (value: unknown) => Buffer.byteLength(JSON.stringify(value));
+  assert.ok(bytes(full) / bytes(summary) > 10);
+  console.log(`Room query payload: full=${bytes(full)}B summary=${bytes(summary)}B financial=${bytes(financial)}B`);
 });

@@ -30,7 +30,7 @@ import {
 export interface RoomStore {
   insert(room: Room): Promise<Room>;
   get(id: string): Promise<Room | null>;
-  list(userId: string, subject: string | null): Promise<Room[]>;
+  list(userId: string, subject: string | null, mode?: "summary" | "financial"): Promise<(Room & { unread?: number; lastMessage?: string | null })[]>;
   byToken(hash: string): Promise<Room | null>;
   compareAndSwap(room: Room, revision: number): Promise<boolean>;
 }
@@ -105,20 +105,20 @@ export class DinnerService {
     );
   }
   async list(actor: Actor) {
-    const rooms = await this.store.list(actor.id, actor.twitterSubject);
+    const rooms = await this.store.list(actor.id, actor.twitterSubject, "summary");
     return {
       rooms: rooms
         .filter((r) => r.members.some((m) => m.userId === actor.id))
         .map((r) => ({
           ...roomView(r),
           messages: [],
-          unread: r.messages.filter(
+          unread: r.unread ?? r.messages.filter(
             (m) =>
               m.seq >
                 (r.members.find((member) => member.userId === actor.id)
                   ?.readSeq ?? 0) && m.authorId !== actor.id,
           ).length,
-          lastMessage: r.messages.at(-1)?.text ?? null,
+          lastMessage: r.lastMessage ?? r.messages.at(-1)?.text ?? null,
         })),
       invites: rooms.flatMap((r) =>
         r.invitations
@@ -182,7 +182,7 @@ export class DinnerService {
   }
   // Used only for personal money projections, never as authorization to read a room.
   async financialRooms(actor: Actor) {
-    return (await this.store.list(actor.id, null))
+    return (await this.store.list(actor.id, null, "financial"))
       .filter(
         (r) =>
           r.members.some((m) => m.userId === actor.id) ||

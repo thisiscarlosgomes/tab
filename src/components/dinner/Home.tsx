@@ -132,9 +132,9 @@ export function Home({
       ...r.expenses.map((e) => ({
         id: e.id,
         roomId: r.id,
-        title: `${e.status === "draft" ? "Expense drafted" : "Expense confirmed"} · ${e.description}`,
-        detail: `${r.name} · ${usd(e.totalCents)} · ${e.status === "draft" ? "No obligations yet" : "Obligations recorded, not paid"}`,
-        at: e.status === "confirmed" ? e.confirmedAt : e.createdAt,
+        title: `${e.status === "cancelled" ? "Expense cancelled" : e.status === "draft" ? "Expense drafted" : "Expense confirmed"} · ${e.description}`,
+        detail: `${r.name} · ${usd(e.totalCents)} · ${e.status === "cancelled" ? "No outstanding obligations" : e.status === "draft" ? "No obligations yet" : "Obligations recorded, not paid"}`,
+        at: e.status === "cancelled" ? e.cancelledAt : e.status === "confirmed" ? e.confirmedAt : e.createdAt,
       })),
     ])
     .sort((a, b) => b.at.localeCompare(a.at));
