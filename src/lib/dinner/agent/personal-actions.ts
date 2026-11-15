@@ -1,10 +1,10 @@
-import type { Actor } from "../model";
+import type { Actor, Room } from "../model";
 import type { Proposal } from "./model";
 import { canDeleteSplit, usd } from "../model";
 import type { DinnerService } from "../service";
 
 /** Common read intents and explicit uniquely named bill cancellation need no model. */
-export async function personalActionReply(dinner: DinnerService, actor: Actor, text: string, requestId: string, active: () => Promise<void>, reviews: () => Promise<Proposal[]> = async () => [], roomId?: string) {
+export async function personalActionReply(dinner: DinnerService, actor: Actor, text: string, requestId: string, active: () => Promise<void>, reviews: () => Promise<Proposal[]> = async () => [], roomId?: string, validateRoom?: (room: Room) => void) {
   const query = (roomId ? text.replace(/^\s*@?tab[,:]?\s+/i, "") : text).trim().replace(/[?.!]+$/, "").replace(/^(?:can|could|would) you (?:please )?/i, "");
   const roomsIntent = /^(?:(?:please )?(?:list|show)(?: me)? (?:all )?(?:my |the )?rooms|what rooms (?:am i in|do i have))$/i.test(query);
   const billsIntent = /^(?:(?:please )?(?:list|show)(?: me)? (?:all )?(?:my |the )?(?:pending )?bills|what(?:'s| is) (?:still )?pending|which bills are pending)$/i.test(query);
@@ -60,7 +60,7 @@ export async function personalActionReply(dinner: DinnerService, actor: Actor, t
     await active();
     await dinner.draft(room.id, actor, { clientId: requestId, description, totalCents, payerId, shares,
       ...(expense.attachmentId ? { attachmentId: expense.attachmentId } : {}) }, expense.id, expense.version, undefined,
-      roomId ? { sourceId: requestId, text: reply } : undefined);
+      roomId ? { sourceId: requestId, text: reply, validate: validateRoom } : undefined);
     return reply;
   }
   if (confirm) {
@@ -68,14 +68,14 @@ export async function personalActionReply(dinner: DinnerService, actor: Actor, t
     if (expense.status === "cancelled") return `${expense.description} was cancelled. Create a new bill if you want to use it again.`;
     await active();
     const reply = `Confirmed ${expense.description} for ${usd(expense.totalCents)}. The split is recorded; no payment was made.`;
-    await dinner.confirm(room.id, actor, expense.id, requestId, expense.version, roomId ? { sourceId: requestId, text: reply } : undefined);
+    await dinner.confirm(room.id, actor, expense.id, requestId, expense.version, roomId ? { sourceId: requestId, text: reply, validate: validateRoom } : undefined);
     return reply;
   }
   if (expense.status === "cancelled") return `${expense.description} is already cancelled.`;
   if (expense.status === "confirmed" && !canDeleteSplit(expense)) return "That bill has a pending payment report or recorded repayment, so I can't cancel it. Review it in Money; I haven't changed it.";
   await active();
   const reply = `Cancelled ${expense.description}. No payment was made.`;
-  const chat = roomId ? { sourceId: requestId, text: reply } : undefined;
+  const chat = roomId ? { sourceId: requestId, text: reply, validate: validateRoom } : undefined;
   if (expense.status === "draft") await dinner.cancelDraft(room.id, actor, expense.id, requestId, expense.version, chat);
   else await dinner.deleteSplit(room.id, actor, expense.id, requestId, expense.version, chat);
   return reply;

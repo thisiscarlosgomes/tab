@@ -979,7 +979,7 @@ export class DinnerAgentService {
         await active();
         const room = await this.dinner.memberRoom(scope.roomId, actor);
         const source = room.messages.find((m) => m.id === sourceId)!;
-        planActionReply = await personalActionReply(this.dinner, actor, source.text, sourceId, active, () => this.roomProposals(actor, scope.roomId), scope.roomId);
+        planActionReply = burst && burst.messages.length > 1 ? null : await personalActionReply(this.dinner, actor, source.text, sourceId, active, () => this.roomProposals(actor, scope.roomId), scope.roomId, burst ? room => assertBurstCurrent(room, burst) : undefined);
         planActionReply ??= await handlePlanChatAction(
           new PlanService(this.db, this.dinner),
           actor,

@@ -2122,3 +2122,18 @@ test("private draft editing preserves permissions and does not change shares wit
   bill=(await dinner.memberRoom(r.id,alice)).expenses[0];
   assert.deepEqual(bill.shares.map(s=>s.cents),[1500,1500]);
 });
+
+test("a stale conversational bill command aborts the bill change and its audit reply atomically", async () => {
+  const r = await joined();
+  const { roomId, ...fields } = expense(r.id);
+  const draft = await dinner.draft(roomId, alice, {...fields, clientId:randomUUID()});
+  const source = await addressed(r.id,alice,"@Tab confirm Noodles");
+  const before = await dinner.memberRoom(r.id,alice);
+  await assert.rejects(dinner.confirm(r.id,alice,draft.id,source.id,draft.version,{
+    sourceId:source.id,text:"Confirmed Noodles.",validate:()=>{throw new Error("Conversation changed");},
+  }), /Conversation changed/);
+  const after = await dinner.memberRoom(r.id,alice);
+  assert.equal(after.expenses[0].status,"draft");
+  assert.deepEqual(after.messages,before.messages);
+  assert.equal(after.revision,before.revision);
+});

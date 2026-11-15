@@ -27,7 +27,7 @@ import {
   Obligation,
 } from "./model";
 
-export type BillChatReply = { sourceId: string; text: string };
+export type BillChatReply = { sourceId: string; text: string; validate?: (room: Room) => void };
 
 export interface RoomStore {
   insert(room: Room): Promise<Room>;
@@ -46,6 +46,7 @@ export class DinnerService {
   private actionMessage(room: Room, actor: Actor, key: string, text: string, chat?: BillChatReply) {
     if (chat && !room.messages.some(m => m.id === chat.sourceId && m.authorId === actor.id && m.kind !== "tab"))
       fail(403, "A bill reply must belong to the requesting member message");
+    chat?.validate?.(room);
     const runId = chat?.sourceId ?? `action:${key}`;
     if (room.messages.some(m => m.kind === "tab" && m.runId === runId)) return;
     if (room.messages.length >= 1000) fail(422, "This room has reached its message limit. History is preserved.");
